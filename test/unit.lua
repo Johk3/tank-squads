@@ -1055,5 +1055,6 @@ require('test.vision'){test = test, soldier = soldier, count_reads = count_reads
 require('test.assault'){test = test, soldier = soldier, building = building, gui_element = gui_element,
   handlers = function() return handlers end}
 require('test.scout_geometry'){test = test}
+require('test.scout_teams'){test = test, soldier = soldier, building = building}
 print(string.format("%d passed, %d failed", passed, failed))
 assert(failed == 0, "regression tests failed")
