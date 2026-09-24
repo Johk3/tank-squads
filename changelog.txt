@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.13.1
+Date: 2026-09-24
+  Bugfixes:
+    - Soldiers attacking an area no longer stop for good when they are hit again just after defending themselves while their target died. They now move on to the next target in the area, which also keeps nest assaults and offensive escorts moving.
+  Optimizations:
+    - Each slice of the one-second sweep checks only its own soldiers' guns instead of walking every soldier on the map (1000 idle carriers: about 15% less script time).
+---------------------------------------------------------------------------------------------------
 Version: 0.13.0
 Date: 2026-09-24
   Features:
