@@ -51,9 +51,9 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 
 Research **Mobile headquarters** (automation to utility science), then choose **Build Mobile Headquarters** in a barracks. It costs 400 steel, 100 gears, 40 electric engines, 40 processing units, 40 solar panels, 40 accumulators, 4 roboports and 4 radars, and takes 60 seconds.
 
-- **Body:** about 9 by 14 tiles, 400 HP, one-sixth of a carrier's speed. It has no weapon and never fights back, so escort it.
+- **Body:** about 9 by 14 tiles, 400 HP, one-sixth of a carrier's speed. It has no weapon and never fights back, so escort it. It flattens trees, rocks and cliffs in its way, but never buildings.
 - **Healing:** 20 HP per second to every soldier within 24 tiles, also while it drives. Injured escort and scout soldiers retreat to it when it is nearer than any barracks, and follow it if it drives on.
-- **Camp:** when it parks, it sets up a roboport with 25 times the normal reach (625-tile logistics, 1,375-tile construction), a radar that keeps 8 chunks around it live and scans out to 32, 12 MW of solar decks and a 1 GJ battery. The camp stays where it was while the headquarters drives, and moves to it when it parks again.
+- **Camp:** when it parks, it sets up a roboport with 25 times the normal reach (625-tile logistics, 1,375-tile construction), a radar that keeps 4 chunks around it live and scans out to 16, 12 MW of solar decks and a 1 GJ battery. The camp stays where it was while the headquarters drives, and moves to it when it parks again.
 - **Power:** a camp within 12 tiles of one of your electric poles wires itself to that pole, so the grid shares its solar power and battery. It never links two grids.
 - **Robots:** open the headquarters to put construction and logistic robots and repair packs into its roboport. Robots build from your logistic network like any roboport's. If the headquarters is destroyed, its docked robots and repair packs drop on the ground.
 - **Orders:** select it with the command tool and move it or give it a patrol route like any soldier. An attack order moves it to the area. Scouting and escort formations leave it where it is.
