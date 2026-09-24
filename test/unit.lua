@@ -216,7 +216,7 @@ test("move replaces the selected division's patrol instead of resuming it", func
   patrol.start(1, 1)
   commands.order(1, {left_top = {x = 30, y = 30}, right_bottom = {x = 32, y = 32}}, surface)
   patrol.advance(a.unit_number)
-  assert(patrol.index(1, 1) == nil and a.command.destination.x == 31, "old patrol overrides move")
+  assert(patrol.index(1, 1, a.unit_number) == nil and a.command.destination.x == 31, "old patrol overrides move")
 end)
 
 test("patrol refuses waypoints on another surface", function()
@@ -243,10 +243,12 @@ test("two divisions keep separate routes", function()
   patrol.add_waypoint(1, 2, {x = 0, y = 50}, surface)
   patrol.start(1, 1)
   patrol.start(1, 2)
-  assert(a.command.destination.x == 10, "division 1 got the wrong leg")
+  assert(a.command.destination.x == 15 and a.command.destination.y == 0, "division 1 got the wrong leg")
   assert(b.command.destination.y == 50, "division 2 got the wrong leg")
+  local other = b.command
   patrol.advance(a.unit_number)
-  assert(patrol.index(1, 1) == 2 and patrol.index(1, 2) == 1, "advancing one route advanced the other")
+  assert(patrol.index(1, 1, a.unit_number) == 2 and patrol.index(1, 2, b.unit_number) == 0 and b.command == other,
+    "advancing one route advanced the other")
 end)
 
 -- The engine reports each finished distraction (a fight on the way) as its
@@ -260,9 +262,9 @@ test("a finished distraction does not advance the patrol", function()
   patrol.start(1, 1)
   local success = defines.behavior_result.success
   handlers.on_ai_command_completed{unit_number = a.unit_number, result = success, was_distracted = true}
-  assert(patrol.index(1, 1) == 1, "a fight on the way skipped a waypoint")
+  assert(patrol.index(1, 1, a.unit_number) == 0, "a fight on the way skipped a waypoint")
   handlers.on_ai_command_completed{unit_number = a.unit_number, result = success, was_distracted = false}
-  assert(patrol.index(1, 1) == 2, "arrival did not advance the patrol")
+  assert(patrol.index(1, 1, a.unit_number) == 2, "arrival did not advance the patrol")
 end)
 
 test("failed patrol legs wait for the sweep and back off when every waypoint fails", function()
@@ -274,7 +276,7 @@ test("failed patrol legs wait for the sweep and back off when every waypoint fai
   local fail, success = defines.behavior_result.fail, defines.behavior_result.success
   a.command = nil
   patrol.advance(a.unit_number, fail)
-  assert(patrol.index(1, 1) == 2 and a.command == nil, "failed path re-requested in the same tick")
+  assert(patrol.index(1, 1, a.unit_number) == 2 and a.command == nil, "failed path re-requested in the same tick")
   patrol.tick()
   assert(a.command.destination.x == 20, "next leg not sent on the sweep")
   a.command = nil
@@ -889,7 +891,7 @@ test("entity events are filtered to the mod's own entities", function()
   for _, name in ipairs(names.unit_names) do units[name] = true end
   check("script_raised_destroy", units)
   local filters = assert(event_filters.on_entity_damaged, "on_entity_damaged is unfiltered")
-  assert(#filters == #names.soldier_names, "on_entity_damaged is not limited to soldiers")
+  assert(#filters == #names.unit_names, "on_entity_damaged is not limited to soldiers and headquarters")
 end)
 
 test("the one-second sweep visits each division and barracks once, spread over the second", function()
@@ -1007,7 +1009,7 @@ test("chainguns stop tracking targets moved to another surface", function()
   assert(draws[1].orientation_target == a, "gun tracks coordinates on another surface")
 end)
 
-test("review: reassigned leader cannot advance its old patrol", function()
+test("review: a reassigned soldier cannot advance its old patrol", function()
   local a, b = soldier(), soldier()
   divisions.assign(1, 1, {a, b})
   patrol.add_waypoint(1, 1, {x=10,y=0}, surface)
@@ -1015,9 +1017,10 @@ test("review: reassigned leader cannot advance its old patrol", function()
   patrol.start(1, 1)
   divisions.assign(1, 2, {a})
   divisions.refresh()
-  local before = patrol.index(1, 1)
-  patrol.advance(a.unit_number)
-  assert(patrol.index(1, 1) == before, "detached leader advanced old division and overwrote remaining member command")
+  local before, command = patrol.index(1, 1, b.unit_number), b.command
+  assert(patrol.advance(a.unit_number) == nil and patrol.index(1, 1, a.unit_number) == nil)
+  assert(patrol.index(1, 1, b.unit_number) == before and b.command == command,
+    "detached soldier advanced old division and overwrote remaining member command")
 end)
 test("review: same-force players cannot keep conflicting automated ownership", function()
   local a = soldier()
@@ -1046,19 +1049,23 @@ test("review: failed scout destination is skipped", function()
   end
 end)
 
-test("patrol handover preserves leg and new leader can finish", function()
+test("patrol handover: the soldier left takes over the whole route after its leg", function()
   local a, b = soldier(), soldier()
   divisions.assign(1, 1, {a,b})
   patrol.add_waypoint(1, 1, {x=10,y=0}, surface)
   patrol.add_waypoint(1, 1, {x=20,y=0}, surface)
   patrol.start(1, 1)
   patrol.advance(a.unit_number)
+  local walking = b.command
   divisions.assign(1, 2, {a})
   local r = divisions.record(1,1).patrol
-  assert(r.leader == b.unit_number and r.index == 2)
-  assert(b.command.destination.x == 20)
+  assert(r.posts[b.unit_number] and not r.posts[a.unit_number])
+  assert(#r.posts[b.unit_number].points == 2, "the soldier left does not walk the whole route")
+  assert(b.command == walking, "the handover interrupted a leg")
   patrol.advance(b.unit_number)
-  assert(r.index == 1 and b.command.destination.x == 10)
+  assert(b.command.destination.x == 15)
+  patrol.advance(b.unit_number)
+  assert(b.command.destination.x == 20)
 end)
 
 test("upgrade removes duplicate ownership and repairs legacy leader", function()
@@ -1071,7 +1078,7 @@ test("upgrade removes duplicate ownership and repairs legacy leader", function()
   record.patrol = {waypoints={{x=10,y=0}},index=1,surface_index=1,leader=a.unit_number}
   divisions.reconcile_ownership()
   assert(#record.members == 1 and record.members[1] == b.unit_number)
-  assert(record.patrol.leader == b.unit_number)
+  assert(record.patrol.posts[b.unit_number] and not record.patrol.posts[a.unit_number] and record.patrol.leader == nil)
   divisions.reconcile_ownership()
   assert(divisions.size(1,1)==1 and divisions.size(2,1)==1)
 end)
@@ -1111,7 +1118,7 @@ test("large transfers reconcile each affected patrol only once", function()
   local calls = 0
   remaining.commandable.set_command = function(command) calls=calls+1; remaining.command=command end
   divisions.assign(1,2,members)
-  assert(calls == 1, "transfer reissued remaining patrol once per transferred unit")
+  assert(calls <= 1, "transfer reissued remaining patrol once per transferred unit")
   assert(divisions.size(1,1)==1 and divisions.size(1,2)==2000)
 end)
 

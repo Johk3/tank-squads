@@ -38,143 +38,231 @@ return function(ctx)
     assert(close(p.x, 50) and close(p.y, -20))
   end)
 
-  local square = {{x = 0, y = 0}, {x = 100, y = 0}, {x = 100, y = 100}, {x = 0, y = 100}}
+  test('patrol geometry: rings grow with the division and each ring keeps the same spacing', function()
+    assert(geometry.area({{x = 0, y = 0}, {x = 100, y = 0}, {x = 100, y = 100}, {x = 0, y = 100}}) == 10000)
+    assert(geometry.area({{x = 0, y = 0}, {x = 10, y = 0}, {x = 20, y = 0}}) == 0, 'a line encloses an area')
+    assert(geometry.ring_count(11, 10000, 400) == 1 and geometry.ring_count(12, 10000, 400) == 2)
+    assert(geometry.ring_count(33, 10000, 400) == 2 and geometry.ring_count(34, 10000, 400) == 3)
+    assert(geometry.ring_count(50, 0, 200) == 1, 'a route without area has rings')
+    -- A long narrow strip keeps its rings MIN_RING_GAP apart.
+    assert(geometry.ring_count(200, 1000 * 20, 2040) == 1, 'rings crowd a narrow strip')
+    for _, case in ipairs({{16, 2}, {40, 3}, {5, 5}, {7, 1}}) do
+      local counts, total = geometry.ring_counts(case[1], case[2]), 0
+      for j, c in ipairs(counts) do
+        assert(c >= 1, 'an empty ring')
+        if j > 1 then assert(c <= counts[j - 1], 'an inner ring outnumbers an outer one') end
+        total = total + c
+      end
+      assert(total == case[1] and #counts == case[2], 'ring counts lost soldiers')
+    end
+  end)
+
+  test('patrol geometry: posts split the route into equal stretches with its corners', function()
+    local square = {{x = 0, y = 0}, {x = 100, y = 0}, {x = 100, y = 100}, {x = 0, y = 100}}
+    local posts = geometry.posts(square, true, 4)
+    assert(#posts == 4)
+    for k, post in ipairs(posts) do
+      local length = 0
+      for j = 2, #post.points do length = length + distance(post.points[j - 1], post.points[j]) end
+      assert(close(length, 100), 'stretch ' .. k .. ' is ' .. length .. ' long')
+    end
+    -- The second stretch runs from (100, 0) to (100, 100); the third takes
+    -- in no corner; a stretch from mid-edge to mid-edge takes in the corner.
+    assert(#posts[2].points == 2 and close(posts[2].points[1].x, 100) and close(posts[2].points[2].y, 100))
+    posts = geometry.posts(square, true, 6)
+    assert(#posts[2].points == 3 and posts[2].points[2].x == 100 and posts[2].points[2].y == 0,
+      'a stretch over a corner cut it')
+    -- The soldier takes up its post at the middle, then walks on to the corner.
+    assert(close(posts[2].anchor.x, 100) and close(posts[2].anchor.y, 0) or posts[2].next == 2)
+    -- Too short to walk: the soldier holds the middle.
+    posts = geometry.posts(square, true, 20)
+    assert(#posts[1].points == 1 and close(posts[1].points[1].x, 10) and close(posts[1].points[1].y, 0))
+    -- A lone soldier walks the whole loop.
+    posts = geometry.posts(square, true, 1)
+    assert(#posts[1].points == 4 and posts[1].loop)
+    posts = geometry.posts({{x = 0, y = 0}, {x = 100, y = 0}}, false, 1)
+    assert(#posts[1].points == 2 and not posts[1].loop, 'an open path loops')
+    posts = geometry.posts({{x = 5, y = 6}}, false, 3)
+    assert(#posts == 3 and posts[3].points[1].x == 5 and #posts[3].points == 1)
+  end)
+
+  test('patrol geometry: matching keeps each soldier at the post it stands on', function()
+    local square = {{x = 0, y = 0}, {x = 100, y = 0}, {x = 100, y = 100}, {x = 0, y = 100}}
+    local posts = geometry.posts(square, true, 8)
+    local anchors, points, order = {}, {}, {3, 7, 1, 5, 8, 2, 6, 4}
+    for k, post in ipairs(posts) do anchors[k] = post.anchor end
+    for i, k in ipairs(order) do points[i] = {x = anchors[k].x + 1, y = anchors[k].y - 1} end
+    local match = geometry.match(points, anchors, {x = 50, y = 50}, true)
+    for i, k in ipairs(order) do assert(match[i] == k, 'soldier ' .. i .. ' sent across the area') end
+    -- Along a line, in order along it.
+    match = geometry.match({{x = 90, y = 0}, {x = 10, y = 0}}, {{x = 0, y = 0}, {x = 100, y = 0}}, {x = 50, y = 0}, false)
+    assert(match[1] == 2 and match[2] == 1)
+  end)
+
+  local square = {{x = -200, y = -200}, {x = 200, y = -200}, {x = 200, y = 200}, {x = -200, y = 200}}
   local function route(n, waypoints)
     for _, w in ipairs(waypoints) do patrol.add_waypoint(1, n, w, game.surfaces[1]) end
     return divisions.record(1, n).patrol
   end
+  local function targets(members)
+    local out = {}
+    for i, e in ipairs(members) do out[i] = e.command.destination end
+    return out
+  end
 
-  test('patrol lanes: a division spreads over the route instead of meeting at one waypoint', function()
-    prototypes = nil
+  test('patrol posts: a clumped division spreads round the whole perimeter', function()
     local members = {}
-    for i = 1, 4 do members[i] = soldier(nil, nil, -20 - i, -10) end
+    for i = 1, 8 do members[i] = soldier(nil, nil, -200 + i, -200) end
     divisions.assign(1, 1, members)
+    route(1, square)
+    patrol.start(1, 1)
+    local sides = {}
+    local points = targets(members)
+    for i, p in ipairs(points) do
+      assert(members[i].command.radius == 4 and members[i].command.distraction == defines.distraction.by_enemy)
+      assert(close(math.max(math.abs(p.x), math.abs(p.y)), 200), 'a soldier left the perimeter')
+      local side = math.abs(p.x) > math.abs(p.y) and (p.x > 0 and 'e' or 'w') or (p.y > 0 and 's' or 'n')
+      sides[side] = (sides[side] or 0) + 1
+      for j = 1, i - 1 do assert(distance(p, points[j]) > 100, 'two soldiers crowd one stretch') end
+    end
+    assert(sides.n and sides.e and sides.s and sides.w, 'a side of the perimeter is left empty')
+  end)
+
+  test('patrol posts: a large division also fills the inside on inner rings', function()
+    local members = {}
+    for i = 1, 30 do members[i] = soldier(nil, nil, i, 0) end
+    divisions.assign(1, 1, members)
+    route(1, square)
+    patrol.start(1, 1)
+    local outer, inner = 0, 0
+    for _, p in ipairs(targets(members)) do
+      if close(math.max(math.abs(p.x), math.abs(p.y)), 200) then outer = outer + 1 else inner = inner + 1 end
+    end
+    assert(outer > inner and inner > 0, 'outer ' .. outer .. ', inner ' .. inner)
+  end)
+
+  test('patrol posts: each soldier walks its own stretch back and forth', function()
+    local a, b, c = soldier(nil, nil, -190, -200), soldier(nil, nil, 190, 200), soldier(nil, nil, -190, 190)
+    divisions.assign(1, 1, {a, b, c})
     local r = route(1, square)
     patrol.start(1, 1)
-    local centre, seen = {x = 50, y = 50}, {}
+    local post, other = r.posts[a.unit_number], b.command
+    assert(#post.points == 3 and not post.loop, 'a third of the perimeter takes in no corner')
+    assert(a.command.destination == post.anchor, 'the soldier did not take up its post at the middle')
+    local seen = {}
+    for _ = 1, 8 do
+      seen[#seen + 1] = patrol.index(1, 1, a.unit_number)
+      assert(a.command.destination == patrol.target(1, 1, a.unit_number))
+      a.position = a.command.destination
+      patrol.advance(a.unit_number, defines.behavior_result.success)
+    end
+    local walked = table.concat(seen, ',')
+    assert(walked == '0,2,3,2,1,2,3,2' or walked == '0,3,2,1,2,3,2,1', 'walked ' .. walked)
+    assert(b.command == other, 'one soldier arriving moved another')
+  end)
+
+  test('patrol posts: a lone soldier walks the whole loop', function()
+    local a = soldier(nil, nil, 0, 0)
+    divisions.assign(1, 1, {a})
+    local r = route(1, square)
+    patrol.start(1, 1)
+    assert(patrol.index(1, 1, a.unit_number) == 0)
+    patrol.advance(a.unit_number, defines.behavior_result.success)
+    local first = patrol.index(1, 1, a.unit_number)
     for k = 1, 4 do
-      local e = game.get_entity_by_unit_number(r.members[k])
-      local d = distance(e.command.destination, centre)
-      assert(close(d, distance(square[1], centre) * geometry.lane_scale(k, 4)), 'lane ' .. k .. ' off its scale')
-      assert(not seen[d], 'two soldiers share a lane')
-      seen[d] = true
-      assert(e.command.radius == 4 and e.command.distraction == defines.distraction.by_enemy)
+      patrol.advance(a.unit_number, defines.behavior_result.success)
+      assert(patrol.index(1, 1, a.unit_number) == (first + k - 1) % 4 + 1)
     end
-    local leader = game.get_entity_by_unit_number(r.leader)
-    assert(leader.command.destination.x == 0 and leader.command.destination.y == 0, 'leader is not on the route')
+    assert(r.posts[a.unit_number].loop)
   end)
 
-  test('patrol lanes: soldiers keep their lane from leg to leg', function()
-    prototypes = nil
-    local members = {}
-    for i = 1, 5 do members[i] = soldier(nil, nil, 3 * i, 7 * i) end
-    divisions.assign(1, 1, members)
-    local r = route(1, square)
-    patrol.start(1, 1)
-    local lane = {}
-    for k, id in ipairs(r.members) do lane[id] = k end
-    for _ = 1, 4 do
-      for _, e in ipairs(members) do e.position = e.command.destination end
-      patrol.advance(r.leader)
-      for k, id in ipairs(r.members) do assert(lane[id] == k, 'a soldier changed lanes') end
-    end
-    assert(r.index == 1, 'the leader did not walk the whole route')
-  end)
-
-  test('patrol lanes: steady legs reuse the lanes and a membership change reassigns them', function()
-    prototypes = nil
+  test('patrol posts: a steady patrol reads no other soldier on an arrival', function()
     local members, reads = {}, {}
-    for i = 1, 4 do members[i] = soldier(nil, nil, 10 * i, 0) end
+    for i = 1, 6 do members[i] = soldier(nil, nil, 10 * i, 0) end
     divisions.assign(1, 1, members)
-    local r = route(1, square)
+    route(1, square)
     patrol.start(1, 1)
-    for i = 1, 4 do reads[i] = ctx.count_reads(members[i], 'position') end
-    patrol.advance(r.leader)
-    for i = 1, 4 do assert(reads[i].n == 0, 'a steady leg re-read positions') end
-    local gone = game.get_entity_by_unit_number(r.members[1])
-    divisions.assign(1, 2, {gone})
-    assert(#r.members == 3 and r.leader ~= gone.unit_number, 'the departed leader kept its lane')
-    local total = 0
-    for i = 1, 4 do total = total + reads[i].n end
-    assert(total == 3, 'the survivors were not reassigned lanes')
-    -- A route saved before lanes existed is assigned lanes once.
-    r.lanes = nil
-    patrol.advance(r.leader)
-    assert(r.lanes, 'a legacy route was not assigned lanes')
+    for i = 1, 6 do reads[i] = ctx.count_reads(members[i], 'position') end
+    patrol.advance(members[1].unit_number, defines.behavior_result.success)
+    patrol.tick()
+    for i = 1, 6 do assert(reads[i].n == 0, 'an arrival read positions') end
   end)
 
-  test('patrol lanes: the slowest soldier walks the route and leads', function()
-    prototypes = {entity = {['tank-squad-soldier-1'] = {speed = 0.12}, ['tank-squad-flame'] = {speed = 0.07},
-      ['tank-squad-siege'] = {speed = 0.085}}}
-    local fast1, fast2 = soldier(nil, nil, -50, -50), soldier(nil, nil, -60, -60)
-    local flame, siege = soldier(nil, nil, 50, 50), soldier(nil, nil, 40, 40)
-    flame.name, siege.name = 'tank-squad-flame', 'tank-squad-siege'
-    divisions.assign(1, 1, {fast1, flame, siege, fast2})
-    local r = route(1, square)
-    patrol.start(1, 1)
-    prototypes = nil
-    assert(r.leader == flame.unit_number, 'a faster soldier leads the legs')
-    assert(flame.command.destination.x == 0 and flame.command.destination.y == 0, 'leader is not on the route')
-    -- The rest take lanes by distance from the centre: the farthest the outermost.
-    assert(r.members[2] == fast2.unit_number and r.members[3] == fast1.unit_number and r.members[4] == siege.unit_number)
-  end)
-
-  test('patrol lanes: a headquarters never leads and walks the innermost lane', function()
-    prototypes = {entity = {['tank-squad-soldier-1'] = {speed = 0.12}, ['tank-squad-flame'] = {speed = 0.07},
-      ['tank-squad-headquarters'] = {speed = 0.02}}}
-    local hq, fast = soldier(nil, nil, -80, -80), soldier(nil, nil, 5, 5)
-    local flame = soldier(nil, nil, 40, 40)
-    hq.name, flame.name = 'tank-squad-headquarters', 'tank-squad-flame'
-    divisions.assign(1, 1, {hq, fast, flame})
-    local r = route(1, square)
-    patrol.start(1, 1)
-    prototypes = nil
-    assert(r.leader == flame.unit_number, 'the headquarters sets the pace')
-    assert(r.members[3] == hq.unit_number, 'the headquarters is not on the innermost lane')
-  end)
-
-  test('patrol lanes: a headquarters alone walks the route', function()
-    prototypes = nil
-    local hq = soldier(nil, nil, 5, 5)
+  test('patrol posts: a headquarters holds the innermost ring', function()
+    local members = {}
+    for i = 1, 20 do members[i] = soldier(nil, nil, 150 + i, 150) end
+    local hq = soldier(nil, nil, 199, 199)
     hq.name = 'tank-squad-headquarters'
-    divisions.assign(1, 1, {hq})
-    local r = route(1, square)
+    members[#members + 1] = hq
+    divisions.assign(1, 1, members)
+    route(1, square)
     patrol.start(1, 1)
-    assert(r.leader == hq.unit_number and hq.command.destination.x == 0, 'a lone headquarters did not patrol')
+    local p = hq.command.destination
+    assert(math.max(math.abs(p.x), math.abs(p.y)) < 150, 'the headquarters is on the perimeter')
   end)
 
-  test('patrol lanes: a recruited headquarters keeps the lanes and leader', function()
-    prototypes = {entity = {['tank-squad-soldier-1'] = {speed = 0.12}, ['tank-squad-headquarters'] = {speed = 0.02}}}
-    local a, b = soldier(nil, nil, 5, 5), soldier(nil, nil, 9, 9)
+  test('patrol posts: recruits are dealt posts on the next sweep, without re-sending walkers', function()
+    local a, b = soldier(nil, nil, -200, -200), soldier(nil, nil, 200, 200)
     divisions.assign(1, 1, {a, b})
     local r = route(1, square)
     patrol.start(1, 1)
-    local leader = r.leader
-    local hq = soldier(nil, nil, 0, 3)
-    hq.name = 'tank-squad-headquarters'
-    assert(patrol.join(divisions.record(1, 1), hq), 'the headquarters did not join the patrol')
-    prototypes = nil
-    assert(r.lanes and r.leader == leader, 'a recruited headquarters reassigned the lanes')
+    local walking = a.command
+    local recruit = soldier(nil, nil, 0, 190)
+    divisions.add_member(1, 1, recruit.unit_number, recruit)
+    assert(patrol.join(divisions.record(1, 1), recruit))
+    assert(recruit.command.destination.y == 200, 'the recruit did not head for the route')
+    assert(r.dirty and not r.posts[recruit.unit_number])
+    patrol.tick()
+    assert(r.posts[recruit.unit_number] and not r.dirty, 'the recruit got no post')
+    assert(a.command == walking, 'a walking soldier was re-sent')
+    -- Its leg done, the walker takes up its new stretch.
+    a.position = a.command.destination
+    patrol.advance(a.unit_number, defines.behavior_result.success)
+    assert(a.command.destination == r.posts[a.unit_number].anchor, 'the walker did not take up its new post')
   end)
 
-  test('patrol lanes: a soldier recruited into a patrol led by a headquarters leads from the next leg', function()
-    prototypes = {entity = {['tank-squad-soldier-1'] = {speed = 0.12}, ['tank-squad-headquarters'] = {speed = 0.02}}}
-    local hq = soldier(nil, nil, 5, 5)
-    hq.name = 'tank-squad-headquarters'
-    divisions.assign(1, 1, {hq})
+  test('patrol posts: a casualty\'s stretch is shared out on the next sweep', function()
+    local members = {}
+    for i = 1, 3 do members[i] = soldier(nil, nil, 10 * i, 0) end
+    divisions.assign(1, 1, members)
     local r = route(1, square)
     patrol.start(1, 1)
-    local recruit = soldier(nil, nil, 0, 3)
-    divisions.add_member(1, 1, recruit.unit_number, recruit)
-    patrol.join(divisions.record(1, 1), recruit)
-    assert(not r.lanes, 'the lanes were kept for a headquarters leader')
-    patrol.advance(hq.unit_number)
-    prototypes = nil
-    assert(r.leader == recruit.unit_number and r.members[2] == hq.unit_number, 'the recruit did not take over the lead')
+    local dead = members[3]
+    divisions.forget(dead.unit_number)
+    dead.valid = false
+    patrol.forget(dead.unit_number)
+    assert(r.dirty and not r.posts[dead.unit_number])
+    patrol.tick()
+    local count = 0
+    for _ in pairs(r.posts) do count = count + 1 end
+    assert(count == 2 and not r.dirty)
+    local post, length = r.posts[members[1].unit_number], 0
+    for j = 2, #post.points do length = length + distance(post.points[j - 1], post.points[j]) end
+    assert(close(length, 800), 'the survivors did not take half the perimeter each')
   end)
 
-  test('patrol lanes: a one-waypoint route keeps everyone on the waypoint', function()
-    prototypes = nil
+  test('patrol posts: soldiers holding a point move only when their point does', function()
+    local line = {{x = 0, y = 0}, {x = 60, y = 0}}
+    local members = {}
+    for i = 1, 3 do members[i] = soldier(nil, nil, 20 * i, 0) end
+    divisions.assign(1, 1, members)
+    local r = route(1, line)
+    patrol.start(1, 1)
+    for _, e in ipairs(members) do
+      assert(#r.posts[e.unit_number].points == 1, 'a 20-tile stretch is walked')
+      e.position = e.command.destination
+      patrol.advance(e.unit_number, defines.behavior_result.success)
+      assert(r.posts[e.unit_number].idle)
+    end
+    local sent = 0
+    for _, e in ipairs(members) do e.commandable.set_command = function(c) sent = sent + 1; e.command = c end end
+    patrol.tick()
+    assert(sent == 0, 'a sweep re-sent soldiers holding their points')
+    divisions.assign(1, 2, {members[3]})
+    assert(sent == 2, 'the survivors did not move to their new points')
+  end)
+
+  test('patrol posts: a one-waypoint route keeps everyone on the waypoint', function()
     local a, b, c = soldier(nil, nil, 5, 0), soldier(nil, nil, 9, 0), soldier(nil, nil, 1, 3)
     divisions.assign(1, 1, {a, b, c})
     route(1, {{x = 30, y = -12}})
@@ -184,13 +272,84 @@ return function(ctx)
     end
   end)
 
-  test('patrol lanes: members on another surface take no lane', function()
-    prototypes = nil
+  test('patrol posts: members on another surface take no post', function()
     local a, b = soldier(nil, nil, 5, 0), soldier(nil, {index = 2}, 5, 0)
     divisions.assign(1, 1, {a, b})
     local r = route(1, square)
     patrol.start(1, 1)
-    assert(#r.members == 1 and r.leader == a.unit_number and b.command == nil)
-    assert(a.command.destination.x == 0 and a.command.destination.y == 0, 'a lone soldier left the route')
+    assert(r.posts[a.unit_number] and not r.posts[b.unit_number] and b.command == nil)
+    assert(r.posts[a.unit_number].loop, 'a lone soldier does not walk the whole route')
+  end)
+
+  test('patrol posts: a route saved with a leader is dealt posts on the next sweep', function()
+    local a, b = soldier(nil, nil, 5, 0), soldier(nil, nil, 9, 0)
+    divisions.assign(1, 1, {a, b})
+    local record = divisions.record(1, 1)
+    record.mode = 'patrol'
+    record.patrol = {waypoints = {{x = 0, y = 0}, {x = 100, y = 0}}, index = 2, members = {a.unit_number, b.unit_number},
+      lanes = true, leader = a.unit_number, surface_index = 1}
+    assert(patrol.advance(a.unit_number) == nil, 'a legacy leader advanced a route without posts')
+    patrol.tick()
+    local r = record.patrol
+    assert(r.posts[a.unit_number] and r.posts[b.unit_number] and a.command and b.command)
+    assert(r.leader == nil and r.members == nil and r.index == nil, 'legacy fields kept')
+  end)
+
+  local function alarm_setup()
+    defines.command.attack = 3
+    local members = {}
+    for i = 1, 4 do members[i] = soldier(nil, nil, -200 + 100 * i, -200) end
+    members[1].force.is_enemy = function(other) return other == 'enemy' end
+    local hq = soldier(nil, nil, 0, 0)
+    hq.name = 'tank-squad-headquarters'
+    members[#members + 1] = hq
+    divisions.assign(1, 1, members)
+    local r = route(1, square)
+    patrol.start(1, 1)
+    return members, hq, r, soldier('enemy', nil, -100, -190)
+  end
+
+  test('patrol alarm: the rest of the division comes to help a soldier under attack', function()
+    local members, hq, r, biter = alarm_setup()
+    local victim, posted = members[1], hq.command
+    patrol.on_damaged{entity = victim, cause = biter}
+    for i = 2, 4 do
+      local c = members[i].command
+      assert(c.type == defines.command.attack_area and c.destination.x == victim.position.x, 'soldier ' .. i .. ' stayed')
+      assert(c.radius == patrol.HELP_RADIUS and r.responders[members[i].unit_number])
+    end
+    assert(victim.command.type == defines.command.go_to_location, 'the victim was pulled off its own fight')
+    assert(hq.command == posted, 'the unarmed headquarters was sent to fight')
+    -- A helper back from the fight takes up its post again.
+    local helper = members[2]
+    helper.position = {x = -100, y = -190}
+    patrol.advance(helper.unit_number, defines.behavior_result.success)
+    assert(not r.responders[helper.unit_number] and helper.command.type == defines.command.go_to_location)
+    assert(helper.command.destination == r.posts[helper.unit_number].anchor, 'the helper did not return to its post')
+  end)
+
+  test('patrol alarm: one call per route every few seconds, and only for enemies', function()
+    local members, hq, r, biter = alarm_setup()
+    local friend = soldier(nil, nil, 0, 0)
+    local sent = 0
+    for i = 2, 4 do members[i].commandable.set_command = function(c) sent = sent + 1; members[i].command = c end end
+    patrol.on_damaged{entity = members[1], cause = friend}
+    patrol.on_damaged{entity = members[1]}
+    assert(sent == 0, 'friendly fire or damage without a cause raised the alarm')
+    patrol.on_damaged{entity = hq, cause = biter}
+    assert(sent == 4 - 1, 'an attack on the headquarters did not call the soldiers')
+    patrol.on_damaged{entity = members[2], cause = biter}
+    assert(sent == 3, 'the alarm was raised again within the same seconds')
+    game.tick = patrol.ALARM_TICKS
+    patrol.on_damaged{entity = members[2], cause = biter}
+    assert(sent == 3, 'helpers still on their way were called again')
+    game.tick = patrol.RESPONSE_TICKS
+    patrol.on_damaged{entity = members[2], cause = biter}
+    assert(sent == 5, 'helpers that never reported back were not called again')
+    divisions.record(1, 1).mode = 'idle'
+    game.tick = 2 * patrol.RESPONSE_TICKS
+    patrol.on_damaged{entity = members[2], cause = biter}
+    assert(sent == 5, 'a division off patrol answered the alarm')
+    assert(r)
   end)
 end

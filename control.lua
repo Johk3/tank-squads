@@ -55,7 +55,11 @@ local function on_pre_mined(event)
 end
 script.on_event(defines.events.on_pre_player_mined_item, on_pre_mined, barracks_filters)
 script.on_event(defines.events.on_robot_pre_mined, on_pre_mined, barracks_filters)
-script.on_event(defines.events.on_entity_damaged, combat.on_damaged, soldier_filters)
+-- The headquarters is unarmed, but a patrol still comes to its help.
+script.on_event(defines.events.on_entity_damaged, function(event)
+  combat.on_damaged(event)
+  patrol.on_damaged(event)
+end, unit_filters)
 script.on_event(defines.events.script_raised_destroy, function(event)
   local entity = event.entity
   if entity and entity.valid and names.soldier_set[entity.name] then
@@ -315,11 +319,8 @@ remote.add_interface("tank-squads", {
   division_size = function(player_index, n) return divisions.size(player_index, n) end,
   patrol_waypoint = function(player_index, n, position) return patrol.add_waypoint(player_index, n, position) end,
   patrol_start = function(player_index, n) return patrol.start(player_index, n) end,
-  patrol_index = function(player_index, n) return patrol.index(player_index, n) end,
-  patrol_leader = function(player_index, n)
-    local r = divisions.record(player_index, n).patrol
-    return r and r.leader or nil
-  end,
+  patrol_index = function(player_index, n, unit_number) return patrol.index(player_index, n, unit_number) end,
+  patrol_target = function(player_index, n, unit_number) return patrol.target(player_index, n, unit_number) end,
   patrol_advance = function(unit_number) return patrol.advance(unit_number) end,
   scout_set = function(player_index, n, value) return scout.set(player_index, n, value) end,
   scout_tick = function() return scout.tick() end,

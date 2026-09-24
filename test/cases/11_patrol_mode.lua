@@ -10,7 +10,7 @@ remote.call("tank-squads", "alt_select", pindex, {left_top = {x = 520, y = 520},
 local r = storage.divisions[pindex].slots[0].patrol
 if not r then error("no patrol route recorded after two alt-selects in patrol mode") end
 if #r.waypoints ~= 2 then error("expected 2 waypoints, got " .. tostring(#r.waypoints)) end
-if not r.leader then error("expected a leader after the route started walking") end
+if not (r.posts and r.posts[a.unit_number]) then error("expected a post after the route started walking") end
 remote.call("tank-squads", "patrol_mode_set", pindex, false)
 if not storage.divisions[pindex].slots[0].patrol then error("turning patrol mode off should leave the route running until a new order") end
 local kind = remote.call("tank-squads", "alt_select", pindex, {left_top = {x = 600, y = 600}, right_bottom = {x = 602, y = 602}})

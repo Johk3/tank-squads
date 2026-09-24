@@ -117,6 +117,12 @@ function M.on_shot(event)
   if nearest then defend(entity, nearest, true) end
 end
 
+-- True while the soldier fights back against a mobile attacker.
+function M.fighting(unit_number)
+  local current = storage.combat and storage.combat[unit_number]
+  return current ~= nil and current.target.valid
+end
+
 function M.forget(unit_number)
   if storage.combat then storage.combat[unit_number] = nil end
   if storage.combat_checks then storage.combat_checks[unit_number] = nil end

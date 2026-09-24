@@ -61,20 +61,16 @@ local ok, result = pcall(function()
     remote.call('tank-squads', 'patrol_waypoint', owner, 6, w)
   end
   if not remote.call('tank-squads', 'patrol_start', owner, 6) then error('patrol did not start') end
-  if remote.call('tank-squads', 'patrol_leader', owner, 6) ~= flame.unit_number then error('the flame tank does not lead') end
-  local centre, distances = {x = 3000, y = 3000}, {}
+  local points = {}
   for _, e in ipairs({flame, carriers[1], carriers[2], carriers[3]}) do
     local c = e.commandable.command
     if not (c and c.type == defines.command.go_to_location) then error('a patrol member has no leg') end
-    local dx, dy = c.destination.x - centre.x, c.destination.y - centre.y
-    distances[#distances + 1] = math.sqrt(dx * dx + dy * dy)
-  end
-  local corner = math.sqrt(2) * 50
-  if math.abs(distances[1] - corner) > 0.01 then error('the leader is not on the route: ' .. distances[1]) end
-  table.sort(distances, function(a, b) return a > b end)
-  for k = 1, 4 do
-    local expected = corner * math.sqrt((4 - k + 1) / 4)
-    if math.abs(distances[k] - expected) > 0.01 then error('lane ' .. k .. ' at ' .. distances[k] .. ', expected ' .. expected) end
+    local dx, dy = c.destination.x - 3000, c.destination.y - 3000
+    if math.abs(math.max(math.abs(dx), math.abs(dy)) - 50) > 0.01 then error('a soldier is not on the perimeter') end
+    for _, p in ipairs(points) do
+      if math.sqrt((p.x - dx) ^ 2 + (p.y - dy) ^ 2) < 70 then error('two soldiers crowd one stretch of the perimeter') end
+    end
+    points[#points + 1] = {x = dx, y = dy}
   end
 end)
 for _, e in ipairs(created) do if e.valid then e.destroy() end end
@@ -82,4 +78,4 @@ game, rendering = engine_game, engine_rendering
 storage.divisions = old_divisions
 storage.unit_divisions = old_index
 if not ok then error(result) end
-return 'PASS: a dead ward\'s ring is still defended; a mixed patrol spreads over four lanes behind its flame tank'
+return 'PASS: a dead ward\'s ring is still defended; a mixed patrol spreads round its whole perimeter'

@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.16.3
+Date: 2026-09-24
+  Features:
+    - When a patrolling tank or headquarters comes under attack, the rest of its division comes to help, then returns to its posts.
+  Bugfixes:
+    - Patrolling divisions no longer bunch up on one side of their route. Each tank takes its own stretch of the route and walks it on its own, so the whole perimeter stays covered. A large division also fills the inside of the route on inner rings, and tanks on a crowded route hold evenly spaced points.
+---------------------------------------------------------------------------------------------------
 Version: 0.16.2
 Date: 2026-09-24
   Bugfixes:
