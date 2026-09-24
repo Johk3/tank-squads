@@ -195,7 +195,52 @@ local function plan(team, present, ctx)
   start_hop(team, present)
 end
 
-local function merge_check() return false end
+local function has_front(members)
+  for _, e in ipairs(members) do
+    if assault.kind(e.name) ~= "siege" then return true end
+  end
+  return false
+end
+
+-- A team merges into the nearest team that is not blocked when it is down
+-- to one soldier, has no front soldier left to screen its siege tanks, or is
+-- blocked. The host takes over the sector unless it is blocked, takes over
+-- its convoys, and never re-commands its own soldiers. Returns true when the
+-- team is gone.
+local function merge_check(state, id, team, members, present)
+  local keep
+  if team.blocked then
+    keep = false
+  elseif #present <= 1 or not has_front(members) then
+    keep = true
+  else
+    return false
+  end
+  local here = team.last_point or (#present > 0 and centroid(present)) or nil
+  local host_id, best
+  for other = 1, state.team_count do
+    local candidate = state.teams[other]
+    if other ~= id and candidate and not candidate.blocked then
+      local there = candidate.last_point
+      local d = (here and there) and geometry.distance_squared(here, there) or math.huge
+      if not host_id or d < best then host_id, best = other, d end
+    end
+  end
+  if not host_id then return false end
+  local host = state.teams[host_id]
+  for _, unit in ipairs(team.members) do
+    host.members[#host.members + 1] = unit
+    state.team_of[unit] = host_id
+  end
+  host.formed = host.formed + #team.members
+  if keep then
+    for _, r in ipairs(team.sectors) do host.sectors[#host.sectors + 1] = {from = r.from, to = r.to} end
+  end
+  retreat.absorb(host, team)
+  for _, e in ipairs(present) do rejoin(host, e) end
+  state.teams[id] = nil
+  return true
+end
 local function withdraw(team, members, present, health, max_health, ctx) return false end
 
 function M.sweep(state, id, ctx)

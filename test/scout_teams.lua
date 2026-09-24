@@ -279,4 +279,96 @@ return function(ctx)
     assert(divisions.record(1, 1).mode == 'idle' and divisions.record(1, 1).scout == nil, 'blocked division kept scouting')
     assert(printed and printed[1] == 'tank-squads.scout-exhausted', 'no exhausted message')
   end)
+
+  local function kill(e)
+    e.valid = false
+    divisions.forget(e.unit_number)
+  end
+  local function in_team(state, id, e) return state.team_of[e.unit_number] == id end
+
+  test('scout merges: a team down to one soldier joins the nearest team and hands over its sector', function()
+    local list = scouting({'carrier', 'carrier', 'carrier', 'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    local state = scout_state()
+    local lone
+    for _, e in ipairs(list) do
+      if in_team(state, 2, e) then
+        if lone then kill(e) else lone = e end
+      end
+    end
+    scout.tick()
+    assert(state.teams[2] == nil and in_team(state, 1, lone), 'team 2 did not merge into team 1')
+    assert(#state.teams[1].sectors == 2, 'the merged sector was not handed over')
+    assert(lone.command.destination.x == state.teams[1].hop.point.x, 'the survivor was not sent to its new team')
+    assert(not state.teams[1].hop.pending[lone.unit_number], 'the survivor stalls the host hop')
+  end)
+
+  test('scout merges: a team that lost every front soldier joins another team', function()
+    local list = scouting({'carrier', 'carrier', 'carrier', 'carrier', 'siege', 'siege', 'siege', 'siege'})
+    scout.tick()
+    local state = scout_state()
+    for _, e in ipairs(list) do
+      if in_team(state, 2, e) and e.name ~= 'tank-squad-siege' then kill(e) end
+    end
+    scout.tick()
+    assert(state.teams[2] == nil, 'a siege-only team kept scouting alone')
+    local sieges = 0
+    for _, e in ipairs(list) do if e.valid and e.name == 'tank-squad-siege' and in_team(state, 1, e) then sieges = sieges + 1 end end
+    assert(sieges == 4 and #state.teams[1].sectors == 2, 'sieges or sector not handed over')
+  end)
+
+  test('scout merges: without a host, a siege-only team leads with its sieges', function()
+    local list = scouting({'carrier', 'siege', 'siege', 'siege'})
+    scout.tick()
+    local state = scout_state()
+    assert(state.team_count == 1)
+    kill(list[1])
+    for i = 2, 4 do scout.on_command_completed(list[i].unit_number, defines.behavior_result.success) end
+    scout.tick()
+    local hop = state.teams[1].hop
+    assert(hop and hop.front[list[2].unit_number], 'sieges not in the front band')
+    for i = 2, 4 do assert(math.abs(forward(hop, list[i])) < 1e-6, 'siege trails an empty front') end
+  end)
+
+  test('scout merges: a blocked team joins another team and drops its sector', function()
+    local list = scouting({'carrier', 'carrier', 'carrier', 'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    local state = scout_state()
+    state.teams[2].blocked = true
+    scout.tick()
+    assert(state.teams[2] == nil and #state.teams[1].members == 6, 'blocked team did not merge')
+    assert(#state.teams[1].sectors == 1, 'a blocked sector was handed over')
+    assert(divisions.record(1, 1).mode == 'scout', 'division stopped while a team could still explore')
+  end)
+
+  test('scout merges: a soldier moved to another division mid-hop does not stall its team', function()
+    local list = scouting({'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    local state = scout_state()
+    local first = state.teams[1].hop
+    divisions.assign(1, 2, {list[3]})
+    scout.on_command_completed(list[1].unit_number, defines.behavior_result.success)
+    scout.on_command_completed(list[2].unit_number, defines.behavior_result.success)
+    scout.tick()
+    assert(state.teams[1].hop ~= first, 'the transferred soldier held the hop')
+    assert(not state.team_of[list[3].unit_number], 'the transferred soldier kept its team')
+  end)
+
+  test('scout merges: convoys of a merged team move to the host', function()
+    building().position = {x = 100, y = 0}
+    local list = scouting({'carrier', 'carrier', 'carrier', 'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    local state = scout_state()
+    local injured, others = nil, {}
+    for _, e in ipairs(list) do
+      if in_team(state, 2, e) then
+        if injured then others[#others + 1] = e else injured = e end
+      end
+    end
+    injured.health = 60
+    kill(others[1])
+    scout.tick()
+    assert(state.teams[2] == nil, 'team with one present soldier did not merge')
+    assert(retreat.is_away(state.teams[1], injured.unit_number), 'the injured soldier lost its convoy in the merge')
+  end)
 end
