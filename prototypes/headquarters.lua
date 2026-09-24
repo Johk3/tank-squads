@@ -89,6 +89,10 @@ local roboport = hidden(copy(data.raw.roboport.roboport))
 roboport.name = 'tank-squad-hq-roboport'
 roboport.logistics_radius = data.raw.roboport.roboport.logistics_radius * RANGE_MULTIPLIER
 roboport.construction_radius = data.raw.roboport.roboport.construction_radius * RANGE_MULTIPLIER
+-- Without radar_range a roboport charts out to its full reach: here 43
+-- chunks each way, thousands of chunks that lag the game and crowd out the
+-- soldiers' map vision. Chart as far as a base roboport does instead.
+roboport.radar_range = 2
 roboport.charging_energy = '500kW'
 roboport.charging_offsets = {
   {-3, -5}, {3, -5}, {-4, -1.5}, {4, -1.5}, {-4, 1.5}, {4, 1.5}, {-3, 5}, {3, 5},

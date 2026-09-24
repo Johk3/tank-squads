@@ -78,6 +78,34 @@ return function(ctx)
     assert(tree.valid, 'a parked headquarters cleared a tree')
   end)
 
+  -- A roboport without radar_range charts out to its full reach, which for
+  -- the headquarters' 25-times roboport is thousands of chunks.
+  ctx.test('headquarters: the camp roboport charts no further than a base roboport', function()
+    local function copy(t)
+      if type(t) ~= 'table' then return t end
+      local out = {}; for k, v in pairs(t) do out[k] = copy(v) end; return out
+    end
+    package.loaded.util = {table = {deepcopy = copy}, empty_sprite = function() return {} end,
+      empty_animation = function() return {} end}
+    data = {raw = {
+      roboport = {roboport = {type = 'roboport', name = 'roboport', logistics_radius = 25, construction_radius = 55}},
+      ['solar-panel'] = {['solar-panel'] = {type = 'solar-panel', name = 'solar-panel'}},
+      accumulator = {accumulator = {type = 'accumulator', name = 'accumulator'}},
+      ['electric-pole'] = {['medium-electric-pole'] = {type = 'electric-pole', name = 'medium-electric-pole'}},
+    }}
+    data.extend = function(_, list)
+      for _, prototype in ipairs(list) do
+        data.raw[prototype.type] = data.raw[prototype.type] or {}
+        data.raw[prototype.type][prototype.name] = prototype
+      end
+    end
+    dofile('prototypes/headquarters.lua')
+    local roboport = data.raw.roboport['tank-squad-hq-roboport']
+    assert(roboport.construction_radius == 55 * 25, 'reach changed')
+    assert(roboport.radar_range == 2, 'camp roboport charts ' .. tostring(roboport.radar_range) .. ' chunks, not 2')
+    for kind in pairs(data.raw) do assert(kind ~= 'radar', 'the headquarters has a radar again') end
+  end)
+
   ctx.test('headquarters: saves without one pay nothing per sweep', function()
     storage.headquarters = nil
     for phase = 0, 9 do headquarters.tick(phase, 10) end

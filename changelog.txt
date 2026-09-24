@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.16.2
+Date: 2026-09-24
+  Bugfixes:
+    - Placing a mobile headquarters no longer lags the game or charts a huge area around it. Its roboport charted out to its full 1,375-tile construction reach, thousands of chunks, which also hid your other divisions in fog of war. It now charts only as far as a base roboport.
+---------------------------------------------------------------------------------------------------
 Version: 0.16.1
 Date: 2026-09-24
   Bugfixes:
