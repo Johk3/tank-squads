@@ -103,6 +103,14 @@ return function(ctx)
     storage.combat = nil
     combat.on_shot{effect_id = 'tank-squad-shot', source_entity = a, target_entity = worm, tick = 120}
     assert(a.command.commands[2].type == defines.command.stop, 'resumed targetless live attack')
+    assert(a.command.commands[2].ticks_to_wait == 1, 'defense of a finished attack never completes')
+  end)
+
+  ctx.test('an idle carrier stays stopped after its defense', function()
+    local a, b = prepare()
+    combat.on_damaged{entity = a, cause = b}
+    assert(a.command.commands[2].type == defines.command.stop)
+    assert(a.command.commands[2].ticks_to_wait == nil, 'idle carrier reports a completion it never had')
   end)
 
   ctx.test('resumed building fire can replace a stale failed defense target', function()

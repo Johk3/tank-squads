@@ -48,7 +48,13 @@ local function defend(entity, enemy, building_shot)
   if active and active.type == defines.command.attack and active.target and active.target.valid and active.target.type == 'unit' then return end
   storage.combat = storage.combat or {}
   local resume = current and current.resume or entity.commandable.command
-  if not resumable(resume) then resume = {type = defines.command.stop, distraction = defines.distraction.by_enemy} end
+  if not resumable(resume) then
+    -- An attack whose target died would have completed. A plain stop never
+    -- completes, so its owner (an assault mission, an escort leg) would never
+    -- hear back; a short stop completes the defense instead.
+    resume = {type = defines.command.stop, distraction = defines.distraction.by_enemy,
+      ticks_to_wait = resume and 1 or nil}
+  end
   storage.combat[entity.unit_number] = {target = enemy, resume = resume}
   entity.commandable.set_command{
     type = defines.command.compound,
