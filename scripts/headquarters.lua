@@ -34,6 +34,13 @@ M.CAMP_DISTANCE = 2
 -- A friendly pole within this many tiles of the helpers receives the wire.
 M.GRID_RADIUS = 12
 M.GRID_RETRY_TICKS = 5 * 60
+-- A driving headquarters flattens trees, rocks and cliffs within CLEAR_RADIUS
+-- tiles of a point CLEAR_AHEAD tiles towards its destination, so its large
+-- body does not get stuck in a forest. It drives at most 1.2 tiles a
+-- second, so the cleared area stays well ahead of it between sweeps.
+M.CLEAR_RADIUS = 8
+M.CLEAR_AHEAD = 4
+local OBSTACLES = {'tree', 'simple-entity', 'cliff'}
 
 local HELPERS = {
   roboport = 'tank-squad-hq-roboport',
@@ -205,6 +212,33 @@ local function couple(record)
   end
 end
 
+-- Only neutral obstacles, never a building. One command read and one area
+-- search per sweep while the headquarters has somewhere to go; none while
+-- it stands still.
+function M.clear_path(record, position)
+  local entity = record.entity
+  local command = entity.commandable.command
+  if not command or command.type == defines.command.stop then return end
+  position = position or entity.position
+  local ahead, destination = position, command.destination
+  if destination then
+    local dx, dy = destination.x - position.x, destination.y - position.y
+    local length = math.sqrt(dx * dx + dy * dy)
+    if length > 0 then
+      local step = math.min(M.CLEAR_AHEAD, length) / length
+      ahead = {x = position.x + dx * step, y = position.y + dy * step}
+    end
+  end
+  for _, e in pairs(entity.surface.find_entities_filtered{position = ahead, radius = M.CLEAR_RADIUS,
+    type = OBSTACLES, force = 'neutral'}) do
+    if e.type == 'cliff' then
+      e.destroy{do_cliff_correction = true, raise_destroy = true}
+    else
+      e.destroy{raise_destroy = true}
+    end
+  end
+end
+
 local function heal(record)
   local entity = record.entity
   for _, unit in pairs(entity.surface.find_entities_filtered{position = entity.position, radius = M.HEAL_RADIUS,
@@ -235,6 +269,7 @@ local function sweep(id, record)
   end
   draw_dish(record)
   couple(record)
+  M.clear_path(record, position)
   heal(record)
 end
 

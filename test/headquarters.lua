@@ -45,6 +45,39 @@ return function(ctx)
     assert(hq.command == nil, 'the headquarters was sent scouting')
   end)
 
+  local function obstacle(kind, x, y, force)
+    local e = ctx.soldier(nil, nil, x, y)
+    e.name, e.type, e.force = kind, kind, force or 'neutral'
+    e.destroy = function(args) e.valid = false; e.destroyed_with = args end
+    return e
+  end
+
+  ctx.test('headquarters: a driving headquarters clears trees, rocks and cliffs in its way', function()
+    local hq = prepare()
+    hq.position = {x = 0, y = 0}
+    hq.commandable.command = {type = defines.command.go_to_location, destination = {x = 100, y = 0}}
+    local tree, rock, cliff = obstacle('tree', 8, 2), obstacle('simple-entity', 3, -3), obstacle('cliff', 10, 0)
+    local behind = obstacle('tree', -12, 0)
+    local far = obstacle('tree', 40, 0)
+    local wall = obstacle('stone-wall', 6, 0, game.players[1].force)
+    headquarters.clear_path({entity = hq})
+    assert(not tree.valid and not rock.valid and not cliff.valid, 'an obstacle in the way was left standing')
+    assert(cliff.destroyed_with and cliff.destroyed_with.do_cliff_correction, 'cliff removed without correction')
+    assert(behind.valid and far.valid, 'cleared outside the path')
+    assert(wall.valid, 'a player building was destroyed')
+  end)
+
+  ctx.test('headquarters: a parked headquarters leaves the trees alone', function()
+    local hq = prepare()
+    hq.position = {x = 0, y = 0}
+    local tree = obstacle('tree', 4, 0)
+    hq.commandable.command = nil
+    headquarters.clear_path({entity = hq})
+    hq.commandable.command = {type = defines.command.stop}
+    headquarters.clear_path({entity = hq})
+    assert(tree.valid, 'a parked headquarters cleared a tree')
+  end)
+
   ctx.test('headquarters: saves without one pay nothing per sweep', function()
     storage.headquarters = nil
     for phase = 0, 9 do headquarters.tick(phase, 10) end
