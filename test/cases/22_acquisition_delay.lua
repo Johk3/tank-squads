@@ -16,7 +16,8 @@ if not test.enemy then
     test.entity.commandable.set_command{type = defines.command.go_to_location, destination = {15, -10}, radius = 1, distraction = defines.distraction.by_enemy}
   end
   if game.tick - test.finished < 30 then return "WAIT: next encounter" end
-  test.enemy = test.entity.surface.create_entity{name = "biter-spawner", position = {10, 0}, force = "enemy"}
+  local p = test.entity.position
+  test.enemy = test.entity.surface.create_entity{name = "biter-spawner", position = {p.x + 6, p.y + 10}, force = "enemy"}
   test.enemy.active = false
   test.appeared = game.tick
   return "WAIT: enemy appeared"
