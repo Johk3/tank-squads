@@ -221,7 +221,7 @@ local function fill(player_index, n, entities)
   render.clear_rings(record)
   local ids, seen = {}, {}
   for _, e in pairs(entities) do
-    if e.valid and names.soldier_set[e.name] and e.force == player.force and not seen[e.unit_number] then
+    if e.valid and names.unit_set[e.name] and e.force == player.force and not seen[e.unit_number] then
       table.insert(ids, e.unit_number)
       seen[e.unit_number] = true
     end

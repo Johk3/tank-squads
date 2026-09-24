@@ -75,7 +75,7 @@ def main():
                 x, y = (cell % 4) * 384, (cell // 4) * 512
                 count = sum(row[x:x + 384].count(0) for row in alpha[y:y + 512])
                 assert count > 384 * 512 * 0.1, f"Frame {cell} lacks transparency"
-        elif path.name in {"chaingun-chassis.png", "siege-chassis.png", "flame-chassis.png"}:
+        elif path.name in {"chaingun-chassis.png", "siege-chassis.png", "flame-chassis.png", "headquarters-chassis.png"}:
             assert (width, height) == (1254, 1254), "Chassis atlas size differs from prototype"
             for cell in range(16):
                 x, y = (cell % 4) * 313, (cell // 4) * 313

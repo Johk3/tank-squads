@@ -14,8 +14,32 @@ local function assault_next(mission)
   return true
 end
 
+-- The headquarters is unarmed. It only moves or waits, and nothing on the way
+-- distracts it. An attack on one target becomes a short wait that completes,
+-- so whoever issued it still hears back; an area attack becomes a move.
+local function unarmed(command)
+  local kind = command.type
+  if kind == defines.command.attack then
+    return {type = defines.command.stop, ticks_to_wait = 60, distraction = defines.distraction.none}
+  end
+  local out = {}
+  for key, value in pairs(command) do out[key] = value end
+  if kind == defines.command.compound then
+    out.commands = {}
+    for i, sub in pairs(command.commands) do out.commands[i] = unarmed(sub) end
+    return out
+  end
+  if kind == defines.command.attack_area then out.type = defines.command.go_to_location end
+  out.distraction = defines.distraction.none
+  return out
+end
+
 function M.set_command(entity, command)
   M.forget(entity.unit_number)
+  if entity.name == names.headquarters then
+    entity.commandable.set_command(unarmed(command))
+    return
+  end
   if command.type == defines.command.attack_area then
     storage.assaults = storage.assaults or {}
     local mission = {entity = entity, order = command}

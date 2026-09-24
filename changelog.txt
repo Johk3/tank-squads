@@ -1,4 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.14.0
+Date: 2026-09-24
+  Features:
+    - Mobile headquarters: a huge, very slow and unarmed command vehicle, built at a barracks after its own research. It has 400 HP and heals soldiers within 24 tiles, also on the move.
+    - Wherever the headquarters parks it sets up camp: a roboport with 25 times the normal reach, a radar with a large scan range, 12 MW of solar decks and a 1 GJ battery. Open the headquarters to load robots and repair packs.
+    - A camp within 12 tiles of a friendly electric pole wires itself to it and powers that grid.
+    - The headquarters takes move and patrol orders from the command tool. It never attacks, scouts or joins escort formations.
+---------------------------------------------------------------------------------------------------
 Version: 0.13.1
 Date: 2026-09-24
   Bugfixes:

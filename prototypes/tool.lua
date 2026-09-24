@@ -13,7 +13,7 @@ data:extend{
       cursor_box_type = "entity",
       mode = {"any-entity"},
       entity_filter_mode = "whitelist",
-      entity_filters = require("scripts.names").soldier_names,
+      entity_filters = require("scripts.names").unit_names,
     },
     alt_select = {
       border_color = {r = 0.9, g = 0.3, b = 0.2},

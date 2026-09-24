@@ -20,4 +20,13 @@ for n = 1, 9 do
   })
 end
 
+-- Follows the player's own "open" binding, without consuming it.
+table.insert(inputs, {
+  type = "custom-input",
+  name = "tank-squad-open-headquarters",
+  key_sequence = "",
+  linked_game_control = "open-gui",
+  action = "lua",
+})
+
 data:extend(inputs)

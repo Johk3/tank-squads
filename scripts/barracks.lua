@@ -3,6 +3,7 @@ local names = require("scripts.names")
 local weapons = require("scripts.weapons")
 local reinforcements = require('scripts.reinforcements')
 local divisions = require('scripts.divisions')
+local headquarters = require('scripts.headquarters')
 
 local M = {}
 
@@ -112,7 +113,7 @@ end
 local function heal_nearby(b)
   local surface = b.entity.surface
   local pos = b.entity.position
-  for _, soldier in pairs(surface.find_entities_filtered{position = pos, radius = HEAL_RADIUS, name = names.soldier_names, force = b.entity.force}) do
+  for _, soldier in pairs(surface.find_entities_filtered{position = pos, radius = HEAL_RADIUS, name = names.unit_names, force = b.entity.force}) do
     if soldier.health < soldier.max_health then
       soldier.health = math.min(soldier.max_health, soldier.health + HEAL_AMOUNT)
     end
@@ -124,13 +125,16 @@ end
 -- engine reports it as "output full" and no further work is lost.
 local function deploy(b, tier)
   local surface = b.entity.surface
-  local name = names.soldier_names[tier]
-  local entrance = {x = b.entity.position.x, y = b.entity.position.y + 2.5}
-  local position = surface.find_non_colliding_position(name, entrance, 16, 1)
+  local name = names.unit_names[tier]
+  local large = name == names.headquarters
+  -- The headquarters' body is much wider than the entrance, so it needs a
+  -- wider search for a free spot.
+  local entrance = {x = b.entity.position.x, y = b.entity.position.y + (large and 8 or 2.5)}
+  local position = surface.find_non_colliding_position(name, entrance, large and 32 or 16, 1)
   if not position then return false end
   local soldier = surface.create_entity{name = name, position = position, force = b.entity.force}
   if not soldier then return false end
-  weapons.register(soldier)
+  if large then headquarters.register(soldier) else weapons.register(soldier) end
 
   if not reinforcements.join(b, soldier) then
     combat.set_command(soldier, {

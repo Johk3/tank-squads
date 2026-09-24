@@ -1,3 +1,4 @@
+local names = require("scripts.names")
 local divisions = require("scripts.divisions")
 local patrol = require("scripts.patrol")
 local config = require("scripts.config")
@@ -112,7 +113,8 @@ local function drive(player_index, n, record, cfg)
   state.surface_index = state.surface_index or all[1].surface_index
   local members, by_id = {}, {}
   for _, e in ipairs(all) do
-    if e.valid and e.surface_index == state.surface_index then
+    -- The unarmed headquarters never scouts; it keeps its last order.
+    if e.valid and e.surface_index == state.surface_index and e.name ~= names.headquarters then
       members[#members + 1], by_id[e.unit_number] = e, e
     end
   end
@@ -167,7 +169,7 @@ end
 -- sweep there are no teams yet; the recruit is then dealt with the rest.
 function M.join(record, soldier)
   local state = record.mode == "scout" and record.scout
-  if not state then return false end
+  if not state or soldier.name == names.headquarters then return false end
   if state.teams and soldier.surface_index == state.surface_index then teams.join(state, soldier) end
   return true
 end

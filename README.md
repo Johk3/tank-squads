@@ -9,6 +9,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 ## Features
 
 - **Three kinds of tanks.** Fast chaingun carriers in three ammunition tiers, a long-range siege tank with an oversized cannon, and a heavily armored flame tank.
+- **Mobile headquarters.** A huge, slow, unarmed command vehicle. It heals nearby soldiers, and wherever it parks it sets up camp with a far-reaching roboport, a long-range radar and solar decks that power a nearby grid.
 - **Barracks.** A 3x3 military bunker that trains soldiers like an assembler trains items. It needs no power, heals nearby soldiers, and plays a door animation when a new tank rolls out.
 - **RTS controls.** Drag-select with the command tool, alt-drag to move or attack, and use **Ctrl + 1–9** / **Alt + 1–9** to assign and recall up to nine divisions.
 - **Patrol routes.** Draw a waypoint loop for a division. It spreads out over the area the route encloses instead of walking it in single file.
@@ -45,6 +46,17 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 - Your normal weapon research applies: bullet damage for carriers, cannon research for siege tanks, and flamethrower research for flame tanks.
 - The siege tank outranges every worm, including behemoths.
 - The flame tank has 90% fire resistance, and its flames leave no fires on the ground.
+
+### Mobile headquarters
+
+Research **Mobile headquarters** (automation to utility science), then choose **Build Mobile Headquarters** in a barracks. It costs 2,000 steel, 500 gears, 200 electric engines, 200 processing units, 200 solar panels, 200 accumulators, 20 roboports and 20 radars, and takes 10 minutes.
+
+- **Body:** about 9 by 14 tiles, 400 HP, one-sixth of a carrier's speed. It has no weapon and never fights back, so escort it.
+- **Healing:** 20 HP per second to every soldier within 24 tiles, also while it drives.
+- **Camp:** when it parks, it sets up a roboport with 25 times the normal reach (625-tile logistics, 1,375-tile construction), a radar that keeps 8 chunks around it live and scans out to 32, 12 MW of solar decks and a 1 GJ battery. The camp stays where it was while the headquarters drives, and moves to it when it parks again.
+- **Power:** a camp within 12 tiles of one of your electric poles wires itself to that pole, so the grid shares its solar power and battery. It never links two grids.
+- **Robots:** open the headquarters to put construction and logistic robots and repair packs into its roboport. Robots build from your logistic network like any roboport's. If the headquarters is destroyed, its docked robots and repair packs drop on the ground.
+- **Orders:** select it with the command tool and move it or give it a patrol route like any soldier. An attack order moves it to the area. Scouting and escort formations leave it where it is.
 
 ---
 
@@ -103,6 +115,8 @@ All of these are map settings and can be changed during a game (*Settings → Mo
 Tank Squads soldiers are native `unit` entities, the same type as biters. Movement, pathfinding, targeting and damage run in the engine's C++. The mod's scripts only react to events and run one light sweep per second, spread across ten slices. There is no `on_tick` handler.
 
 In testing, 200 carriers in constant combat cost about **0.01 ms per tick** of script time.
+
+A mobile headquarters' camp moves only when it parks, because the engine takes a few milliseconds to move a roboport with such a large reach. Its once-a-second sweep is otherwise light.
 
 ---
 

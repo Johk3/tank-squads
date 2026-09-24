@@ -12,6 +12,7 @@ local escort_gui = require("scripts.escort_gui")
 local barracks_gui = require('scripts.barracks_gui')
 local config = require("scripts.config")
 local vision = require("scripts.vision")
+local headquarters = require("scripts.headquarters")
 
 local function on_built(event)
   local entity = event.entity
@@ -19,6 +20,8 @@ local function on_built(event)
     barracks.register(entity)
   elseif entity and entity.valid and names.soldier_set[entity.name] then
     weapons.register(entity)
+  elseif entity and entity.valid and entity.name == names.headquarters then
+    headquarters.register(entity)
   end
 end
 
@@ -30,6 +33,12 @@ for _, name in ipairs(names.soldier_names) do
   soldier_filters[#soldier_filters + 1] = {filter = "name", name = name}
   filters[#filters + 1] = {filter = "name", name = name}
 end
+filters[#filters + 1] = {filter = "name", name = names.headquarters}
+local unit_filters = {{filter = "name", name = names.headquarters}}
+for _, filter in ipairs(soldier_filters) do unit_filters[#unit_filters + 1] = filter end
+local clone_filters = {}
+for _, filter in ipairs(filters) do clone_filters[#clone_filters + 1] = filter end
+for _, name in ipairs(headquarters.HELPER_NAMES) do clone_filters[#clone_filters + 1] = {filter = "name", name = name} end
 
 script.on_event(defines.events.on_built_entity, on_built, filters)
 script.on_event(defines.events.on_robot_built_entity, on_built, filters)
@@ -51,11 +60,19 @@ script.on_event(defines.events.script_raised_destroy, function(event)
   local entity = event.entity
   if entity and entity.valid and names.soldier_set[entity.name] then
     weapons.unregister(entity.unit_number)
+  elseif entity and entity.valid and entity.name == names.headquarters then
+    headquarters.unregister(entity.unit_number)
   end
-end, soldier_filters)
+end, unit_filters)
 script.on_event(defines.events.on_entity_cloned, function(event)
-  on_built{entity = event.destination}
-end, filters)
+  local entity = event.destination
+  -- A cloned headquarters builds its own helpers, so copied helpers go.
+  if entity and entity.valid and headquarters.is_helper(entity.name) then
+    entity.destroy()
+    return
+  end
+  on_built{entity = entity}
+end, clone_filters)
 
 local function clear_player(event)
   barracks_gui.close(event)
@@ -91,6 +108,7 @@ script.on_configuration_changed(function()
       weapons.register(entity)
     end
   end
+  headquarters.reconcile()
   divisions.reconcile_ownership()
   divisions.refresh()
   -- Upgrades and changed defaults re-space defensive rings and restart
@@ -122,6 +140,11 @@ script.on_event(defines.events.on_entity_died, function(event)
     -- corpse) right before it dies.
     divisions.forget(entity.unit_number)
     patrol.forget(entity.unit_number)
+  elseif entity.name == names.headquarters then
+    headquarters.unregister(entity.unit_number)
+    -- Same order as for soldiers above.
+    divisions.forget(entity.unit_number)
+    patrol.forget(entity.unit_number)
   end
 end, filters)
 
@@ -129,6 +152,7 @@ script.on_event(defines.events.on_ai_command_completed, function(event)
   -- A finished distraction (a fight on the way) is reported on its own; the
   -- engine then resumes the original command, whose completion follows.
   if event.was_distracted then return end
+  headquarters.on_command_completed(event.unit_number)
   if combat.on_command_completed(event.unit_number, event.result) then return end
   if scout.on_command_completed(event.unit_number, event.result) then return end
   if escort.on_command_completed(event.unit_number, event.result) then return end
@@ -168,6 +192,17 @@ script.on_event(defines.events.on_gui_click, function(event)
 end)
 
 script.on_event(defines.events.on_gui_opened, barracks_gui.open)
+
+-- A unit has no window of its own. Opening the headquarters opens its
+-- roboport, which holds its robots and repair packs.
+script.on_event("tank-squad-open-headquarters", function(event)
+  local player = game.get_player(event.player_index)
+  local selected = player and player.selected
+  if not (selected and selected.valid and selected.name == names.headquarters) then return end
+  if selected.force ~= player.force then return end
+  local roboport = headquarters.roboport(selected)
+  if roboport then player.opened = roboport end
+end)
 script.on_event(defines.events.on_gui_closed, barracks_gui.close)
 
 local function set_patrol_mode(player_index, value)
@@ -243,6 +278,7 @@ script.on_nth_tick(PHASE_TICKS, function(event)
   escort.tick(phase)
   vision.tick(phase, divisions.PHASES)
   weapons.tick(phase, divisions.PHASES)
+  headquarters.tick(phase, divisions.PHASES)
   if phase ~= 0 then return end
   escort_gui.update_wards(escort.wards())
   for player_index in pairs(storage.divisions or {}) do
@@ -296,6 +332,7 @@ remote.add_interface("tank-squads", {
   escort_dismiss = function(ward, owner, n) return escort.dismiss(ward, owner, n) end,
   escort_tick = function() escort.tick() end,
   vision_tick = function() vision.tick(nil, divisions.PHASES) end,
+  headquarters_tick = function() headquarters.tick(nil, divisions.PHASES) end,
   escort_state = function(owner, n)
     local state = divisions.record(owner, n).escort
     if not state then return nil end

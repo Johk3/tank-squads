@@ -28,7 +28,8 @@ M.LEG_TIMEOUT = 3 * 3600
 local function members_on_surface(player_index, n, surface_index)
   local out = {}
   for _, e in ipairs(divisions.cached(player_index, n)) do
-    if e.valid and e.surface_index == surface_index then out[#out + 1] = e end
+    -- The unarmed headquarters takes no part in escort formations.
+    if e.valid and e.surface_index == surface_index and e.name ~= names.headquarters then out[#out + 1] = e end
   end
   return out
 end
@@ -518,7 +519,7 @@ end
 -- ring re-spaces once on the next sweep instead of once per recruit.
 function M.join(record, soldier)
   local state = record.mode == "escort" and record.escort
-  if not state or soldier.surface_index ~= state.surface_index then return false end
+  if not state or soldier.surface_index ~= state.surface_index or soldier.name == names.headquarters then return false end
   if state.formation == "defensive" then
     state.members_dirty = true
   elseif state.assault then

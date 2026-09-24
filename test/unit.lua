@@ -846,21 +846,32 @@ test("entity events are filtered to the mod's own entities", function()
   dofile("control.lua")
   assert(handlers.on_entity_spawned == nil, "every biter spawn reaches Lua")
   local expected = {[names.barracks] = true}
-  for _, name in ipairs(names.soldier_names) do expected[name] = true end
-  for _, event in ipairs({"on_built_entity", "on_robot_built_entity", "script_raised_built",
-      "script_raised_revive", "on_entity_cloned", "on_entity_died"}) do
+  for _, name in ipairs(names.unit_names) do expected[name] = true end
+  local helpers = {}
+  for _, name in ipairs(require("scripts.headquarters").HELPER_NAMES) do helpers[name] = true end
+  local function check(event, allowed)
     local filters = assert(event_filters[event], event .. " is unfiltered")
     local seen = {}
     for _, f in ipairs(filters) do
-      assert(f.filter == "name" and expected[f.name] and not f.mode, event .. " has an unexpected filter")
+      assert(f.filter == "name" and allowed[f.name] and not f.mode, event .. " has an unexpected filter")
       seen[f.name] = true
     end
-    for name in pairs(expected) do assert(seen[name], event .. " misses " .. name) end
+    for name in pairs(allowed) do assert(seen[name], event .. " misses " .. name) end
   end
-  for _, event in ipairs({"on_entity_damaged", "script_raised_destroy"}) do
-    local filters = assert(event_filters[event], event .. " is unfiltered")
-    assert(#filters == #names.soldier_names, event .. " is not limited to soldiers")
+  for _, event in ipairs({"on_built_entity", "on_robot_built_entity", "script_raised_built",
+      "script_raised_revive", "on_entity_died"}) do
+    check(event, expected)
   end
+  -- Clones of headquarters helpers are removed; a cloned headquarters builds its own.
+  local cloned = {}
+  for name in pairs(expected) do cloned[name] = true end
+  for name in pairs(helpers) do cloned[name] = true end
+  check("on_entity_cloned", cloned)
+  local units = {}
+  for _, name in ipairs(names.unit_names) do units[name] = true end
+  check("script_raised_destroy", units)
+  local filters = assert(event_filters.on_entity_damaged, "on_entity_damaged is unfiltered")
+  assert(#filters == #names.soldier_names, "on_entity_damaged is not limited to soldiers")
 end)
 
 test("the one-second sweep visits each division and barracks once, spread over the second", function()
@@ -1100,5 +1111,6 @@ require('test.assault'){test = test, soldier = soldier, building = building, gui
   handlers = function() return handlers end}
 require('test.scout_geometry'){test = test}
 require('test.scout_teams'){test = test, soldier = soldier, building = building}
+require('test.headquarters'){test = test, soldier = soldier}
 print(string.format("%d passed, %d failed", passed, failed))
 assert(failed == 0, "regression tests failed")
