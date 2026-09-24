@@ -179,7 +179,9 @@ end
 function M.members_changed(player_index, n)
   local record = M.record(player_index, n)
   if #record.members == 0 and not M.is_reinforced(record) then M.clear(player_index, n); return end
-  if record.scout then record.scout.target = nil end
+  -- Scout teams drop departed soldiers on their next sweep and take in new
+  -- ones as recruits.
+  if record.scout then record.scout.roster_dirty = true end
   for _, fn in ipairs(listeners) do fn(player_index, n) end
 end
 
@@ -226,6 +228,8 @@ local function fill(player_index, n, entities)
   end
   detach(player_index, seen, n)
   replace_members(player_index, n, record, ids)
+  -- A player assignment is a new division: scouting deals fresh teams.
+  if record.scout then record.scout.teams, record.scout.team_of = nil, nil end
   invalidate_live(player_index, n)
   M.members_changed(player_index, n)
   M.set_selected(player_index, n)

@@ -289,7 +289,7 @@ remote.add_interface("tank-squads", {
   scout_tick = function() return scout.tick() end,
   scout_target = function(player_index, n)
     local state = divisions.record(player_index, n).scout
-    return state and state.target or nil
+    return state and scout.target(state) or nil
   end,
   escort_start = function(owner, n, ward, formation) return escort.start(owner, n, ward, formation) end,
   escort_stop = function(owner, n) return escort.stop(owner, n) end,

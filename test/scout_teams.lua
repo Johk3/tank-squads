@@ -187,4 +187,96 @@ return function(ctx)
     teams.form(state, list)
     teams.on_command_completed(state, 99999, fail())
   end)
+
+  local function scouting(kinds)
+    local list = squad(kinds)
+    divisions.assign(1, 1, list)
+    assert(scout.set(1, 1, true), 'scout mode did not start')
+    return list
+  end
+  local function scout_state() return divisions.record(1, 1).scout end
+
+  test('scout wiring: a mixed division forms teams on its first sweep and each hops in its sector', function()
+    scouting({'carrier', 'carrier', 'carrier', 'carrier', 'flame', 'siege'})
+    scout.tick()
+    local state = scout_state()
+    assert(state.team_count == 2 and state.surface_index == 1, 'teams not formed')
+    for id = 1, 2 do
+      local team = state.teams[id]
+      assert(team.target and team.hop, 'team ' .. id .. ' has no hop')
+      local centre = {x = team.target.x * 32 + 16, y = team.target.y * 32 + 16}
+      assert(geometry.in_sectors(team.sectors, geometry.angle(state.origin, centre)), 'team ' .. id .. ' left its sector')
+    end
+  end)
+
+  test('scout wiring: the chunk search spends at most the division budget per sweep', function()
+    local kinds = {}
+    for i = 1, 12 do kinds[i] = 'carrier' end
+    scouting(kinds)
+    local force = game.players[1].force
+    force.chart(nil, {{x = -20 * 32, y = -20 * 32}, {x = 20 * 32 + 31, y = 20 * 32 + 31}})
+    local calls, real = 0, force.is_chunk_charted
+    force.is_chunk_charted = function(s, chunk) calls = calls + 1; return real(s, chunk) end
+    scout.tick()
+    assert(scout_state().team_count == 4, 'expected 4 teams')
+    assert(calls <= scout.CHUNK_BUDGET, 'the search asked ' .. calls .. ' chunks in one sweep')
+    assert(calls > 0, 'no team searched')
+  end)
+
+  test('scout wiring: a recruit joins the smallest team', function()
+    local list = scouting({'carrier', 'carrier', 'carrier', 'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    local state = scout_state()
+    local victim = state.teams[1].members[1]
+    for _, e in ipairs(list) do if e.unit_number == victim then e.valid = false end end
+    divisions.forget(victim)
+    scout.tick()
+    local recruit = tank('carrier', 0, 0)
+    divisions.add_member(1, 1, recruit.unit_number, recruit)
+    assert(scout.join(divisions.record(1, 1), recruit), 'scout refused the recruit')
+    assert(state.team_of[recruit.unit_number] == 1, 'recruit did not join the smaller team')
+  end)
+
+  test('scout wiring: a player assignment re-forms the teams', function()
+    local list = scouting({'carrier', 'carrier', 'carrier', 'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    assert(scout_state().team_count == 2)
+    for _ = 1, 3 do list[#list + 1] = tank('carrier', 0, 0) end
+    divisions.assign(1, 1, list)
+    assert(scout_state().teams == nil, 'assignment kept the old teams')
+    scout.tick()
+    assert(scout_state().team_count == 3, 'teams not re-formed for 9 soldiers')
+  end)
+
+  test('scout wiring: a save from before teams forms teams on its first sweep', function()
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    divisions.assign(1, 1, list)
+    local record = divisions.record(1, 1)
+    record.mode, record.scout = 'scout', {ring = 3, offset = 5, target = {x = 4, y = 0}, surface_index = 1}
+    scout.tick()
+    local state = record.scout
+    assert(state.teams and state.team_count == 1 and state.ring == nil and state.offset == nil, 'old state not migrated')
+    assert(scout.on_command_completed(list[1].unit_number, defines.behavior_result.success))
+  end)
+
+  test('scout wiring: members on another surface get no team and no command', function()
+    local a, b = tank('carrier', 0, 0), soldier(nil, {index = 2}, 10000, 10000)
+    divisions.assign(1, 1, {a, b})
+    scout.set(1, 1, true)
+    scout.tick()
+    local state = scout_state()
+    assert(state.team_of[a.unit_number] and not state.team_of[b.unit_number], 'other-surface soldier got a team')
+    assert(b.command == nil, 'other-surface soldier got a command')
+  end)
+
+  test('scout wiring: every team blocked ends scouting with the exhausted message', function()
+    local printed
+    game.get_player(1).print = function(message) printed = message end
+    scouting({'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    scout_state().teams[1].blocked = true
+    scout.tick()
+    assert(divisions.record(1, 1).mode == 'idle' and divisions.record(1, 1).scout == nil, 'blocked division kept scouting')
+    assert(printed and printed[1] == 'tank-squads.scout-exhausted', 'no exhausted message')
+  end)
 end

@@ -547,7 +547,7 @@ test("scout chunk search is bounded per sweep and resumes where it stopped", fun
   local tested1 = 0
   for _ in pairs(seen) do tested1 = tested1 + 1 end
   assert(tested1 <= scout.CHUNK_BUDGET, "scout tested " .. tested1 .. " chunks in one sweep")
-  local state = divisions.record(1, 1).scout
+  local state = divisions.record(1, 1).scout.teams[1]
   assert(state and state.ring and state.ring > 1, "scout did not record where it stopped")
   assert(state.offset ~= nil, "scout did not record an offset to resume from")
   local ring1, offset1 = state.ring, state.offset
@@ -555,7 +555,7 @@ test("scout chunk search is bounded per sweep and resumes where it stopped", fun
   local tested2 = 0
   for _ in pairs(seen) do tested2 = tested2 + 1 end
   assert(tested2 > tested1, "a second sweep made no forward progress")
-  local state2 = divisions.record(1, 1).scout
+  local state2 = divisions.record(1, 1).scout.teams[1]
   assert(state2.ring > ring1 or (state2.ring == ring1 and state2.offset > offset1),
     "scout did not resume past the ring and offset it stopped at")
 end)
@@ -608,8 +608,12 @@ test("scout completion storms defer charting and orders to the sweep", function(
   scout.tick()
   local calls = 0
   players[1].force.chart = function() calls = calls + 1 end
-  for i = 1, 100 do scout.on_command_completed(a.unit_number) end
-  assert(calls == 0, "completion events trigger unbounded chart work")
+  local order = a.command
+  for i = 1, 100 do
+    scout.on_command_completed(a.unit_number)
+    scout.on_command_completed(b.unit_number)
+  end
+  assert(calls == 0 and a.command == order, "completion events trigger chart work or orders")
   scout.tick()
   assert(calls == 1, "sweep failed to resume scouting")
 end)
@@ -963,12 +967,14 @@ test("review: failed scout destination is skipped", function()
   divisions.assign(1, 1, {a})
   scout.set(1, 1, true)
   scout.tick()
-  local target = divisions.record(1, 1).scout.target
-  for i=1,4 do
+  local team = divisions.record(1, 1).scout.teams[1]
+  for i = 1, 4 do
+    local target = team.target
     scout.on_command_completed(a.unit_number, defines.behavior_result.fail)
     scout.tick()
-    local next_target = divisions.record(1, 1).scout.target
-    assert(next_target.x ~= target.x or next_target.y ~= target.y, "unreachable uncharted chunk is retried indefinitely")
+    assert(team.target and (team.target.x ~= target.x or team.target.y ~= target.y),
+      "unreachable uncharted chunk is retried indefinitely")
+    assert(team.failed[target.x .. ":" .. target.y], "failed chunk was not blocked")
   end
 end)
 
@@ -1007,23 +1013,22 @@ test("scout success does not blacklist and failures expire with bounded storage"
   divisions.assign(1,1,{a})
   scout.set(1,1,true)
   scout.tick()
-  local state = divisions.record(1,1).scout
-  local first = state.target
+  local team = divisions.record(1,1).scout.teams[1]
   scout.on_command_completed(a.unit_number, defines.behavior_result.success)
-  assert(not state.failed)
   scout.tick()
+  assert(not team.failed or next(team.failed) == nil, "a successful hop blocked its target")
   for i=1,scout.FAILURE_LIMIT+10 do
-    state.target = {x=i,y=50}
+    team.target = {x=i,y=50}
     scout.on_command_completed(a.unit_number, defines.behavior_result.fail)
+    scout.tick()
     game.tick = game.tick + 1
   end
   local count = 0
-  for _ in pairs(state.failed) do count=count+1 end
-  assert(count == scout.FAILURE_LIMIT)
+  for _ in pairs(team.failed) do count=count+1 end
+  assert(count == scout.FAILURE_LIMIT, "blocked chunks grew to " .. count)
   game.tick = game.tick + scout.FAILURE_TTL
   scout.tick()
-  assert(next(state.failed) == nil)
-  assert(state.target.x == first.x and state.target.y == first.y)
+  assert(next(team.failed) == nil, "blocked chunks never expired")
 end)
 
 test("large transfers reconcile each affected patrol only once", function()

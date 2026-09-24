@@ -1,32 +1,28 @@
-local combat = require("scripts.combat")
 local divisions = require("scripts.divisions")
 local patrol = require("scripts.patrol")
+local config = require("scripts.config")
+local geometry = require("scripts.scout_geometry")
+local teams = require("scripts.scout_teams")
 
 local M = {}
 
--- Tiles charted around the division's centroid each sweep. A `unit` does not
--- lift fog of war by itself. Map vision (scripts/vision.lua) charts only two
--- chunks around each soldier and can be switched off, so scouting charts this
--- wider area itself.
-M.CHART_RADIUS = 96
--- Chunks tested per division per sweep. The search resumes at the stored ring
--- and offset on the next sweep, so per-sweep cost stays flat as the charted
--- map grows.
+-- Tiles charted around a team between hops. A `unit` does not lift fog of
+-- war by itself. Map vision (scripts/vision.lua) charts only two chunks
+-- around each soldier and can be switched off, so scouting charts this wider
+-- area itself.
+M.CHART_RADIUS = geometry.CHART_RADIUS
+-- Chunks asked of the engine per division per sweep, split between its
+-- teams. The search resumes at the stored ring and offset on the next sweep,
+-- so per-sweep cost stays flat as the charted map grows.
 M.CHUNK_BUDGET = 64
--- Rings of chunks searched before the division gives up. 32 chunks is 1024
+-- Ring steps per team per sweep. Most of a ring can lie outside a team's
+-- sector; the sector test is arithmetic, but it is bounded too.
+M.STEP_BUDGET = 512
+-- Rings of chunks searched before a team marches outward. 32 chunks is 1024
 -- tiles in each direction.
 M.MAX_RING = 32
-M.FAILURE_TTL = 60 * 60
-M.FAILURE_LIMIT = 64
-
-local function centroid(members)
-  local x, y = 0, 0
-  for _, e in pairs(members) do
-    x = x + e.position.x
-    y = y + e.position.y
-  end
-  return {x = x / #members, y = y / #members}
-end
+M.FAILURE_TTL = geometry.FAILURE_TTL
+M.FAILURE_LIMIT = geometry.FAILURE_LIMIT
 
 -- Maps i in [0, 8 * ring) onto the chunks of the square ring at that radius,
 -- walking it side by side. Deterministic, so a search can stop mid-ring and
@@ -41,45 +37,44 @@ local function ring_chunk(cx, cy, ring, i)
   return {x = cx - ring, y = cy + ring - off}
 end
 
-local function next_target(force, surface, cx, cy, state)
-  local ring = state.ring or 1
-  local offset = state.offset or 0
-  local tested = 0
+local function chunk_of(p)
+  return {x = math.floor(p.x / 32), y = math.floor(p.y / 32)}
+end
+
+-- The nearest uncharted, unblocked chunk inside the team's sectors, searched
+-- in rings around `from`. Returns the chunk; nil when the budget ran out
+-- (the search resumes next sweep); or nil, true when nothing is in reach.
+local function next_target(force, surface, state, team, from, budget)
+  team.search_centre = team.search_centre or chunk_of(from)
+  local cx, cy = team.search_centre.x, team.search_centre.y
+  local home = chunk_of(state.origin)
+  local ring, offset = team.ring or 1, team.offset or 0
+  local tested, steps = 0, 0
   while ring <= M.MAX_RING do
     local perimeter = 8 * ring
     while offset < perimeter do
-      if tested >= M.CHUNK_BUDGET then
-        state.ring, state.offset = ring, offset
+      if tested >= budget or steps >= M.STEP_BUDGET then
+        team.ring, team.offset = ring, offset
         return nil
       end
       local chunk = ring_chunk(cx, cy, ring, offset)
-      tested = tested + 1
-      offset = offset + 1
-      local blocked = state.failed and state.failed[chunk.x .. ":" .. chunk.y]
-      if not (blocked and blocked > game.tick) and not force.is_chunk_charted(surface, chunk) then
-        state.ring, state.offset = 1, 0
-        return chunk
+      offset, steps = offset + 1, steps + 1
+      if (chunk.x ~= home.x or chunk.y ~= home.y) and geometry.in_sectors(team.sectors,
+          geometry.angle(state.origin, {x = chunk.x * 32 + 16, y = chunk.y * 32 + 16})) then
+        local blocked = team.failed and team.failed[chunk.x .. ":" .. chunk.y]
+        if not (blocked and blocked > game.tick) then
+          tested = tested + 1
+          if not force.is_chunk_charted(surface, chunk) then
+            team.ring, team.offset, team.search_centre = 1, 0, nil
+            return chunk
+          end
+        end
       end
     end
-    ring = ring + 1
-    offset = 0
+    ring, offset = ring + 1, 0
   end
-  state.ring, state.offset = nil, nil
-  return nil, "exhausted"
-end
-
-local function send(members, chunk)
-  local destination = {x = chunk.x * 32 + 16, y = chunk.y * 32 + 16}
-  for _, soldier in pairs(members) do
-    combat.set_command(soldier, {
-      type = defines.command.go_to_location,
-      destination = destination,
-      radius = 8,
-      -- Scouts fight what attacks them, then the next sweep reissues the leg.
-      distraction = defines.distraction.by_enemy,
-    })
-  end
-  return destination
+  team.ring, team.offset, team.search_centre = 1, 0, nil
+  return nil, true
 end
 
 function M.set(player_index, n, enabled)
@@ -90,7 +85,8 @@ function M.set(player_index, n, enabled)
     patrol.clear(player_index, n)
     record.mode = "scout"
     record.order = nil
-    record.scout = {ring = 1, offset = 0, target = nil}
+    -- Teams form on the first sweep.
+    record.scout = {}
   elseif record.mode == "scout" then
     -- Only reset when this division is actually scouting: scout.set(false)
     -- is reachable directly (remote interface, shortcut toggle-off) even
@@ -102,92 +98,82 @@ function M.set(player_index, n, enabled)
   return enabled
 end
 
-local function drive(player_index, n, record)
-  local members = divisions.get(player_index, n)
-  if #members == 0 then
+local function drive(player_index, n, record, cfg)
+  local all = divisions.cached(player_index, n)
+  if #all == 0 then
     if divisions.is_reinforced(record) then return end
-    record.mode = "idle"
-    record.scout = nil
+    record.mode, record.scout = "idle", nil
     return
   end
-  local state = record.scout or {ring = 1, offset = 0}
+  local state = record.scout or {}
   record.scout = state
-  local leader = members[1]
-  local surface = leader.surface
-  local force = leader.force
   -- Coordinates only have meaning on one surface. Keep a scout operation on
   -- its original surface even if membership spans multiple planets.
-  state.surface_index = state.surface_index or leader.surface_index
-  local local_members = {}
-  for _, member in ipairs(members) do
-    if member.surface_index == state.surface_index then
-      local_members[#local_members + 1] = member
+  state.surface_index = state.surface_index or all[1].surface_index
+  local members, by_id = {}, {}
+  for _, e in ipairs(all) do
+    if e.valid and e.surface_index == state.surface_index then
+      members[#members + 1], by_id[e.unit_number] = e, e
     end
   end
-  members = local_members
   if #members == 0 then
     record.mode, record.scout = "idle", nil
     return
   end
-  surface = members[1].surface
-  local origin = centroid(members)
-  for key, expiry in pairs(state.failed or {}) do
-    if expiry <= game.tick then state.failed[key] = nil end
+  if not state.teams then
+    teams.form(state, members)
+  elseif state.roster_dirty then
+    teams.reconcile(state, members)
   end
-
-  force.chart(surface, {
-    {x = origin.x - M.CHART_RADIUS, y = origin.y - M.CHART_RADIUS},
-    {x = origin.x + M.CHART_RADIUS, y = origin.y + M.CHART_RADIUS},
-  })
-
-  local cx, cy = math.floor(origin.x / 32), math.floor(origin.y / 32)
-  if state.target and not force.is_chunk_charted(surface, state.target) then
-    return -- still walking to a target that is still worth reaching
+  local surface, force = members[1].surface, members[1].force
+  local budget = math.max(16, math.floor(M.CHUNK_BUDGET / state.team_count))
+  local ctx = {by_id = by_id, force = force, surface = surface, cfg = cfg,
+    search = function(team, from) return next_target(force, surface, state, team, from, budget) end}
+  for id = 1, state.team_count do
+    if state.teams[id] then teams.sweep(state, id, ctx) end
   end
-
-  local chunk, exhausted = next_target(force, surface, cx, cy, state)
-  if exhausted then
-    record.mode = "idle"
-    record.scout = nil
+  if teams.all_blocked(state) then
+    record.mode, record.scout = "idle", nil
     local player = game.get_player(player_index)
     if player then player.print({"tank-squads.scout-exhausted", n}) end
-    return
   end
-  if not chunk then return end -- budget spent; resumes next sweep
-  state.target = chunk
-  send(members, chunk)
 end
 
 function M.tick(phase)
   storage.divisions = storage.divisions or {}
+  local cfg
   for player_index, state in pairs(storage.divisions) do
     for n, record in pairs(state.slots) do
-      if record.mode == "scout" and divisions.in_phase(player_index, n, phase) then drive(player_index, n, record) end
+      if record.mode == "scout" and divisions.in_phase(player_index, n, phase) then
+        -- One settings read per sweep, shared by every scouting division.
+        cfg = cfg or config.escort()
+        drive(player_index, n, record, cfg)
+      end
     end
   end
 end
 
--- A scout that finished its leg (arrived, or finished a fight it was dragged
--- into) would otherwise stand still until its target happened to be charted.
+-- Completions update the team's hop and are acted on by the next bounded
+-- sweep, without searching any division's roster, including completions
+-- from unrelated native units.
 function M.on_command_completed(unit_number, result)
   local _, _, record = divisions.owner(unit_number)
   if not record or record.mode ~= "scout" then return false end
-  local state = record.scout
-  if state and state.target and result == defines.behavior_result.fail then
-    state.failed = state.failed or {}
-    local count, oldest_key, oldest = 0, nil, math.huge
-    for key, expiry in pairs(state.failed) do
-      count = count + 1
-      if expiry < oldest then oldest_key, oldest = key, expiry end
-    end
-    local key = state.target.x .. ":" .. state.target.y
-    if not state.failed[key] and count >= M.FAILURE_LIMIT then state.failed[oldest_key] = nil end
-    state.failed[key] = game.tick + M.FAILURE_TTL
-  end
-  if state then state.target = nil end
-  -- Coalesce completions into the next bounded sweep without searching any
-  -- division's roster, including completions from unrelated native units.
+  if record.scout then teams.on_command_completed(record.scout, unit_number, result) end
   return true
+end
+
+-- A recruit from a linked barracks joins the smallest team. Before the first
+-- sweep there are no teams yet; the recruit is then dealt with the rest.
+function M.join(record, soldier)
+  local state = record.mode == "scout" and record.scout
+  if not state then return false end
+  if state.teams and soldier.surface_index == state.surface_index then teams.join(state, soldier) end
+  return true
+end
+
+function M.target(state)
+  return state.teams and teams.target(state) or nil
 end
 
 return M

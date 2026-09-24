@@ -2,6 +2,7 @@ local divisions = require('scripts.divisions')
 local combat = require('scripts.combat')
 local escort = require('scripts.escort')
 local patrol = require('scripts.patrol')
+local scout = require('scripts.scout')
 local M = {}
 
 function M.release(b)
@@ -82,13 +83,7 @@ function M.join(b, soldier)
   -- detach survivors, or restart their combat/pathfinding commands.
   divisions.add_member(binding.player_index, binding.division, soldier.unit_number, soldier)
   if patrol.join(record, soldier) then return true end
-  if record.mode == 'scout' and record.scout and record.scout.target then
-    local chunk = record.scout.target
-    combat.set_command(soldier, {type = defines.command.go_to_location,
-      destination = {x = chunk.x * 32 + 16, y = chunk.y * 32 + 16}, radius = 8,
-      distraction = defines.distraction.by_enemy})
-    return true
-  end
+  if scout.join(record, soldier) then return true end
   if record.mode == 'escort' then return escort.join(record, soldier) end
   if record.mode == 'idle' and record.order then
     combat.set_command(soldier, record.order.command)

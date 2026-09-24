@@ -86,14 +86,18 @@ return function(ctx)
     divisions.assign(1,1,{a})
     divisions.assign(1,2,{b})
     local first,second=divisions.record(1,1),divisions.record(1,2)
-    first.mode,first.scout='scout',{target={x=1,y=1}}
-    second.mode,second.scout='scout',{target={x=2,y=2}}
+    local function hopping(e)
+      return {team_count=1,team_of={[e.unit_number]=1},teams={{members={e.unit_number},
+        hop={pending={[e.unit_number]=true},front={},failed={}}}}}
+    end
+    first.mode,first.scout='scout',hopping(a)
+    second.mode,second.scout='scout',hopping(b)
     for _,record in ipairs({first,second}) do
       setmetatable(record.members,{__pairs=function() error('completion scanned a roster') end})
     end
     assert(not scout.on_command_completed(999999,defines.behavior_result.success))
     assert(scout.on_command_completed(a.unit_number,defines.behavior_result.success))
-    assert(first.scout.target==nil and second.scout.target.x==2)
+    assert(next(first.scout.teams[1].hop.pending)==nil and second.scout.teams[1].hop.pending[b.unit_number])
     first.mode,first.escort='escort',{leg={leader=a.unit_number,command={},expires=100}}
     local slots=storage.divisions[1].slots
     setmetatable(slots,{__pairs=function() error('completion scanned divisions') end})

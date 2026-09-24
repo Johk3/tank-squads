@@ -19,7 +19,7 @@ local ok, result = pcall(function()
   if remote.call("tank-squads", "division_size", test_index, 1) < 1 then error("scout not assigned") end
   remote.call("tank-squads", "scout_set", test_index, 1, true)
   remote.call("tank-squads", "scout_tick")
-  if not storage.divisions[test_index].slots[1].scout.target then error("scout failed to issue exploration target") end
+  if not remote.call("tank-squads", "scout_target", test_index, 1) then error("scout failed to issue exploration target") end
   remote.call("tank-squads", "patrol_waypoint", test_index, 1, {x = 10, y = 10})
   remote.call("tank-squads", "patrol_waypoint", test_index, 1, {x = 20, y = 20})
   remote.call("tank-squads", "patrol_start", test_index, 1)
