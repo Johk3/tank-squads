@@ -1,0 +1,8 @@
+require("prototypes.soldier")
+require("prototypes.specialists")
+require("prototypes.barracks")
+require("prototypes.flag")
+require("prototypes.recipes")
+require("prototypes.technology")
+require("prototypes.tool")
+require("prototypes.divisions")

@@ -1,0 +1,205 @@
+---------------------------------------------------------------------------------------------------
+Version: 0.12.0
+Date: 2026-09-24
+  Features:
+    - Patrolling divisions spread out over the area their route encloses instead of walking it in single file. Each soldier walks its own lane, a copy of the route shrunk towards its centre, and the slowest tank walks the route as drawn and sets the pace.
+  Bugfixes:
+    - Defensive escorts now fight enemies inside their ring even while the protected player walks away, is dead, or is out of reach. Previously only enemies near the player were answered.
+  Optimizations:
+    - Patrol lanes are assigned only when the division's members change; every other leg reuses them without reading positions or sorting (200 soldiers: about 0.4 ms more per leg, once every few tens of seconds).
+    - A defensive escort still makes one enemy search per second while its player is near the ring, and two only when the player is far from it.
+---------------------------------------------------------------------------------------------------
+Version: 0.11.1
+Date: 2026-09-24
+  Bugfixes:
+    - Mining a barracks no longer turns its finished soldiers into unusable items in your inventory. They walk out first: a linked barracks fills its division up to the target, and the rest head for the rally point.
+  Optimizations:
+    - Offensive escorts read each candidate target's position once when picking their next target, and check blocked targets only for the nearest candidates.
+    - The escort ward panel list is built once per second instead of in every sweep slice.
+    - Gun aim and recoil checks are spread over the sweep slices instead of running for every soldier on one tick.
+    - Attack orders check for a single enemy in the dragged area instead of fetching every enemy in it.
+---------------------------------------------------------------------------------------------------
+Version: 0.11.0
+Date: 2026-09-24
+  Features:
+    - Offensive escorts with at least two tank kinds attack biter nests in stages: the division gathers outside worm range, siege tanks shell the worms first, flame tanks push in, then carriers follow. A carrier screen protects the siege line.
+    - Slow tanks are waited for, but a stuck tank cannot stall the attack. Recruits and healed soldiers join in their role, and the division roams on once the nest falls.
+  Balancing:
+    - Siege tank range increased from 40 to 52 tiles, outranging behemoth worms.
+  Optimizations:
+    - One nest search per offensive target of a mixed division. A running assault adds no entity searches and no per-tick work (10 running assaults: about 0.55 ms of script time per second, against 0.27 ms for plain offensive legs).
+---------------------------------------------------------------------------------------------------
+Version: 0.10.0
+Date: 2026-09-24
+  Features:
+    - Every soldier keeps the map live around itself, like a radar's nearby coverage, so you can watch fights, patrols and escorts from the map without a radar nearby. Each force only sees around its own soldiers.
+    - New map setting "Soldiers reveal the map" turns this off.
+  Optimizations:
+    - Each soldier's position is read once every four seconds, spread over the sweep slices, and each covered chunk is charted once per second however many soldiers see it (about 2,000 soldiers: about 0.03 ms per tick of script time).
+---------------------------------------------------------------------------------------------------
+Version: 0.9.0
+Date: 2026-09-24
+  Features:
+    - Train siege tanks and heavy flame tanks at the existing barracks. Both support mixed divisions, patrols, scouting, escorts, reinforcements and healing retreat.
+    - Siege tanks have 900 HP, a 40-tile cannon range and a massive cannon with recoil animation.
+    - Flame tanks have 2,400 HP, heavy armor, fire resistance and a short-range native flame stream that does not leave ground fires or hurt friendly units.
+    - Added custom directional hulls, animated treads, aiming weapons and inventory icons for both tanks.
+  Compatibility:
+    - Existing researched saves unlock both new recipes on upgrade. Existing carrier identifiers, recipes and combat balance are unchanged.
+    - Weapons and animations remain engine-driven; there is no per-tick Lua handler.
+---------------------------------------------------------------------------------------------------
+Version: 0.8.1
+Date: 2026-09-24
+  Changes:
+    - About every other shot draws a tracer, and impact flashes appear only near a connected player.
+  Optimizations:
+    - Build, death, clone and destroy events only reach the mod for its own barracks and soldiers; enemy spawns are no longer handled at all.
+    - A burst of recruits no longer re-checks the whole division once per recruit (20 recruits into 900 soldiers: about 86 ms to 8-19 ms per sweep).
+    - Division rosters are checked with fewer engine reads per soldier (900 soldiers with 20 linked barracks: 3.8 ms to 2.8 ms per sweep).
+    - The once-per-second sweep is spread over ten slices of 6 ticks, one per division, so large armies no longer cause a stutter every second.
+    - 1,000 firing soldiers: 2.10 ms to 1.88 ms per tick in total.
+---------------------------------------------------------------------------------------------------
+Version: 0.8.0
+Date: 2026-09-23
+  Features:
+    - Healing retreat: escorting soldiers below 35 % health walk to the nearest barracks within 1000 tiles, heal, and return at 95 %. Divisions of more than 10 soldiers send one guard with them, more than 20 send two.
+    - Escort distances and retreat thresholds are map settings that can be changed during a game.
+  Changes:
+    - Wider escort formations: defensive ring 160 tiles (was 96), threat radius 224 (was 128), offensive band 256-448 (was 192-384). Escorts follow only after the player settles more than 64 tiles away (was 32). Running escorts re-space onto the new distances after the upgrade.
+---------------------------------------------------------------------------------------------------
+Version: 0.7.2
+Date: 2026-09-23
+  Bugfixes:
+    - Fights on the way no longer count as reaching a destination: patrols stop skipping waypoints, offensive escort legs and scout targets are no longer abandoned early, and assaults keep their current target.
+  Optimizations:
+    - Sustained fire at one target only refreshes the aim, and throttled building shots skip entity reads (1,000 firing soldiers: script time per tick about 40-50% lower).
+    - Repeated damage during an active defense no longer reads the soldier's command back.
+    - Defensive escorts read each threat position once per sweep when choosing and retargeting responders.
+---------------------------------------------------------------------------------------------------
+Version: 0.7.1
+Date: 2026-09-23
+  Bugfixes:
+    - Fixed a crash when a soldier defended itself after the building it was attacking had been destroyed.
+    - Defensive escorts replace fallen responders without restarting surviving attackers.
+    - Casualties, transfers and reinforcements re-space defensive formations once on the next sweep; dead or transferred offensive leaders cannot stall the next leg.
+    - Patrols no longer request an unreachable path every tick: a failed leg waits for the next sweep, and a route whose every waypoint failed retries after 10 seconds.
+    - Starting an escort cancels the division's previous order instead of letting it run on while the ward is unavailable.
+  Optimizations:
+    - A burst of reinforcements joining a defensive escort repositions survivors once instead of once per recruit (20 recruits into 980 soldiers: 641 ms to 162 ms median).
+    - Linked barracks share a validated roster within each sweep, while still detecting casualties and enforcing the shared strength cap.
+    - Scout, escort and patrol completions use a saved soldier-to-division index instead of searching all rosters. Existing saves rebuild ownership on upgrade.
+---------------------------------------------------------------------------------------------------
+Version: 0.7.0
+Date: 2026-09-23
+  Features:
+    - Escort: dedicate a numbered division to any player on your team from the new escort shortcut.
+    - Defensive formation holds a 96-tile ring around the player and sends the nearest half to intercept enemy units within 128 tiles, then returns.
+    - Offensive formation roams 192-384 tiles from the player, assaults the nearest enemy there, and charts the map.
+    - Escorts wait while their player is away, on another surface, or beyond 1000 tiles, and re-attach once the player settles nearby.
+    - Escorted players can dismiss escorts from their own panel; owner and escorted player see escort markers on the map.
+  Changes:
+    - Escort logic runs in the existing once-per-second sweep. Orders are only reissued when the player settles in a new spot, membership changes, or a response or roaming leg starts or ends.
+---------------------------------------------------------------------------------------------------
+Version: 0.6.0
+Date: 2026-09-23
+  Features:
+    - Open a barracks to bind it to your division and set a desired strength from 1 to 1000.
+    - Linked barracks share the division target, pause training when full, and replace casualties automatically.
+    - Recruits join current patrol, scout, or manual orders without interrupting existing carriers or changing selection.
+    - Reinforced divisions retain their orders after total losses; the division panel shows current/desired strength.
+  Bugfixes:
+    - Removed the native distraction cooldown to reduce pauses between enemy encounters.
+    - Carriers interrupt building attacks to fight nearby hostile units and retaliate against attacking biters, then resume their original orders.
+    - Area assaults use individual ranged attacks instead of driving to point-blank range before firing; surviving targets are handled on command completion.
+    - Reinforcement bindings are released immediately when their player changes force or is removed.
+  Changes:
+    - Combat still uses native unit AI and native bullet damage. Threat checks run on building-shot events at most twice per second per firing carrier, plus damage events; no per-tick combat loop.
+    - Reinforcement controls use the existing once-per-second production sweep. Completed recruits remain buffered when a division is full.
+---------------------------------------------------------------------------------------------------
+Version: 0.5.1
+Date: 2026-09-23
+  Bugfixes:
+    - Reassigning units immediately reconciles patrol leaders while preserving the current route leg.
+    - Unit ownership is exclusive across players; selecting units transfers control from their previous divisions.
+    - Existing duplicate ownership is repaired deterministically when upgrading.
+    - Scouts temporarily skip failed destinations instead of repeatedly requesting the same unreachable path.
+  Optimizations:
+    - Ownership transfers scan existing membership once per selection, not once per selected unit.
+    - Failed scout destinations expire after 60 seconds and are capped at 64 entries per division.
+---------------------------------------------------------------------------------------------------
+Version: 0.5.0
+Date: 2026-09-23
+  Features:
+    - Replaced vanilla tank bodies with custom weathered tracked chaingun carriers and matching icons.
+    - Mounted chainguns face attack targets and follow them using the engine renderer.
+    - Added pronounced glowing bullet tracers, impact flashes, and native gun-turret firing sounds.
+    - Enlarged carrier hulls by 50% and mounted guns by 64% from the initial artwork scale.
+  Bugfixes:
+    - Reduced native enemy reacquisition cooldown from five seconds to one second, fixing pauses between encounters.
+  Changes:
+    - Existing soldiers upgrade in place, preserving their identities, health, divisions, and commands.
+    - Health, range, cooldown, bullet damage, research bonuses, recipes, and movement speed are unchanged.
+    - Gun overlays are maintained on spawn, shot events, and the existing one-second cleanup sweep.
+---------------------------------------------------------------------------------------------------
+Version: 0.4.1
+Date: 2026-09-22
+  Bugfixes:
+    - Enlarged division map labels and kept their screen size constant when zooming out.
+    - Existing saved division labels update in place without reassignment.
+---------------------------------------------------------------------------------------------------
+Version: 0.4.0
+Date: 2026-09-22
+  Features:
+    - A division panel shows soldier counts, current keybindings, modes, and selected division.
+    - Click a division in the panel to select it; hover for its assignment keybinding.
+    - Coloured division numbers follow a representative soldier on each surface's map.
+    - Patrol routes appear on the map with division and waypoint numbers, visible only to their owner.
+  Bugfixes:
+    - Fixed the scout crash caused by reading a nonexistent LuaEntity property.
+    - Manual move and attack orders now cancel scouting.
+    - Scouting no longer mixes coordinates or commands across surfaces.
+    - Scout completion events defer charting and orders to the bounded once-per-second sweep.
+    - Empty divisions remove abandoned routes and map labels.
+    - The scout shortcut reflects the currently selected division.
+  Changes:
+    - Requires Factorio 2.0.56 or newer for map rendering.
+---------------------------------------------------------------------------------------------------
+Version: 0.3.0
+Date: 2026-09-22
+  Features:
+    - The barracks is a crafting machine: pick a soldier recipe and watch the progress bar.
+    - Divisions 1-9. CONTROL + number assigns the current selection, ALT + number selects it back.
+    - Each division carries its own patrol route, drawn on the ground when the division is selected.
+    - Scout mode sends a division out to explore uncharted map on its own.
+  Changes:
+    - A barracks no longer picks the ammunition tier by itself. Set its recipe once, like any assembler.
+    - Blocked deployment now leaves the finished soldier in the machine's output instead of waiting.
+    - A soldier belongs to at most one division.
+    - Upgrading from 0.2.0 keeps your barracks in place, but empties them: set each one's recipe
+      and restock it. Anything left in a 0.2.0 barracks when you upgrade is lost.
+  Bugfixes:
+    - The barracks footprint is declared as 3x3 rather than inferred from its collision box.
+---------------------------------------------------------------------------------------------------
+Version: 0.2.0
+Date: 2026-09-22
+  Features:
+    - Industrial bunker barracks with training lights and a deployment door animation.
+    - Persistent selection rings visible only to the selecting player.
+  Changes:
+    - Barracks now occupy 3x3 tiles; cramped layouts from 0.1.0 may need rebuilding.
+  Bugfixes:
+    - Explicit move and attack orders replace old patrol routes.
+    - Patrol routes cannot mix surfaces or command soldiers on another surface.
+    - Players can only select and command soldiers belonging to their own force.
+    - Blocked deployment preserves completed training without spending materials.
+    - Barracks healing respects its circular radius and maximum soldier health.
+    - Cloned and script-revived barracks participate in production and healing.
+    - Duplicate registration no longer doubles barracks production.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.0
+Date: 2026-09-21
+  Features:
+    - Tank soldiers built at a barracks, automatically loaded with the best magazine available.
+    - Squad selection, move and attack orders through a command tool.
+    - Patrol routes.
+    - Barracks heal nearby soldiers.
