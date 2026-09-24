@@ -12,10 +12,10 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 - **Barracks.** A 3x3 military bunker that trains soldiers like an assembler trains items. It needs no power, heals nearby soldiers, and plays a door animation when a new tank rolls out.
 - **RTS controls.** Drag-select with the command tool, alt-drag to move or attack, and use **Ctrl + 1–9** / **Alt + 1–9** to assign and recall up to nine divisions.
 - **Patrol routes.** Draw a waypoint loop for a division. It spreads out over the area the route encloses instead of walking it in single file.
-- **Scout mode.** A division drives to the nearest uncharted chunk, reveals the map around itself, and keeps going until everything within reach is explored.
+- **Scout mode.** A division splits into up to four teams that each explore their own direction. Flame tanks lead, carriers follow and siege tanks cover them from 30 tiles back. Teams keep pushing outward until water or cliffs stop them.
 - **Escorts.** Assign a division to any player on your team, as a **defensive** ring around them or an **offensive** roaming band that clears everything it finds.
 - **Nest assaults.** Mixed offensive divisions attack biter nests in stages. Siege tanks shell the worms from out of range, flame tanks push in, and carriers follow.
-- **Healing retreat.** Badly damaged escort soldiers drive back to the nearest barracks in guarded convoys, heal, and return to their post.
+- **Healing retreat.** Badly damaged escort and scout soldiers drive back to the nearest barracks in guarded convoys, heal, and return to their post. A scout team that takes too much damage pulls back together.
 - **Automatic reinforcements.** Link a barracks to a division and set a target strength. It replaces losses automatically and pauses when the division is full.
 - **Map vision.** Soldiers keep the map live around themselves, so you can watch fights from the map view without radars.
 - **Multiplayer ready.** Selections, divisions, route overlays and labels are private to each player. Everything is per force.
@@ -73,6 +73,16 @@ All keys can be rebound in the controls menu. Each soldier belongs to one divisi
 - The escort only relocates once the player has stopped and moved more than 64 tiles, so it never chases a train.
 - Soldiers below 35% health retreat to a barracks within 1,000 tiles and come back at 95%.
 - The escorted player can dismiss the escort at any time.
+
+---
+
+## Scouting in detail
+
+- **Teams:** one team per three soldiers, at most four. A bigger division makes bigger teams. Each kind of tank is spread evenly, and every team gets at least one flame tank or carrier to screen its siege tanks.
+- **Directions:** the teams split the compass from where scouting started, so each explores its own slice. Inside its slice a team always heads for the nearest uncharted chunk.
+- **Formation:** flame tanks at the front, carriers in a V behind them, and siege tanks 30 tiles back, where their cannons still reach past the front. Teams move in 32-tile hops and wait for every tank before the next hop.
+- **Healing:** a tank below 35% health drives to a barracks within 1,000 tiles and comes back at 95%, with guards in teams of more than 10. A team below half its total health, or down to half its tanks, drives back together and returns when every tank is healed.
+- **Far out:** when everything nearby is charted, a team marches straight outward until it finds fog again. A team blocked by water or cliffs, or left with only siege tanks, joins the nearest team. Scouting stops only when every direction is blocked.
 
 ---
 
