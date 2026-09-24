@@ -35,6 +35,8 @@ function M.register(entity)
   record = {entity = entity, gun = gun, aim_timeout = visual and visual.aim_timeout or 60,
     recoil_ticks = visual and visual.recoil_ticks}
   storage.weapons[entity.unit_number] = record
+  local index = storage.weapon_slices
+  if index then index.slices[entity.unit_number % index.phases][entity.unit_number] = true end
   return record
 end
 
@@ -45,6 +47,8 @@ function M.unregister(unit_number)
   if not record then return end
   if record.gun.valid then record.gun.destroy() end
   storage.weapons[unit_number] = nil
+  local index = storage.weapon_slices
+  if index then index.slices[unit_number % index.phases][unit_number] = nil end
 end
 
 -- The weapon's native attack supplies the actual target. Once assigned, the
@@ -105,11 +109,34 @@ local function check(id, record)
   end
 end
 
+-- storage.weapon_slices = {phases, slices}, where slices[s] holds the unit
+-- numbers of the soldiers checked in slice s, so a slice visits only its own
+-- soldiers instead of the whole registry. Built from storage.weapons, so saves
+-- from before it existed, and a changed slice count, rebuild it once.
+local function slice_index(phases)
+  local index = storage.weapon_slices
+  if index and index.phases == phases then return index end
+  local slices = {}
+  for s = 0, phases - 1 do slices[s] = {} end
+  for id in pairs(storage.weapons or {}) do slices[id % phases][id] = true end
+  index = {phases = phases, slices = slices}
+  storage.weapon_slices = index
+  return index
+end
+
 -- Each soldier is checked in the slice its unit number falls in, so a large
 -- army's guns are spread over the second. A nil phase checks every soldier.
 function M.tick(phase, phases)
-  for id, record in pairs(storage.weapons or {}) do
-    if phase == nil or id % phases == phase then check(id, record) end
+  if phase == nil then
+    for id, record in pairs(storage.weapons or {}) do check(id, record) end
+    return
+  end
+  local slice = slice_index(phases).slices[phase]
+  local registry = storage.weapons or {}
+  for id in pairs(slice) do
+    local record = registry[id]
+    -- check() may unregister this soldier, which only clears its own entry.
+    if record then check(id, record) else slice[id] = nil end
   end
 end
 

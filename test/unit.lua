@@ -803,6 +803,45 @@ test("the one-second sweep checks each soldier's gun once, spread over the slice
   assert(largest <= math.ceil(20 / slices), "one slice checked " .. largest .. " of 20 guns")
 end)
 
+test("a sweep slice visits only its own soldiers' guns", function()
+  dofile("control.lua")
+  local weapons = require("scripts.weapons")
+  settings.global[require("scripts.config").VISION].value = false
+  local sweep = handlers.nth_tick
+  local function second()
+    for tick = 0, 60 - sweep.period, sweep.period do
+      game.tick = tick
+      sweep.handler{tick = tick}
+    end
+  end
+  local soldiers, reads = {}, {}
+  for i = 1, 20 do
+    soldiers[i] = soldier()
+    weapons.register(soldiers[i])
+  end
+  -- Saves from before the slice index build it on their first sweep.
+  second()
+  local scans = 0
+  setmetatable(storage.weapons, {__pairs = function(t)
+    scans = scans + 1
+    return next, t, nil
+  end})
+  local late = soldier()
+  weapons.register(late)
+  for i, e in ipairs(soldiers) do reads[i] = count_reads(e, "valid") end
+  local late_reads = count_reads(late, "valid")
+  second()
+  assert(scans == 0, "a slice walked the whole gun registry " .. scans .. " times")
+  for i, r in ipairs(reads) do assert(r.n == 1, "soldier " .. i .. " checked " .. r.n .. " times in one second") end
+  assert(late_reads.n == 1, "a soldier registered after the index was built is never checked")
+  soldiers[1].valid = false
+  second()
+  assert(storage.weapons[soldiers[1].unit_number] == nil, "destroyed soldier kept its gun")
+  local index = storage.weapon_slices
+  assert(index.slices[soldiers[1].unit_number % index.phases][soldiers[1].unit_number] == nil,
+    "destroyed soldier stays in its slice")
+end)
+
 test("entity events are filtered to the mod's own entities", function()
   dofile("control.lua")
   assert(handlers.on_entity_spawned == nil, "every biter spawn reaches Lua")
