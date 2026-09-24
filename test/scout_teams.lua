@@ -367,8 +367,9 @@ return function(ctx)
     end
     injured.health = 60
     kill(others[1])
+    kill(others[2])
     scout.tick()
-    assert(state.teams[2] == nil, 'team with one present soldier did not merge')
+    assert(state.teams[2] == nil, 'team with one living soldier did not merge')
     assert(retreat.is_away(state.teams[1], injured.unit_number), 'the injured soldier lost its convoy in the merge')
   end)
 
@@ -502,5 +503,84 @@ return function(ctx)
     assert(scout.on_command_completed(list[3].unit_number, defines.behavior_result.success))
     scout.tick()
     assert(scout_state().team_of[list[3].unit_number], 'fresh teams left out the returning soldier')
+  end)
+
+  test('scout review: a blocked team with no host left does not crash the sweep', function()
+    game.get_player(1).print = function() end
+    local list = scouting({'carrier', 'carrier', 'carrier', 'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    local state = scout_state()
+    local one, two = state.teams[1], state.teams[2]
+    two.blocked, two.hop, two.target, two.march = true, nil, nil, 6
+    one.target, one.found, one.march, one.failures = nil, nil, 5, 4
+    for _, e in ipairs(list) do
+      if in_team(state, 1, e) then scout.on_command_completed(e.unit_number, defines.behavior_result.fail) end
+    end
+    scout.tick()
+    assert(divisions.record(1, 1).mode == 'idle', 'every team blocked but the division kept scouting')
+  end)
+
+  test('scout review: soldiers away healing do not merge their team away', function()
+    depot(100, 0)
+    local list = scouting({'carrier', 'carrier', 'carrier', 'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    local state = scout_state()
+    local hurt, team_two = 0, {}
+    for _, e in ipairs(list) do
+      if in_team(state, 2, e) then
+        team_two[#team_two + 1] = e
+        if hurt < 2 then e.health, hurt = 100, hurt + 1 end
+      end
+    end
+    scout.tick()
+    assert(state.teams[2], 'a team merged away while two of its soldiers were healing')
+    scout.tick()
+    assert(state.teams[2], 'the team merged on a later sweep')
+    for _, e in ipairs(team_two) do e.health = 400 end
+    scout.tick()
+    local team = state.teams[2]
+    assert(team and team.hop, 'team did not resume')
+    for unit in pairs(team.hop.pending) do scout.on_command_completed(unit, defines.behavior_result.success) end
+    scout.tick()
+    for _, e in ipairs(team_two) do assert(team.hop.pending[e.unit_number], 'a healed soldier is missing from the hop') end
+  end)
+
+  test('scout review: a team whose every nearby chunk is unreachable marches instead of retrying forever', function()
+    local list = scouting({'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    local team = scout_state().teams[1]
+    for _ = 1, geometry.MARCH_ANGLES do
+      assert(team.target, 'lost the chunk target early')
+      for _, e in ipairs(list) do scout.on_command_completed(e.unit_number, defines.behavior_result.fail) end
+      scout.tick()
+    end
+    assert(team.march and not team.target and team.hop, 'team kept targeting unreachable chunks')
+    assert(not team.blocked, 'blocked before any march angle was tried')
+  end)
+
+  test('scout review: only failed march hops in a row block a team', function()
+    game.get_player(1).print = function() end
+    local list = scouting({'carrier', 'carrier', 'carrier'})
+    local force = game.players[1].force
+    force.chart(nil, {{x = -40 * 32, y = -40 * 32}, {x = 40 * 32 + 31, y = 40 * 32 + 31}})
+    local team
+    for _ = 1, 200 do
+      scout.tick()
+      team = scout_state().teams[1]
+      if team.march then break end
+    end
+    assert(team.march and team.hop, 'team never started marching')
+    local function hop(result)
+      for _, e in ipairs(list) do scout.on_command_completed(e.unit_number, result) end
+      scout.tick()
+    end
+    for _ = 1, geometry.MARCH_ANGLES - 1 do hop(defines.behavior_result.fail) end
+    local angle = team.march
+    hop(defines.behavior_result.success)
+    assert(team.march == angle, 'a successful march hop changed the angle')
+    for _ = 1, geometry.MARCH_ANGLES - 1 do hop(defines.behavior_result.fail) end
+    assert(not team.blocked, 'failures separated by a successful hop blocked the team')
+    hop(defines.behavior_result.fail)
+    assert(team.blocked or divisions.record(1, 1).mode == 'idle', 'five failed march hops in a row did not block the team')
   end)
 end

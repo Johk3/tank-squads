@@ -162,17 +162,24 @@ end
 local function finish_hop(team, ctx)
   local hop = team.hop
   team.hop = nil
+  -- Failed hops count in a row, so a success anywhere resets the count.
   if all_front_failed(hop) then
     team.last_point = hop.from
+    team.failures = (team.failures or 0) + 1
     if team.target then
       block(team, team.target)
       team.target = nil
+      -- Every chunk in reach can lie across water or cliffs, and each stays
+      -- uncharted. After MARCH_ANGLES failed hops in a row, march instead.
+      if team.failures >= geometry.MARCH_ANGLES then team.march, team.failures = team.march or 1, nil end
+    elseif team.failures >= geometry.MARCH_ANGLES then
+      team.blocked = true
     else
-      team.march = team.march + 1
-      if team.march > geometry.MARCH_ANGLES then team.blocked = true end
+      team.march = team.march % geometry.MARCH_ANGLES + 1
     end
     return
   end
+  team.failures = nil
   if team.target then
     if hop.reach or ctx.force.is_chunk_charted(ctx.surface, team.target) then team.target = nil end
   elseif team.found then
@@ -187,7 +194,7 @@ local function plan(team, present, ctx)
     if chunk then
       team.target = chunk
     elseif empty then
-      team.march = 1
+      team.march, team.failures = 1, nil
     else
       return -- budget spent; the search resumes next sweep
     end
@@ -203,7 +210,7 @@ local function has_front(members)
 end
 
 -- A team merges into the nearest team that is not blocked when it is down
--- to one soldier, has no front soldier left to screen its siege tanks, or is
+-- to one living soldier, has no front soldier left to screen its siege tanks, or is
 -- blocked. The host takes over the sector unless it is blocked, takes over
 -- its convoys, and never re-commands its own soldiers. Returns true when the
 -- team is gone.
@@ -211,7 +218,7 @@ local function merge_check(state, id, team, members, present)
   local keep
   if team.blocked then
     keep = false
-  elseif #present <= 1 or not has_front(members) then
+  elseif #members <= 1 or not has_front(members) then
     keep = true
   else
     return false
@@ -342,7 +349,10 @@ function M.sweep(state, id, ctx)
     for unit in pairs(hop.front) do if retreat.is_away(team, unit) then hop.front[unit] = nil end end
   end
   if merge_check(state, id, team, members, present) then return end
-  if #present == 0 then return end
+  -- A blocked team with no host left waits for the division to stop.
+  if team.blocked then return end
+  -- A lone soldier waits for the rest of its team to come back from healing.
+  if #present == 0 or (#present == 1 and #members > 1) then return end
   if withdraw(team, members, present, health, max_health, ctx) then return end
   if hop then
     if team.march and not team.found then
