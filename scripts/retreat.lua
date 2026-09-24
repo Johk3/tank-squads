@@ -1,7 +1,8 @@
--- Healing retreat for escorting divisions: retreating soldiers travel in
--- convoys with guards. escort.lua calls sweep() once per escort sweep with the members on
--- the escort surface. The state lives inside the escort state, so anything
--- that ends the escort drops every convoy with it.
+-- Healing retreat for escorts and scout teams: retreating soldiers travel in
+-- convoys with guards. escort.lua calls sweep() once per escort sweep with
+-- the members on the escort surface, and scout_teams.lua once per team. The
+-- state lives inside the escort or team state, so anything that ends the
+-- escort or the scouting drops every convoy with it.
 local combat = require("scripts.combat")
 
 local M = {}
@@ -60,6 +61,9 @@ local function nearest_barracks(list, position, range)
   end
   return best, best and math.sqrt(best_d)
 end
+
+M.barracks_in_reach = barracks_in_reach
+M.nearest_barracks = nearest_barracks
 
 local function send(soldier, destination)
   combat.set_command(soldier, {type = defines.command.go_to_location, destination = destination,
@@ -216,8 +220,12 @@ function M.sweep(state, members, context)
   if next(r.convoys) or next(r.cooldown) then changed = settle(r, members, context) end
   local present = without_away(r, members)
   local groups, order, list = {}, {}, nil
+  -- Summed over the soldiers that stay, for the scout team retreat check.
+  local health, max_health = 0, 0
   for _, soldier in ipairs(present) do
-    if ratio(soldier) < context.retreat then
+    local h, m = soldier.health, soldier.max_health
+    health, max_health = health + h, max_health + m
+    if h / m < context.retreat then
       local unit = soldier.unit_number
       if not r.cooldown[unit] then
         list = list or barracks_in_reach(context)
@@ -234,7 +242,7 @@ function M.sweep(state, members, context)
       end
     end
   end
-  if #order == 0 then return present, changed end
+  if #order == 0 then return present, changed, health, max_health end
   table.sort(order)
   local candidates = guard_candidates(present, context)
   local per_convoy, next_guard = guard_count(#members), 1
@@ -249,6 +257,7 @@ function M.sweep(state, members, context)
     for _, soldier in ipairs(group.injured) do
       local unit = soldier.unit_number
       convoy.injured[unit], r.away[unit] = true, id
+      health, max_health = health - soldier.health, max_health - soldier.max_health
       send(soldier, destination)
     end
     for _ = 1, per_convoy do
@@ -256,10 +265,33 @@ function M.sweep(state, members, context)
       if not entry then break end
       next_guard = next_guard + 1
       convoy.guards[entry.unit], r.away[entry.unit] = true, id
+      health, max_health = health - entry.soldier.health, max_health - entry.soldier.max_health
       send(entry.soldier, destination)
     end
   end
-  return without_away(r, members), true
+  return without_away(r, members), true, health, max_health
+end
+
+-- Moves every convoy of `from` into `into` under new ids, so a scout team
+-- that merges hands over soldiers who are away healing without calling them
+-- back. `into.retreat` is created when missing; `from` keeps none.
+function M.absorb(into, from)
+  local source = from.retreat
+  if not source then return end
+  local r = into.retreat
+  if not r then
+    r = {next_id = 1, convoys = {}, away = {}, cooldown = {}}
+    into.retreat = r
+  end
+  local ids = {}
+  for id, convoy in pairs(source.convoys) do
+    ids[id] = r.next_id
+    r.convoys[r.next_id] = convoy
+    r.next_id = r.next_id + 1
+  end
+  for unit, id in pairs(source.away) do r.away[unit] = ids[id] end
+  for unit, expiry in pairs(source.cooldown) do r.cooldown[unit] = expiry end
+  from.retreat = nil
 end
 
 -- A completion from an away soldier. Any completion re-checks its position on

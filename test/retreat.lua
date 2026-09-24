@@ -234,4 +234,54 @@ return function(ctx)
     for _, e in ipairs(members) do assert(e.command == nil, 'healthy soldier got an order') end
     assert(retreat.is_away({}, members[1].unit_number) == false)
   end)
+
+  test('retreat: a sweep returns the summed health of the soldiers that stay', function()
+    depot(100, 0)
+    local members = squad(3)
+    members[2].health = 300
+    members[3].health = 100 -- 25 %: leaves in a convoy
+    local present, _, health, max_health = retreat.sweep({}, members, context())
+    assert(#present == 2 and health == 700 and max_health == 800, 'sums ' .. tostring(health) .. '/' .. tostring(max_health))
+    present, _, health, max_health = retreat.sweep({}, squad(2), context())
+    assert(health == 800 and max_health == 800, 'healthy sums wrong')
+  end)
+
+  test('retreat: exported barracks lookup finds the nearest barracks in range', function()
+    depot(50, 0)
+    depot(300, 0)
+    local list = retreat.barracks_in_reach(context())
+    local i, distance = retreat.nearest_barracks(list, {x = 0, y = 0}, 1000)
+    assert(list[i].position.x == 50 and distance == 50, 'wrong nearest barracks')
+    assert(retreat.nearest_barracks(list, {x = 0, y = 0}, 10) == nil, 'barracks out of range found')
+  end)
+
+  test('retreat: absorbed convoys keep going and rejoin the new state', function()
+    depot(100, 0)
+    local a, b = squad(2), squad(2)
+    a[1].health, b[1].health = 60, 60
+    local from, into = {}, {}
+    local c = context()
+    retreat.sweep(from, a, c)
+    retreat.sweep(into, b, c)
+    from.retreat.cooldown[a[2].unit_number] = game.tick + 50
+    retreat.absorb(into, from)
+    assert(from.retreat == nil, 'source state kept its convoys')
+    local ids = {}
+    for id in pairs(into.retreat.convoys) do ids[#ids + 1] = id end
+    assert(#ids == 2 and ids[1] ~= ids[2], 'convoy ids collided')
+    local moved = into.retreat.away[a[1].unit_number]
+    assert(moved and into.retreat.convoys[moved].injured[a[1].unit_number], 'away mark lost its convoy')
+    assert(into.retreat.cooldown[a[2].unit_number], 'cooldown lost')
+    a[1].health = 400
+    local all = {a[1], a[2], b[1], b[2]}
+    retreat.sweep(into, all, c)
+    assert(not retreat.is_away(into, a[1].unit_number), 'healed soldier of an absorbed convoy did not rejoin')
+    local rejoined = false
+    for _, s in ipairs(c.rejoined) do if s == a[1] then rejoined = true end end
+    assert(rejoined, 'rejoin went to the wrong state')
+    retreat.absorb(into, {})
+    local empty = {}
+    retreat.absorb(empty, into)
+    assert(empty.retreat and empty.retreat.next_id >= 2, 'absorb did not create the target state')
+  end)
 end
