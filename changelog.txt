@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.16.1
+Date: 2026-09-24
+  Bugfixes:
+    - The mobile headquarters no longer has a radar. Its radar still charted far too much of the map, hiding your other divisions in fog of war. It now keeps the map live around itself like any tank, and no longer costs radars to build.
+---------------------------------------------------------------------------------------------------
 Version: 0.16.0
 Date: 2026-09-24
   Changes:

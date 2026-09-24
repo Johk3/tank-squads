@@ -64,6 +64,56 @@ return function(ctx)
     end
   end
 
+  -- A registered headquarters with its helpers made by a stub surface. The
+  -- stub makes no power coupling, so the sweep never wires a grid.
+  local function headquarters_at(x, y)
+    local surface = game.surfaces[1]
+    surface.create_entity = function(args)
+      if args.name == 'tank-squad-hq-pole' then return nil end
+      local e = soldier(nil, nil, args.position.x, args.position.y)
+      e.name = args.name
+      e.destroy = function() e.valid = false end
+      e.get_inventory = function() return nil end
+      return e
+    end
+    local hq = soldier(nil, nil, x, y)
+    hq.name = 'tank-squad-headquarters'
+    require('scripts.headquarters').register(hq)
+    return hq
+  end
+
+  test('vision: a headquarters charts the chunks around it like a soldier', function()
+    local force = setup()
+    local _, charted, clear = watch(force)
+    sweep(1)
+    local hq = headquarters_at(16, 16)
+    sweep(vision.READ_SECONDS)
+    clear()
+    sweep(1)
+    assert_area(charted, 0, 0)
+    local side = 2 * vision.RADIUS + 1
+    assert(count(charted) == side * side, 'charted ' .. count(charted) .. ' chunks')
+    require('scripts.headquarters').unregister(hq.unit_number)
+    sweep(vision.READ_SECONDS)
+    clear()
+    sweep(1)
+    assert(count(charted) == 0, 'a removed headquarters kept charting')
+  end)
+
+  test('vision: switching vision off and on keeps charting around a headquarters', function()
+    local force = setup()
+    local _, charted, clear = watch(force)
+    headquarters_at(16, 16)
+    sweep(1)
+    settings.global[require('scripts.config').VISION] = {value = false}
+    sweep(1)
+    settings.global[require('scripts.config').VISION] = {value = true}
+    sweep(vision.READ_SECONDS)
+    clear()
+    sweep(1)
+    assert_area(charted, 0, 0)
+  end)
+
   test('vision: every soldier charts the chunks around it once per second', function()
     local force = setup()
     local calls, charted, clear = watch(force)

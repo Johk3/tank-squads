@@ -2,8 +2,9 @@
 -- is a native `unit`, so selection, divisions and movement orders work as for
 -- the combat units. Its services come from hidden native helper entities that
 -- scripts/headquarters.lua sets up at its camp, where it last parked: a
--- roboport, a radar, a solar panel and an accumulator on their own small
--- electric network.
+-- roboport, a solar panel and an accumulator on their own small electric
+-- network. It has no radar: it sees like a soldier (scripts/vision.lua), and
+-- the dish on its back is only drawn.
 local util = require('util')
 local copy = util.table.deepcopy
 local appearance = require('scripts.appearance')
@@ -108,20 +109,6 @@ roboport.default_available_construction_output_signal = nil
 roboport.default_total_construction_output_signal = nil
 roboport.default_roboport_count_output_signal = nil
 
-local radar = hidden(copy(data.raw.radar.radar))
-radar.name = 'tank-squad-hq-radar'
--- A little more than a base radar (3 and 14). Every radar's live area and
--- sector scans share the force's charting with the soldiers' map vision, so
--- a much larger reach starves the soldiers' charts and hides them in fog.
-radar.max_distance_of_nearby_sector_revealed = 4
-radar.max_distance_of_sector_revealed = 16
-radar.energy_usage = '3MW'
-radar.pictures = {layers = {{filename = '__core__/graphics/empty.png', width = 1, height = 1,
-  direction_count = 1}}}
-radar.working_sound = nil
-radar.connects_to_other_radars = false
-radar.radius_minimap_visualisation_color = nil
-
 local solar = hidden(copy(data.raw['solar-panel']['solar-panel']))
 solar.name = 'tank-squad-hq-solar'
 -- 200 base panels' worth of photovoltaic decks.
@@ -151,7 +138,7 @@ pole.active_picture = nil
 
 local recruit = 'tank-squad-recruit-headquarters'
 data:extend{
-  unit, roboport, radar, solar, accumulator, pole,
+  unit, roboport, solar, accumulator, pole,
   {type = 'sprite', name = 'tank-squad-hq-radar-dish',
     filename = '__tank-squads__/graphics/headquarters-radar.png', width = 1254, height = 1254,
     scale = hq.dish_scale},
@@ -168,7 +155,6 @@ data:extend{
       {type = 'item', name = 'solar-panel', amount = 40},
       {type = 'item', name = 'accumulator', amount = 40},
       {type = 'item', name = 'roboport', amount = 4},
-      {type = 'item', name = 'radar', amount = 4},
     },
     results = {{type = 'item', name = recruit, amount = 1}},
     allow_productivity = false, allow_decomposition = false},

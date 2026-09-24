@@ -1,5 +1,5 @@
 local t = storage.headquarters_test
-local HELPERS = {'tank-squad-hq-roboport','tank-squad-hq-radar','tank-squad-hq-solar','tank-squad-hq-accumulator','tank-squad-hq-pole'}
+local HELPERS = {'tank-squad-hq-roboport','tank-squad-hq-solar','tank-squad-hq-accumulator','tank-squad-hq-pole'}
 local function helpers(s, position, radius)
   return s.find_entities_filtered{name=HELPERS, position=position, radius=radius or 1}
 end
@@ -8,8 +8,7 @@ if not t then
   assert(unit.get_max_health('normal') == 400 and math.abs(unit.speed - 0.02) < 1e-6, 'wrong headquarters health or speed')
   local roboport = prototypes.entity['tank-squad-hq-roboport']
   assert(roboport.logistic_radius == 625 and roboport.construction_radius == 1375, 'roboport reach is not 25x')
-  local radar = prototypes.entity['tank-squad-hq-radar']
-  assert(radar.get_max_distance_of_nearby_sector_revealed() == 4 and radar.get_max_distance_of_sector_revealed() == 16, 'wrong radar range')
+  assert(prototypes.entity['tank-squad-hq-radar'] == nil, 'the headquarters still has a radar')
   assert(prototypes.recipe['tank-squad-train-headquarters'].category == 'tank-squad-training', 'headquarters is not built at a barracks')
   local hq_recipe = prototypes.recipe['tank-squad-train-headquarters']
   assert(hq_recipe.energy == 60, 'headquarters takes ' .. hq_recipe.energy .. ' s to build')
@@ -40,14 +39,14 @@ if not t then
   local record = assert(storage.headquarters and storage.headquarters[hq.unit_number], 'headquarters not registered')
   assert(record.dish and record.dish.valid, 'radar dish not drawn')
   local found = helpers(s, hq.position)
-  assert(#found == 5, 'expected five helpers on the headquarters, found ' .. #found)
+  assert(#found == 4, 'expected four helpers on the headquarters, found ' .. #found)
   for _, e in pairs(found) do assert(not e.destructible and e.unit_number, e.name .. ' can be damaged or has no unit number') end
   hq.commandable.set_command{type=defines.command.stop, distraction=defines.distraction.none}
   hq.teleport({0, 0})
   remote.call('tank-squads', 'headquarters_tick')
   assert(#helpers(s, {0,0}) == 0, 'helpers followed a headquarters that has not parked')
   remote.call('tank-squads', 'headquarters_tick')
-  assert(#helpers(s, {0,0}) == 5, 'helpers did not move to the parked headquarters')
+  assert(#helpers(s, {0,0}) == 4, 'helpers did not move to the parked headquarters')
   local near = s.create_entity{name='tank-squad-soldier-1', position={10,0}, force='player'}
   local far = s.create_entity{name='tank-squad-soldier-1', position={40,0}, force='player'}
   near.health, far.health = 100, 100
@@ -90,7 +89,7 @@ if not t.built then
   t.hq.teleport({60, 0})
   remote.call('tank-squads', 'headquarters_tick')
   remote.call('tank-squads', 'headquarters_tick')
-  assert(#helpers(s, {60,0}) == 5, 'helpers were not re-placed after parking')
+  assert(#helpers(s, {60,0}) == 4, 'helpers were not re-placed after parking')
   assert(record.grid == nil, 'wire kept to a pole left behind')
   return 'WAIT: robots returning after the move'
 end
@@ -110,7 +109,7 @@ remote.call('tank-squads', 'headquarters_tick')
 s.clone_area{source_area={{-8,-8},{8,8}}, destination_area={{-8,-40},{8,-24}}}
 local clones = s.find_entities_filtered{name='tank-squad-headquarters', position={0,-32}, radius=2}
 assert(#clones == 1, 'clone missing')
-assert(#helpers(s, {0,-32}) == 5, 'clone does not have exactly its own five helpers')
+assert(#helpers(s, {0,-32}) == 4, 'clone does not have exactly its own four helpers')
 assert(storage.headquarters[clones[1].unit_number].helpers.roboport.get_inventory(defines.inventory.roboport_robot).is_empty(), 'robots duplicated by cloning')
 clones[1].destroy{raise_destroy=true}
 assert(#helpers(s, {0,-32}) == 0, 'script destruction left helpers')

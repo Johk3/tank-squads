@@ -51,7 +51,9 @@ local function rebuild(phases)
   for s = 0, cycle - 1 do slices[s] = {} end
   for p = 0, phases - 1 do coverage[p] = {} end
   -- Positions are read in each soldier's own slice, not all at once here.
+  -- A headquarters sees like a soldier.
   for id, record in pairs(storage.weapons or {}) do slices[id % cycle][id] = {entity = record.entity} end
+  for id, record in pairs(storage.headquarters or {}) do slices[id % cycle][id] = {entity = record.entity} end
   storage.vision = {layout = LAYOUT, phases = phases, slices = slices, occupied = {}, coverage = coverage}
   return storage.vision
 end
@@ -113,8 +115,8 @@ local function read(state, soldier)
   occupy(state, group, key, cx, cy)
 end
 
--- Called by weapons.register and weapons.unregister, so no slice scans the
--- whole soldier registry. A new soldier is read at once, so it has vision
+-- Called by weapons.register and weapons.unregister, and by the same calls
+-- in scripts/headquarters.lua, so no slice scans the whole soldier registry. A new soldier is read at once, so it has vision
 -- from its first second.
 function M.track(entity)
   local state = storage.vision

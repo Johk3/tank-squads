@@ -1,7 +1,8 @@
 -- Mobile headquarters services. The visible unit carries no services itself:
 -- native helper entities (prototypes/headquarters.lua) do the work in the
 -- engine. This module places them at the unit's camp, couples their small
--- electric network to one nearby friendly pole and heals nearby units.
+-- electric network to one nearby friendly pole and heals nearby units. Map
+-- vision comes from scripts/vision.lua, the same as for every soldier.
 --
 -- Moving a roboport with such a large reach costs the engine a few
 -- milliseconds, so the helpers never follow a moving headquarters. They stay
@@ -10,7 +11,7 @@
 --
 -- storage.headquarters[unit_number] = {
 --   entity, force_index,
---   helpers = {roboport, radar, solar, accumulator, pole},
+--   helpers = {roboport, solar, accumulator, pole},
 --   anchor = {x, y}  - the camp, where the helpers stand
 --   last = {x, y}    - the unit's position at the previous sweep
 --   grid             - the friendly pole the network is wired to, or nil
@@ -21,6 +22,7 @@
 -- cost one nil check.
 local names = require('scripts.names')
 local appearance = require('scripts.appearance')
+local vision = require('scripts.vision')
 
 local M = {}
 
@@ -44,7 +46,6 @@ local OBSTACLES = {'tree', 'simple-entity', 'cliff'}
 
 local HELPERS = {
   roboport = 'tank-squad-hq-roboport',
-  radar = 'tank-squad-hq-radar',
   solar = 'tank-squad-hq-solar',
   accumulator = 'tank-squad-hq-accumulator',
   pole = 'tank-squad-hq-pole',
@@ -151,6 +152,7 @@ function M.register(entity)
   if record then return record end
   record = {entity = entity, force_index = entity.force_index, helpers = {}}
   storage.headquarters[entity.unit_number] = record
+  vision.track(entity)
   place(record)
   draw_dish(record)
   return record
@@ -162,6 +164,7 @@ function M.unregister(unit_number)
   local headquarters = registry()
   local record = headquarters and headquarters[unit_number]
   if not record then return end
+  vision.forget(unit_number)
   destroy_helpers(record, true)
   if record.dish and record.dish.valid then record.dish.destroy() end
   headquarters[unit_number] = nil
