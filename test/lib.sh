@@ -72,11 +72,17 @@ stop_server() {
   SERVER_PID=""
 }
 
+mod_version() {
+  python3 -c "import json; print(json.load(open('$ROOT/info.json'))['version'])"
+}
+
 # run_case <file> -> prints PASS/FAIL line, returns 0/1
 run_case() {
   local f="$1" name body out attempt
   name="$(basename "$f" .lua)"
   body="$(tr '\n' ' ' < "$f")"
+  # Cases compare against __MOD_VERSION__, so a release needs no test edits.
+  body="${body//__MOD_VERSION__/$(mod_version)}"
   # Combat tests need real engine ticks between assertions. WAIT is bounded
   # and explicit; a timeout fails rather than silently skipping the case.
   for attempt in $(seq 1 100); do
