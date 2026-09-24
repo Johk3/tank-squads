@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.13.0
+Date: 2026-09-24
+  Features:
+    - Scouting divisions split into up to four teams, one per three soldiers, that each explore their own direction. Bigger divisions make bigger teams, and every team keeps a flame tank or carrier in front of its siege tanks.
+    - Scout teams move in formation: flame tanks lead, carriers follow in a V, and siege tanks trail 30 tiles back, still in range of the front. Teams advance in 32-tile hops and wait for every tank before the next hop.
+    - Badly damaged scouts drive back to a barracks to heal in guarded convoys, and a team below half its health or down to half its tanks pulls back together.
+    - Scout teams keep pushing outward past charted land. A team blocked by water or cliffs, or left with only siege tanks, joins the nearest team, and scouting stops only when every direction is blocked.
+  Changes:
+    - The retreat health, rejoin health and barracks search range settings now apply to scouts as well as escorts.
+---------------------------------------------------------------------------------------------------
 Version: 0.12.0
 Date: 2026-09-24
   Features:
