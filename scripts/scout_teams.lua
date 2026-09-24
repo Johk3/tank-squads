@@ -63,7 +63,7 @@ local function roster(state, team, by_id)
 end
 
 local function anchor(team)
-  if team.withdraw then return team.withdraw.destination, retreat.ARRIVAL_RADIUS end
+  if team.withdraw then return team.withdraw.destination, retreat.arrival_radius(team.withdraw) end
   return team.hop and team.hop.point or team.last_point, 8
 end
 
@@ -248,14 +248,16 @@ local function merge_check(state, id, team, members, present)
   state.teams[id] = nil
   return true
 end
+-- The nearest barracks or headquarters, as retreat.barracks_in_reach lists
+-- them, and the distance to it.
 local function nearest_depot(ctx, position)
   local list = retreat.barracks_in_reach({force = ctx.force, surface_index = ctx.surface.index})
   local i, distance = retreat.nearest_barracks(list, position, ctx.cfg.range)
-  if i then return list[i].entity, list[i].position, distance end
+  if i then return list[i], distance end
 end
 
-local function send_home(present, destination)
-  for _, e in ipairs(present) do go(e, destination, retreat.ARRIVAL_RADIUS) end
+local function send_home(present, w)
+  for _, e in ipairs(present) do go(e, w.destination, retreat.arrival_radius(w)) end
 end
 
 local function end_withdraw(team, members, ctx, failed)
@@ -277,35 +279,42 @@ end
 local function withdraw_step(team, members, present, ctx)
   local w = team.withdraw
   if not w.barracks.valid then
-    local barracks, destination, distance = nearest_depot(ctx, centroid(present))
-    if not barracks then
+    local depot, distance = nearest_depot(ctx, centroid(present))
+    if not depot then
       end_withdraw(team, members, ctx, true)
       return
     end
-    w.barracks, w.destination, w.best, w.progress = barracks, destination, distance, game.tick
-    send_home(present, destination)
+    w.barracks, w.destination, w.mobile = depot.entity, depot.position, depot.mobile
+    w.best, w.progress = distance, game.tick
+    send_home(present, w)
     return
   end
   if healed(present, ctx.cfg.rejoin) then
     end_withdraw(team, members, ctx, false)
     return
   end
+  -- A moved headquarters sends every soldier after it that is not already
+  -- there, through the resend check below.
+  if retreat.follow(w) then
+    for _, e in ipairs(present) do w.resend[e.unit_number] = true end
+  end
   local closest
   for _, e in ipairs(present) do
     local d = geometry.distance(e.position, w.destination)
     if not closest or d < closest then closest = d end
   end
-  if closest <= retreat.HEAL_RADIUS or closest < w.best - 1 then w.best, w.progress = closest, game.tick end
+  if closest <= retreat.heal_radius(w) or closest < w.best - 1 then w.best, w.progress = closest, game.tick end
   if game.tick - w.progress >= retreat.TIMEOUT then
     end_withdraw(team, members, ctx, true)
     return
   end
   -- Only after a completion: re-sending a soldier that is still walking
   -- would restart its pathfinding every sweep.
-  local limit = (retreat.ARRIVAL_RADIUS + 2) ^ 2
+  local arrival = retreat.arrival_radius(w)
+  local limit = (arrival + 2) ^ 2
   for unit in pairs(w.resend) do
     local e = ctx.by_id[unit]
-    if e and geometry.distance_squared(e.position, w.destination) > limit then go(e, w.destination, retreat.ARRIVAL_RADIUS) end
+    if e and geometry.distance_squared(e.position, w.destination) > limit then go(e, w.destination, arrival) end
   end
   w.resend = {}
 end
@@ -320,14 +329,15 @@ local function withdraw(team, members, present, health, max_health, ctx)
   end
   if team.withdraw_after and game.tick < team.withdraw_after then return false end
   if not geometry.should_withdraw(health, max_health, #members, team.formed) then return false end
-  local barracks, destination, distance = nearest_depot(ctx, centroid(present))
-  if not barracks then
+  local depot, distance = nearest_depot(ctx, centroid(present))
+  if not depot then
     team.withdraw_after = game.tick + geometry.NO_BARRACKS_RETRY
     return false
   end
   team.hop = nil
-  team.withdraw = {barracks = barracks, destination = destination, best = distance, progress = game.tick, resend = {}}
-  send_home(present, destination)
+  team.withdraw = {barracks = depot.entity, destination = depot.position, mobile = depot.mobile,
+    best = distance, progress = game.tick, resend = {}}
+  send_home(present, team.withdraw)
   return true
 end
 

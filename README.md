@@ -16,7 +16,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 - **Scout mode.** A division splits into up to four teams that each explore their own direction. Flame tanks lead, carriers follow and siege tanks cover them from 30 tiles back. Teams keep pushing outward until water or cliffs stop them.
 - **Escorts.** Assign a division to any player on your team, as a **defensive** ring around them or an **offensive** roaming band that clears everything it finds.
 - **Nest assaults.** Mixed offensive divisions attack biter nests in stages. Siege tanks shell the worms from out of range, flame tanks push in, and carriers follow.
-- **Healing retreat.** Badly damaged escort and scout soldiers drive back to the nearest barracks in guarded convoys, heal, and return to their post. A scout team that takes too much damage pulls back together.
+- **Healing retreat.** Badly damaged escort and scout soldiers drive back to the nearest barracks or mobile headquarters in guarded convoys, heal, and return to their post. A scout team that takes too much damage pulls back together.
 - **Automatic reinforcements.** Link a barracks to a division and set a target strength. It replaces losses automatically and pauses when the division is full.
 - **Map vision.** Soldiers keep the map live around themselves, so you can watch fights from the map view without radars.
 - **Multiplayer ready.** Selections, divisions, route overlays and labels are private to each player. Everything is per force.
@@ -52,7 +52,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 Research **Mobile headquarters** (automation to utility science), then choose **Build Mobile Headquarters** in a barracks. It costs 2,000 steel, 500 gears, 200 electric engines, 200 processing units, 200 solar panels, 200 accumulators, 20 roboports and 20 radars, and takes 10 minutes.
 
 - **Body:** about 9 by 14 tiles, 400 HP, one-sixth of a carrier's speed. It has no weapon and never fights back, so escort it.
-- **Healing:** 20 HP per second to every soldier within 24 tiles, also while it drives.
+- **Healing:** 20 HP per second to every soldier within 24 tiles, also while it drives. Injured escort and scout soldiers retreat to it when it is nearer than any barracks, and follow it if it drives on.
 - **Camp:** when it parks, it sets up a roboport with 25 times the normal reach (625-tile logistics, 1,375-tile construction), a radar that keeps 8 chunks around it live and scans out to 32, 12 MW of solar decks and a 1 GJ battery. The camp stays where it was while the headquarters drives, and moves to it when it parks again.
 - **Power:** a camp within 12 tiles of one of your electric poles wires itself to that pole, so the grid shares its solar power and battery. It never links two grids.
 - **Robots:** open the headquarters to put construction and logistic robots and repair packs into its roboport. Robots build from your logistic network like any roboport's. If the headquarters is destroyed, its docked robots and repair packs drop on the ground.
@@ -83,7 +83,7 @@ All keys can be rebound in the controls menu. Each soldier belongs to one divisi
 - **Defensive:** the division holds an evenly spaced ring 160 tiles from the player. When enemies come within 224 tiles of the player or of the ring's centre, the nearest half of the division intercepts them and the rest hold the ring.
 - **Offensive:** the division roams 256–448 tiles from the player and attacks the nearest biters, nests, worms, turrets or enemy players.
 - The escort only relocates once the player has stopped and moved more than 64 tiles, so it never chases a train.
-- Soldiers below 35% health retreat to a barracks within 1,000 tiles and come back at 95%.
+- Soldiers below 35% health retreat to the nearest barracks or headquarters within 1,000 tiles and come back at 95%.
 - The escorted player can dismiss the escort at any time.
 
 ---
@@ -93,7 +93,7 @@ All keys can be rebound in the controls menu. Each soldier belongs to one divisi
 - **Teams:** one team per three soldiers, at most four. A bigger division makes bigger teams. Each kind of tank is spread evenly, and every team gets at least one flame tank or carrier to screen its siege tanks.
 - **Directions:** the teams split the compass from where scouting started, so each explores its own slice. Inside its slice a team always heads for the nearest uncharted chunk.
 - **Formation:** flame tanks at the front, carriers in a V behind them, and siege tanks 30 tiles back, where their cannons still reach past the front. Teams move in 32-tile hops and wait for every tank before the next hop.
-- **Healing:** a tank below 35% health drives to a barracks within 1,000 tiles and comes back at 95%, with guards in teams of more than 10. A team below half its total health, or down to half its tanks, drives back together and returns when every tank is healed.
+- **Healing:** a tank below 35% health drives to the nearest barracks or headquarters within 1,000 tiles and comes back at 95%, with guards in teams of more than 10. A team below half its total health, or down to half its tanks, drives back together and returns when every tank is healed.
 - **Far out:** when everything nearby is charted, a team marches straight outward until it finds fog again. A team blocked by water or cliffs, or left with only siege tanks, joins the nearest team. Scouting stops only when every direction is blocked.
 
 ---
@@ -105,7 +105,7 @@ All of these are map settings and can be changed during a game (*Settings → Mo
 - Defensive ring radius and threat radius
 - Offensive band inner and outer edge
 - Escort follow distance
-- Retreat health, rejoin health, and barracks search range
+- Retreat health, rejoin health, and healing search range
 - **Soldiers reveal the map** (turn this off to save the charting work on very large armies)
 
 ---

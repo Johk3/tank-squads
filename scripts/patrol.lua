@@ -1,4 +1,5 @@
 local combat = require("scripts.combat")
+local names = require("scripts.names")
 local divisions = require("scripts.divisions")
 local render = require("scripts.render")
 local geometry = require("scripts.escort_geometry")
@@ -64,29 +65,44 @@ local function speed(name)
   return value
 end
 
+-- A better leader: any soldier before a headquarters, then the slower one.
+local function leads(a, b)
+  if a.hq ~= b.hq then return b.hq end
+  return a.speed < b.speed
+end
+
 -- Lane 1 follows the route as drawn and goes to the slowest soldier, who is
 -- also the leader: every other lane is shorter and walked at least as fast,
 -- so the whole division arrives before the leader starts the next leg. The
 -- other soldiers take the remaining lanes by their distance from the centre,
--- so each starts on the lane nearest to it. One position and one name read
--- per soldier, and one sort. Returns the soldiers and their ids in lane order.
+-- so each starts on the lane nearest to it. A headquarters is far too slow
+-- to set the pace. It takes the innermost lanes, the shortest, near the
+-- middle of the area, and leads only a division of headquarters. One
+-- position and one name read per soldier, and one sort. Returns the soldiers
+-- and their ids in lane order.
 local function assign_lanes(soldiers, ids, centre)
   local keyed = {}
   for i, soldier in ipairs(soldiers) do
-    keyed[i] = {entity = soldier, id = ids[i], speed = speed(soldier.name),
+    local name = soldier.name
+    keyed[i] = {entity = soldier, id = ids[i], speed = speed(name), hq = name == names.headquarters,
       d = geometry.distance_squared(soldier.position, centre)}
   end
   table.sort(keyed, function(a, b)
     if a.d ~= b.d then return a.d > b.d end
     return a.id < b.id
   end)
+  if #keyed == 0 then return {}, {} end
   local slowest = 1
   for i, k in ipairs(keyed) do
-    if k.speed < keyed[slowest].speed then slowest = i end
+    if leads(k, keyed[slowest]) then slowest = i end
   end
-  table.insert(keyed, 1, table.remove(keyed, slowest))
-  local out, out_ids = {}, {}
-  for i, k in ipairs(keyed) do out[i], out_ids[i] = k.entity, k.id end
+  local leader = table.remove(keyed, slowest)
+  local out, out_ids = {leader.entity}, {leader.id}
+  for pass = 1, 2 do
+    for _, k in ipairs(keyed) do
+      if k.hq == (pass == 2) then out[#out + 1], out_ids[#out_ids + 1] = k.entity, k.id end
+    end
+  end
   return out, out_ids
 end
 
@@ -148,13 +164,19 @@ end)
 -- A recruit slower than the leader would fall behind that pace, so the next
 -- leg assigns every lane afresh and the recruit leads. The current leg keeps
 -- its leader: a recruit still walking from the barracks must not stall it.
+-- A recruited headquarters keeps the innermost lane it is appended to, and a
+-- soldier recruited into a patrol led by a headquarters takes over the lead.
 function M.join(record, soldier)
   local r = record.patrol
   if record.mode ~= "patrol" or not (r and r.waypoints[r.index]) then return false end
   r.members[#r.members + 1] = soldier.unit_number
   if r.leader then
     local leader = game.get_entity_by_unit_number(r.leader)
-    if leader and leader.valid and speed(soldier.name) < speed(leader.name) then r.lanes = nil end
+    if leader and leader.valid then
+      local name, leader_name = soldier.name, leader.name
+      local hq, leader_hq = name == names.headquarters, leader_name == names.headquarters
+      if leads({hq = hq, speed = speed(name)}, {hq = leader_hq, speed = speed(leader_name)}) then r.lanes = nil end
+    end
   else
     r.leader = soldier.unit_number
   end

@@ -1,6 +1,8 @@
 return function(ctx)
   local test, soldier, building = ctx.test, ctx.soldier, ctx.building
   local retreat = require('scripts.retreat')
+  local names = require('scripts.names')
+  local hq_module = require('scripts.headquarters')
 
   local function context(over)
     local c = {force = game.players[1].force, surface_index = 1, retreat = 0.35, rejoin = 0.95, range = 1000,
@@ -14,6 +16,16 @@ return function(ctx)
     local b = building()
     b.position = {x = x, y = y}
     return b
+  end
+
+  -- A registered headquarters without its helpers: retreats only read the
+  -- registry and the unit itself.
+  local function headquarters(x, y)
+    local e = soldier(nil, nil, x, y)
+    e.name = names.headquarters
+    storage.headquarters = storage.headquarters or {}
+    storage.headquarters[e.unit_number] = {entity = e, force_index = e.force_index, helpers = {}}
+    return e
   end
 
   local function squad(count)
@@ -283,5 +295,95 @@ return function(ctx)
     local empty = {}
     retreat.absorb(empty, into)
     assert(empty.retreat and empty.retreat.next_id >= 2, 'absorb did not create the target state')
+  end)
+  test('retreat: an injured soldier drives to a headquarters nearer than any barracks', function()
+    depot(300, 0)
+    headquarters(80, 0)
+    local members = squad(1)
+    members[1].health = 60
+    retreat.sweep({}, members, context())
+    local c = members[1].command
+    assert(c.destination.x == 80, 'not sent to the nearer headquarters')
+    assert(c.radius == retreat.HQ_ARRIVAL_RADIUS, 'wrong arrival radius for a headquarters')
+  end)
+
+  test('retreat: a barracks nearer than the headquarters still wins', function()
+    depot(60, 0)
+    headquarters(200, 0)
+    local members = squad(1)
+    members[1].health = 60
+    retreat.sweep({}, members, context())
+    assert(members[1].command.destination.x == 60 and members[1].command.radius == retreat.ARRIVAL_RADIUS,
+      'not sent to the nearer barracks')
+  end)
+
+  test('retreat: headquarters of another force or on another surface are ignored', function()
+    headquarters(20, 0).force = {}
+    headquarters(30, 0).surface_index = 2
+    local members = squad(1)
+    members[1].health = 60
+    local present = retreat.sweep({}, members, context())
+    assert(#present == 1 and members[1].command == nil, 'retreated to a foreign headquarters')
+  end)
+
+  test('retreat: a convoy follows its headquarters once it moved a few tiles', function()
+    local hq = headquarters(100, 0)
+    local members = squad(1)
+    local a = members[1]
+    a.health = 60
+    local c, state = context(), {}
+    retreat.sweep(state, members, c)
+    a.command = nil
+    hq.position = {x = 100 + retreat.FOLLOW_STEP - 1, y = 0}
+    retreat.sweep(state, members, c)
+    assert(a.command == nil, 'resent for a small headquarters step')
+    hq.position = {x = 130, y = 0}
+    retreat.sweep(state, members, c)
+    assert(a.command and a.command.destination.x == 130, 'convoy did not follow the headquarters')
+    a.position, a.command = {x = 135, y = 0}, nil
+    hq.position = {x = 140, y = 0}
+    retreat.sweep(state, members, c)
+    assert(a.command == nil, 'resent a soldier already beside the headquarters')
+  end)
+
+  test('retreat: a soldier within the headquarters healing reach is not timed out', function()
+    headquarters(100, 0)
+    local members = squad(1)
+    local a = members[1]
+    a.health = 60
+    local c, state = context(), {}
+    retreat.sweep(state, members, c)
+    a.position = {x = 100 - hq_module.HEAL_RADIUS + 2, y = 0}
+    for _ = 1, 3 do
+      game.tick = game.tick + retreat.TIMEOUT
+      retreat.sweep(state, members, c)
+    end
+    assert(retreat.is_away(state, a.unit_number), 'a soldier healing at the headquarters was sent back')
+  end)
+
+  test('retreat: a lost headquarters re-routes the convoy to a barracks', function()
+    local hq = headquarters(50, 0)
+    depot(200, 0)
+    local members = squad(1)
+    members[1].health = 60
+    local c, state = context(), {}
+    retreat.sweep(state, members, c)
+    hq.valid = false
+    retreat.sweep(state, members, c)
+    local command = members[1].command
+    assert(command.destination.x == 200 and command.radius == retreat.ARRIVAL_RADIUS, 'convoy not re-routed')
+  end)
+
+  test('retreat: convoys saved before headquarters existed keep going to their barracks', function()
+    depot(100, 0)
+    local members = squad(1)
+    members[1].health = 60
+    local c, state = context(), {}
+    retreat.sweep(state, members, c)
+    for _, convoy in pairs(state.retreat.convoys) do convoy.mobile = nil end
+    members[1].position, members[1].command = {x = 150, y = 0}, nil
+    retreat.on_command_completed(state, members[1].unit_number, defines.behavior_result.success)
+    retreat.sweep(state, members, c)
+    assert(members[1].command.destination.x == 100 and members[1].command.radius == retreat.ARRIVAL_RADIUS)
   end)
 end

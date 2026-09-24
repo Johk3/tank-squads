@@ -1,9 +1,11 @@
 -- Healing retreat for escorts and scout teams: retreating soldiers travel in
--- convoys with guards. escort.lua calls sweep() once per escort sweep with
+-- convoys with guards to the nearest depot, a barracks or a mobile
+-- headquarters. escort.lua calls sweep() once per escort sweep with
 -- the members on the escort surface, and scout_teams.lua once per team. The
 -- state lives inside the escort or team state, so anything that ends the
 -- escort or the scouting drops every convoy with it.
 local combat = require("scripts.combat")
+local headquarters = require("scripts.headquarters")
 
 local M = {}
 
@@ -17,6 +19,14 @@ M.ARRIVAL_RADIUS = 6
 M.HEAL_RADIUS = 12
 -- A second failed path to the barracks ends the convoy.
 M.FAILURE_LIMIT = 2
+-- A headquarters heals in a wider radius. Arriving halfway into it keeps the
+-- convoy clear of the headquarters' large body.
+M.HQ_ARRIVAL_RADIUS = 12
+M.HQ_HEAL_RADIUS = headquarters.HEAL_RADIUS
+-- A headquarters heals on the move. Its convoys follow it once it has moved
+-- this far from where they are heading, so a slow drive does not restart
+-- their paths every sweep.
+M.FOLLOW_STEP = 8
 
 -- Two reads per soldier: quality can change maximum health per entity, so it
 -- is not cached per prototype.
@@ -35,17 +45,24 @@ local function distance_squared(a, b)
   return dx * dx + dy * dy
 end
 
--- Barracks of the escort's force on its surface, with their positions, read
--- once per sweep however many soldiers need one. Walks the registry owned by
+-- Depots of the escort's force on its surface, with their positions, read
+-- once per sweep however many soldiers need one: every barracks, then every
+-- headquarters, which is marked `mobile`. Walks the registry owned by
 -- scripts/barracks.lua (entries are {entity = LuaEntity, ...}); requiring
 -- barracks.lua here would create a require cycle through reinforcements.lua
--- and escort.lua.
+-- and escort.lua. Saves without a headquarters skip its registry.
 local function barracks_in_reach(context)
   local out = {}
   for _, b in ipairs(storage.barracks or {}) do
     local e = b.entity
     if e.valid and e.surface_index == context.surface_index and e.force == context.force then
       out[#out + 1] = {entity = e, position = e.position}
+    end
+  end
+  for _, record in pairs(storage.headquarters or {}) do
+    local e = record.entity
+    if e.valid and e.surface_index == context.surface_index and e.force == context.force then
+      out[#out + 1] = {entity = e, position = e.position, mobile = true}
     end
   end
   return out
@@ -65,9 +82,31 @@ end
 M.barracks_in_reach = barracks_in_reach
 M.nearest_barracks = nearest_barracks
 
-local function send(soldier, destination)
-  combat.set_command(soldier, {type = defines.command.go_to_location, destination = destination,
-    radius = M.ARRIVAL_RADIUS, distraction = defines.distraction.by_enemy})
+-- The arrival and healing radius of a convoy's or withdraw's depot. Anything
+-- without `mobile`, including convoys from older saves, heads for a barracks.
+function M.arrival_radius(target)
+  return target.mobile and M.HQ_ARRIVAL_RADIUS or M.ARRIVAL_RADIUS
+end
+
+function M.heal_radius(target)
+  return target.mobile and M.HQ_HEAL_RADIUS or M.HEAL_RADIUS
+end
+
+-- Moves the destination of a convoy or withdraw heading for a headquarters
+-- to where the headquarters now is, once it moved FOLLOW_STEP tiles. One
+-- position read per sweep for such a target, none for a barracks. Returns
+-- true when the destination moved.
+function M.follow(target)
+  if not target.mobile then return false end
+  local position = target.barracks.position
+  if distance_squared(position, target.destination) <= M.FOLLOW_STEP * M.FOLLOW_STEP then return false end
+  target.destination = position
+  return true
+end
+
+local function send(soldier, convoy)
+  combat.set_command(soldier, {type = defines.command.go_to_location, destination = convoy.destination,
+    radius = M.arrival_radius(convoy), distraction = defines.distraction.by_enemy})
 end
 
 local function release(r, unit, soldier, context, unhealed)
@@ -92,8 +131,8 @@ local function lowest(set)
 end
 
 local function send_convoy(convoy, by_id)
-  for unit in pairs(convoy.injured) do send(by_id[unit], convoy.destination) end
-  for unit in pairs(convoy.guards) do send(by_id[unit], convoy.destination) end
+  for unit in pairs(convoy.injured) do send(by_id[unit], convoy) end
+  for unit in pairs(convoy.guards) do send(by_id[unit], convoy) end
 end
 
 local function closest_injured(convoy, by_id)
@@ -137,13 +176,19 @@ local function advance(r, id, convoy, by_id, context)
       disband(r, id, convoy, by_id, context, true)
       return true
     end
-    convoy.barracks, convoy.destination = list[i].entity, list[i].position
+    convoy.barracks, convoy.destination, convoy.mobile = list[i].entity, list[i].position, list[i].mobile
     convoy.best, convoy.progress = distance, game.tick
     send_convoy(convoy, by_id)
     return changed
   end
+  -- A moved headquarters sends every member after it that is not already
+  -- there, through the resend check below.
+  if M.follow(convoy) then
+    for unit in pairs(convoy.injured) do convoy.resend[unit] = true end
+    for unit in pairs(convoy.guards) do convoy.resend[unit] = true end
+  end
   local closest = closest_injured(convoy, by_id)
-  if closest <= M.HEAL_RADIUS or closest < convoy.best - 1 then
+  if closest <= M.heal_radius(convoy) or closest < convoy.best - 1 then
     convoy.best, convoy.progress = closest, game.tick
   end
   if game.tick - convoy.progress >= M.TIMEOUT then
@@ -152,11 +197,11 @@ local function advance(r, id, convoy, by_id, context)
   end
   -- Only after a completion: re-sending a soldier that is still walking
   -- would restart its pathfinding every sweep.
-  local limit = (M.ARRIVAL_RADIUS + 2) ^ 2
+  local limit = (M.arrival_radius(convoy) + 2) ^ 2
   for unit in pairs(convoy.resend) do
     local soldier = by_id[unit]
     if soldier and distance_squared(soldier.position, convoy.destination) > limit then
-      send(soldier, convoy.destination)
+      send(soldier, convoy)
     end
   end
   convoy.resend = {}
@@ -250,15 +295,15 @@ function M.sweep(state, members, context)
     local group = groups[key]
     local id = r.next_id
     r.next_id = id + 1
-    local destination = group.barracks.position
-    local convoy = {barracks = group.barracks.entity, destination = destination, progress = game.tick,
+    local convoy = {barracks = group.barracks.entity, destination = group.barracks.position,
+      mobile = group.barracks.mobile, progress = game.tick,
       best = group.best, injured = {}, guards = {}, resend = {}, failures = 0}
     r.convoys[id] = convoy
     for _, soldier in ipairs(group.injured) do
       local unit = soldier.unit_number
       convoy.injured[unit], r.away[unit] = true, id
       health, max_health = health - soldier.health, max_health - soldier.max_health
-      send(soldier, destination)
+      send(soldier, convoy)
     end
     for _ = 1, per_convoy do
       local entry = candidates[next_guard]
@@ -266,7 +311,7 @@ function M.sweep(state, members, context)
       next_guard = next_guard + 1
       convoy.guards[entry.unit], r.away[entry.unit] = true, id
       health, max_health = health - entry.soldier.health, max_health - entry.soldier.max_health
-      send(entry.soldier, destination)
+      send(entry.soldier, convoy)
     end
   end
   return without_away(r, members), true, health, max_health

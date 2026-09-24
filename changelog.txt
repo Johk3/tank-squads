@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.15.0
+Date: 2026-09-24
+  Features:
+    - Injured escort and scout soldiers now retreat to a mobile headquarters when it is nearer than any barracks. They stop within its 24-tile healing reach and follow it when it drives on.
+  Changes:
+    - A patrolling headquarters no longer sets the pace for its division. It drives the innermost lane, near the middle of the route, and leads only a division of headquarters.
+    - Starting an escort no longer stops the headquarters; it keeps its last order, as in scouting. A division with only a headquarters cannot escort.
+    - A headquarters no longer counts towards a barracks' reinforcement target, which counts carriers. A barracks that trains headquarters still counts them, so it stops at its target.
+---------------------------------------------------------------------------------------------------
 Version: 0.14.0
 Date: 2026-09-24
   Features:

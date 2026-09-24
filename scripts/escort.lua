@@ -45,7 +45,12 @@ function M.start(owner_index, n, ward_index, formation)
   if formation ~= "defensive" and formation ~= "offensive" then return nil, "formation" end
   local owner, ward = game.get_player(owner_index), game.get_player(ward_index)
   if not (owner and ward and ward.force == owner.force) then return nil, "ward" end
-  local members = divisions.get(owner_index, n)
+  -- The unarmed headquarters takes no part and keeps its last order, as in
+  -- scouting. A division of nothing else cannot escort.
+  local members = {}
+  for _, e in ipairs(divisions.get(owner_index, n)) do
+    if e.name ~= names.headquarters then members[#members + 1] = e end
+  end
   if #members == 0 then return nil, "empty" end
   local record = divisions.record(owner_index, n)
   local previous = record.escort

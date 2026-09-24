@@ -19,6 +19,34 @@ return function(ctx)
     assert(b.active == false, 'full division did not pause production')
   end)
 
+  local function headquarters()
+    local hq = soldier()
+    hq.name = 'tank-squad-headquarters'
+    storage.headquarters = storage.headquarters or {}
+    storage.headquarters[hq.unit_number] = {entity = hq, force_index = hq.force_index, helpers = {}}
+    return hq
+  end
+
+  test('a headquarters in the division does not count towards the carrier target', function()
+    divisions.assign(1, 2, {headquarters(), soldier()})
+    local b, output = building()
+    assert(barracks.configure(b, 1, 2, 2))
+    output['tank-squad-recruit-1'] = 3
+    barracks.tick()
+    assert(divisions.size(1, 2) == 3 and output['tank-squad-recruit-1'] == 2, 'the headquarters took a carrier slot')
+    assert(b.active == false, 'a full division did not pause production')
+    assert(divisions.fighters(1, 2) == 2)
+  end)
+
+  test('a barracks training headquarters counts them, so it stops at the target', function()
+    divisions.assign(1, 2, {headquarters(), soldier()})
+    local b = building()
+    b.get_recipe = function() return {name = 'tank-squad-train-headquarters'} end
+    assert(barracks.configure(b, 1, 2, 2))
+    barracks.tick()
+    assert(b.active == false, 'a headquarters barracks kept training past the target')
+  end)
+
   test('linked barracks share one cap and replace a casualty', function()
     local a, first = building()
     local b, second = building()
@@ -151,6 +179,25 @@ return function(ctx)
     assert(barracks.record(b).reinforcement.division == 4)
     gui.click{player_index = 1, element = frame.actions.disable}
     assert(barracks.record(b).reinforcement == nil)
+  end)
+
+  test('the panel and barracks window count carriers without the headquarters', function()
+    divisions.assign(1, 2, {headquarters(), soldier()})
+    local b = building()
+    assert(barracks.configure(b, 1, 2, 5))
+    local player = game.get_player(1)
+    player.gui.relative = ctx.gui_element()
+    player.opened = b
+    defines.relative_gui_type = {assembling_machine_gui = 1}
+    defines.relative_gui_position = {right = 1}
+    local gui = require('scripts.barracks_gui')
+    gui.open{player_index = 1, entity = b}
+    gui.refresh(1)
+    local status = player.gui.relative.tank_squads_reinforcements.status.caption
+    assert(status[3] == 1 and status[4] == 5, 'barracks window counted the headquarters')
+    require('scripts.panel').update(1)
+    local caption = player.gui.left.tank_squads_divisions.divisions.division_2.caption
+    assert(caption[3][2] == 1 and caption[3][3] == 5, 'panel counted the headquarters')
   end)
 
   test('reinforcement setup rejects another surface and another player editing a binding', function()

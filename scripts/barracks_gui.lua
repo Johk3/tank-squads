@@ -22,7 +22,7 @@ function M.refresh(player_index)
   if binding then
     local record = divisions.record(binding.player_index, binding.division)
     frame.status.caption = {'tank-squads.reinforcement-status', binding.division,
-      #record.members, record.reinforcement_target or 0}
+      divisions.fighters(binding.player_index, binding.division), record.reinforcement_target or 0}
     if not editable then frame.status.caption = {'tank-squads.reinforcement-other-owner'} end
   else
     frame.status.caption = {'tank-squads.reinforcement-off'}

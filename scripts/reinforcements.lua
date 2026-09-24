@@ -5,6 +5,19 @@ local patrol = require('scripts.patrol')
 local scout = require('scripts.scout')
 local M = {}
 
+local HEADQUARTERS_RECIPE = 'tank-squad-train-headquarters'
+
+-- A headquarters is no carrier and leaves the target alone, except for a
+-- barracks that trains headquarters: it counts them, or it would train
+-- them without end. The recipe is only read while the division has one.
+local function counted(b, binding, members)
+  local headquarters = divisions.headquarters_count(binding.player_index, binding.division)
+  if headquarters == 0 then return #members end
+  local recipe = b.entity.get_recipe()
+  if recipe and recipe.name == HEADQUARTERS_RECIPE then return #members end
+  return #members - headquarters
+end
+
 function M.release(b)
   local binding = b.reinforcement
   if binding then
@@ -56,7 +69,7 @@ function M.needs_recruit(b)
   local player = game.get_player(binding.player_index)
   if not player or player.force ~= b.entity.force then M.release(b); return false end
   local record = divisions.record(binding.player_index, binding.division)
-  local count = #divisions.cached(binding.player_index, binding.division)
+  local count = counted(b, binding, divisions.cached(binding.player_index, binding.division))
   local route_surface = (record.patrol and record.patrol.surface_index)
     or (record.scout and record.scout.surface_index) or (record.escort and record.escort.surface_index)
     or (record.order and record.order.surface_index)

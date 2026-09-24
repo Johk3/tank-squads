@@ -119,6 +119,60 @@ return function(ctx)
     assert(r.members[2] == fast2.unit_number and r.members[3] == fast1.unit_number and r.members[4] == siege.unit_number)
   end)
 
+  test('patrol lanes: a headquarters never leads and walks the innermost lane', function()
+    prototypes = {entity = {['tank-squad-soldier-1'] = {speed = 0.12}, ['tank-squad-flame'] = {speed = 0.07},
+      ['tank-squad-headquarters'] = {speed = 0.02}}}
+    local hq, fast = soldier(nil, nil, -80, -80), soldier(nil, nil, 5, 5)
+    local flame = soldier(nil, nil, 40, 40)
+    hq.name, flame.name = 'tank-squad-headquarters', 'tank-squad-flame'
+    divisions.assign(1, 1, {hq, fast, flame})
+    local r = route(1, square)
+    patrol.start(1, 1)
+    prototypes = nil
+    assert(r.leader == flame.unit_number, 'the headquarters sets the pace')
+    assert(r.members[3] == hq.unit_number, 'the headquarters is not on the innermost lane')
+  end)
+
+  test('patrol lanes: a headquarters alone walks the route', function()
+    prototypes = nil
+    local hq = soldier(nil, nil, 5, 5)
+    hq.name = 'tank-squad-headquarters'
+    divisions.assign(1, 1, {hq})
+    local r = route(1, square)
+    patrol.start(1, 1)
+    assert(r.leader == hq.unit_number and hq.command.destination.x == 0, 'a lone headquarters did not patrol')
+  end)
+
+  test('patrol lanes: a recruited headquarters keeps the lanes and leader', function()
+    prototypes = {entity = {['tank-squad-soldier-1'] = {speed = 0.12}, ['tank-squad-headquarters'] = {speed = 0.02}}}
+    local a, b = soldier(nil, nil, 5, 5), soldier(nil, nil, 9, 9)
+    divisions.assign(1, 1, {a, b})
+    local r = route(1, square)
+    patrol.start(1, 1)
+    local leader = r.leader
+    local hq = soldier(nil, nil, 0, 3)
+    hq.name = 'tank-squad-headquarters'
+    assert(patrol.join(divisions.record(1, 1), hq), 'the headquarters did not join the patrol')
+    prototypes = nil
+    assert(r.lanes and r.leader == leader, 'a recruited headquarters reassigned the lanes')
+  end)
+
+  test('patrol lanes: a soldier recruited into a patrol led by a headquarters leads from the next leg', function()
+    prototypes = {entity = {['tank-squad-soldier-1'] = {speed = 0.12}, ['tank-squad-headquarters'] = {speed = 0.02}}}
+    local hq = soldier(nil, nil, 5, 5)
+    hq.name = 'tank-squad-headquarters'
+    divisions.assign(1, 1, {hq})
+    local r = route(1, square)
+    patrol.start(1, 1)
+    local recruit = soldier(nil, nil, 0, 3)
+    divisions.add_member(1, 1, recruit.unit_number, recruit)
+    patrol.join(divisions.record(1, 1), recruit)
+    assert(not r.lanes, 'the lanes were kept for a headquarters leader')
+    patrol.advance(hq.unit_number)
+    prototypes = nil
+    assert(r.leader == recruit.unit_number and r.members[2] == hq.unit_number, 'the recruit did not take over the lead')
+  end)
+
   test('patrol lanes: a one-waypoint route keeps everyone on the waypoint', function()
     prototypes = nil
     local a, b, c = soldier(nil, nil, 5, 0), soldier(nil, nil, 9, 0), soldier(nil, nil, 1, 3)

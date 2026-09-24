@@ -171,6 +171,22 @@ return function(ctx)
     assert(escort.start(1, 3, 1, 'offensive'), 'owner cannot escort self')
   end)
 
+  test('escort core: a headquarters keeps its order and cannot escort on its own', function()
+    setup()
+    ward_player(2, 0, 0)
+    local hq, a = soldier(nil, nil, 10, 0), soldier(nil, nil, 20, 0)
+    hq.name = 'tank-squad-headquarters'
+    divisions.assign(1, 3, {hq})
+    assert(select(2, escort.start(1, 3, 2, 'defensive')) == 'empty', 'a lone headquarters started an escort')
+    assert(divisions.record(1, 3).mode ~= 'escort', 'a refused escort changed the mode')
+    divisions.assign(1, 3, {hq, a})
+    local order = {type = defines.command.go_to_location, destination = {x = 99, y = 0}}
+    hq.command = order
+    assert(escort.start(1, 3, 2, 'defensive'), 'a division with a headquarters could not escort')
+    assert(hq.command == order, 'the escort halted the headquarters')
+    assert(a.command.type == defines.command.stop, 'the escort did not halt its soldiers')
+  end)
+
   test('escort core: anchor waits for the ward to settle and moves in 64-tile steps', function()
     setup()
     local ward = ward_player(2, 0, 0)

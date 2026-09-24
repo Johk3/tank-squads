@@ -1,4 +1,5 @@
 local colors = require("scripts.render").COLORS
+local divisions = require("scripts.divisions")
 local M = {}
 
 function M.update(player_index)
@@ -43,6 +44,8 @@ function M.update(player_index)
     -- Avoid assigning captions each sweep when nothing changed. Localised control
     -- placeholders are resolved by Factorio, so rebound keys remain accurate.
     local target = record and record.reinforcement_target
+    -- A reinforcement target counts carriers, so a headquarters is left out.
+    local carriers = target and divisions.fighters(player_index, n)
     local state = record and record.escort
     local mode_caption = {"tank-squads.mode-" .. mode}
     local mode_key = mode
@@ -52,9 +55,9 @@ function M.update(player_index)
       mode_caption = {"tank-squads.mode-escort", ward and ward.name or "?", detail}
       mode_key = mode .. ":" .. state.ward .. ":" .. state.formation .. ":" .. tostring(state.available)
     end
-    local signature = count .. ":" .. mode_key .. ':' .. tostring(target)
+    local signature = count .. ":" .. mode_key .. ':' .. tostring(target) .. ':' .. tostring(carriers)
     if button.tags.status ~= signature then
-      button.caption = {"tank-squads.division-row", n, target and {'tank-squads.reinforced-count', count, target} or count,
+      button.caption = {"tank-squads.division-row", n, target and {'tank-squads.reinforced-count', carriers, target} or count,
         n == 0 and {"tank-squads.drag-selection"} or {"tank-squads.select-key-" .. n},
         mode_caption}
       button.tags = {tank_squads_division = n, status = signature}

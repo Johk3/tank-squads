@@ -398,6 +398,34 @@ return function(ctx)
     assert(team.hop, 'resumed team did not hop')
   end)
 
+  test('scout healing: a team withdraws to a nearer headquarters and follows it', function()
+    depot(300, 0)
+    local hq = soldier(nil, nil, 100, 0)
+    hq.name = 'tank-squad-headquarters'
+    storage.headquarters = {[hq.unit_number] = {entity = hq, force_index = hq.force_index, helpers = {}}}
+    local list = scouting({'carrier', 'carrier', 'carrier'})
+    for _, e in ipairs(list) do e.health = 150 end
+    scout.tick()
+    local team = scout_state().teams[1]
+    assert(team.withdraw, 'team did not withdraw')
+    for _, e in ipairs(list) do
+      assert(e.command.destination.x == 100 and e.command.radius == retreat.HQ_ARRIVAL_RADIUS,
+        'soldier not sent to the headquarters')
+      e.command = nil
+    end
+    hq.position = {x = 140, y = 0}
+    scout.tick()
+    for _, e in ipairs(list) do
+      assert(e.command and e.command.destination.x == 140, 'team did not follow the headquarters')
+    end
+    for _, e in ipairs(list) do e.position, e.command = {x = 140 - retreat.HQ_HEAL_RADIUS + 2, y = 0}, nil end
+    game.tick = game.tick + retreat.TIMEOUT
+    scout.tick()
+    game.tick = game.tick + retreat.TIMEOUT
+    scout.tick()
+    assert(team.withdraw, 'a team healing at the headquarters gave up')
+  end)
+
   test('scout healing: losing half the team triggers a withdraw', function()
     depot(100, 0)
     local list = scouting({'carrier', 'carrier', 'carrier', 'carrier'})

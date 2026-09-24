@@ -133,6 +133,26 @@ function M.size(player_index, n)
   return #M.get(player_index, n)
 end
 
+-- Headquarters in the division. Walks the headquarters registry, a handful
+-- of entries at most, instead of reading every member's name, so saves
+-- without a headquarters pay one nil check.
+function M.headquarters_count(player_index, n)
+  local headquarters = storage.headquarters
+  if not headquarters then return 0 end
+  local owners, count = ownership(), 0
+  for id in pairs(headquarters) do
+    local owner = owners[id]
+    if owner and owner.player_index == player_index and owner.division == n then count = count + 1 end
+  end
+  return count
+end
+
+-- Members that are no headquarters: the carriers a reinforcement target
+-- counts. Uses the stored roster, which the last sweep validated.
+function M.fighters(player_index, n)
+  return #M.record(player_index, n).members - M.headquarters_count(player_index, n)
+end
+
 -- A same-tick cache of M.get(), for a hot per-sweep caller (escort) that
 -- runs immediately after divisions.refresh() already resolved this
 -- division's members this sweep. Falls back to a full M.get() otherwise, so

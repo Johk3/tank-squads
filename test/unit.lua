@@ -145,6 +145,7 @@ local function building()
     end,
   }
   b.get_output_inventory = function() return inv end
+  b.get_recipe = function() return nil end
   surface.find_non_colliding_position = function() return {x = 0, y = 3} end
   surface.create_entity = function(args) local s = soldier(); s.name = args.name; return s end
   barracks.register(b)
