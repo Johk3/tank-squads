@@ -1,6 +1,7 @@
 local divisions = require('scripts.divisions')
 local combat = require('scripts.combat')
 local escort = require('scripts.escort')
+local patrol = require('scripts.patrol')
 local M = {}
 
 function M.release(b)
@@ -80,14 +81,7 @@ function M.join(b, soldier)
   -- A new entity has no previous owner. Appending must not select the division,
   -- detach survivors, or restart their combat/pathfinding commands.
   divisions.add_member(binding.player_index, binding.division, soldier.unit_number, soldier)
-  local r = record.patrol
-  if record.mode == 'patrol' and r and r.waypoints[r.index] then
-    r.members[#r.members + 1] = soldier.unit_number
-    r.leader = r.leader or soldier.unit_number
-    combat.set_command(soldier, {type = defines.command.go_to_location,
-      destination = r.waypoints[r.index], radius = 4, distraction = defines.distraction.by_enemy})
-    return true
-  end
+  if patrol.join(record, soldier) then return true end
   if record.mode == 'scout' and record.scout and record.scout.target then
     local chunk = record.scout.target
     combat.set_command(soldier, {type = defines.command.go_to_location,

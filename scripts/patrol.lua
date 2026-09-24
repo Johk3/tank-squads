@@ -143,6 +143,26 @@ divisions.listen_members_changed(function(player_index, n)
   end
 end)
 
+-- A recruit from a linked barracks joins the current leg without disturbing
+-- the others, and kept_lanes() gives it the innermost lane from the next leg.
+-- A recruit slower than the leader would fall behind that pace, so the next
+-- leg assigns every lane afresh and the recruit leads. The current leg keeps
+-- its leader: a recruit still walking from the barracks must not stall it.
+function M.join(record, soldier)
+  local r = record.patrol
+  if record.mode ~= "patrol" or not (r and r.waypoints[r.index]) then return false end
+  r.members[#r.members + 1] = soldier.unit_number
+  if r.leader then
+    local leader = game.get_entity_by_unit_number(r.leader)
+    if leader and leader.valid and speed(soldier.name) < speed(leader.name) then r.lanes = nil end
+  else
+    r.leader = soldier.unit_number
+  end
+  combat.set_command(soldier, {type = defines.command.go_to_location,
+    destination = r.waypoints[r.index], radius = 4, distraction = defines.distraction.by_enemy})
+  return true
+end
+
 function M.start(player_index, n)
   local record, r = route(player_index, n)
   if not r or #r.waypoints == 0 then return nil end

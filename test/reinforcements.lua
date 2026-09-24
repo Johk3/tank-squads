@@ -73,6 +73,32 @@ return function(ctx)
     assert(recruit.command.destination.x == 40, 'replacement did not resume current leg')
   end)
 
+  test('a slower recruit leads the patrol from the next leg; a faster one keeps the lanes', function()
+    local reinforcements = require('scripts.reinforcements')
+    prototypes = {entity = {['tank-squad-soldier-1'] = {speed = 0.12}, ['tank-squad-flame'] = {speed = 0.07}}}
+    local a, c = soldier(nil, nil, 10, 0), soldier(nil, nil, 20, 0)
+    divisions.assign(1, 2, {a, c})
+    for _, p in ipairs({{x = 0, y = 0}, {x = 100, y = 0}, {x = 100, y = 100}, {x = 0, y = 100}}) do
+      patrol.add_waypoint(1, 2, p, a.surface)
+    end
+    patrol.start(1, 2)
+    local r = divisions.record(1, 2).patrol
+    local b = building()
+    assert(barracks.configure(b, 1, 2, 4))
+    local fast = soldier(nil, nil, 50, 50)
+    assert(reinforcements.join(barracks.record(b), fast))
+    assert(r.lanes, 'a faster recruit discarded the kept lanes')
+    local flame = soldier(nil, nil, 50, 50)
+    flame.name = 'tank-squad-flame'
+    local old = r.leader
+    assert(reinforcements.join(barracks.record(b), flame))
+    assert(r.leader == old, 'the recruit took over a leg it has not started')
+    patrol.advance(old)
+    prototypes = nil
+    assert(r.leader == flame.unit_number, 'a faster soldier still leads the legs')
+    assert(flame.command.destination.x == 100 and flame.command.destination.y == 0, 'leader is not on the route')
+  end)
+
   test('reinforcements inherit the manual destination', function()
     local a = soldier()
     divisions.assign(1, 2, {a})
