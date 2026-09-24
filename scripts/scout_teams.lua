@@ -241,7 +241,88 @@ local function merge_check(state, id, team, members, present)
   state.teams[id] = nil
   return true
 end
-local function withdraw(team, members, present, health, max_health, ctx) return false end
+local function nearest_depot(ctx, position)
+  local list = retreat.barracks_in_reach({force = ctx.force, surface_index = ctx.surface.index})
+  local i, distance = retreat.nearest_barracks(list, position, ctx.cfg.range)
+  if i then return list[i].entity, list[i].position, distance end
+end
+
+local function send_home(present, destination)
+  for _, e in ipairs(present) do go(e, destination, retreat.ARRIVAL_RADIUS) end
+end
+
+local function end_withdraw(team, members, ctx, failed)
+  team.withdraw, team.last_point = nil, nil
+  team.formed = #members
+  if failed then team.withdraw_after = game.tick + retreat.TIMEOUT end
+  if team.target and ctx.force.is_chunk_charted(ctx.surface, team.target) then team.target = nil end
+end
+
+local function healed(present, rejoin_at)
+  for _, e in ipairs(present) do
+    if e.health / e.max_health < rejoin_at then return false end
+  end
+  return true
+end
+
+-- The same progress rule as a convoy: closing in on the barracks, or
+-- standing in its healing radius, is progress.
+local function withdraw_step(team, members, present, ctx)
+  local w = team.withdraw
+  if not w.barracks.valid then
+    local barracks, destination, distance = nearest_depot(ctx, centroid(present))
+    if not barracks then
+      end_withdraw(team, members, ctx, true)
+      return
+    end
+    w.barracks, w.destination, w.best, w.progress = barracks, destination, distance, game.tick
+    send_home(present, destination)
+    return
+  end
+  if healed(present, ctx.cfg.rejoin) then
+    end_withdraw(team, members, ctx, false)
+    return
+  end
+  local closest
+  for _, e in ipairs(present) do
+    local d = geometry.distance(e.position, w.destination)
+    if not closest or d < closest then closest = d end
+  end
+  if closest <= retreat.HEAL_RADIUS or closest < w.best - 1 then w.best, w.progress = closest, game.tick end
+  if game.tick - w.progress >= retreat.TIMEOUT then
+    end_withdraw(team, members, ctx, true)
+    return
+  end
+  -- Only after a completion: re-sending a soldier that is still walking
+  -- would restart its pathfinding every sweep.
+  local limit = (retreat.ARRIVAL_RADIUS + 2) ^ 2
+  for unit in pairs(w.resend) do
+    local e = ctx.by_id[unit]
+    if e and geometry.distance_squared(e.position, w.destination) > limit then go(e, w.destination, retreat.ARRIVAL_RADIUS) end
+  end
+  w.resend = {}
+end
+
+-- Returns true while the team is withdrawing, so it does not hop. A team
+-- below half health, or down to half the soldiers it had when it formed or
+-- last healed, drives to the nearest barracks together.
+local function withdraw(team, members, present, health, max_health, ctx)
+  if team.withdraw then
+    withdraw_step(team, members, present, ctx)
+    return team.withdraw ~= nil
+  end
+  if team.withdraw_after and game.tick < team.withdraw_after then return false end
+  if not geometry.should_withdraw(health, max_health, #members, team.formed) then return false end
+  local barracks, destination, distance = nearest_depot(ctx, centroid(present))
+  if not barracks then
+    team.withdraw_after = game.tick + geometry.NO_BARRACKS_RETRY
+    return false
+  end
+  team.hop = nil
+  team.withdraw = {barracks = barracks, destination = destination, best = distance, progress = game.tick, resend = {}}
+  send_home(present, destination)
+  return true
+end
 
 function M.sweep(state, id, ctx)
   local team = state.teams[id]

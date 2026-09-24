@@ -371,4 +371,136 @@ return function(ctx)
     assert(state.teams[2] == nil, 'team with one present soldier did not merge')
     assert(retreat.is_away(state.teams[1], injured.unit_number), 'the injured soldier lost its convoy in the merge')
   end)
+
+  local function depot(x, y)
+    local b = building()
+    b.position = {x = x, y = y}
+    return b
+  end
+
+  test('scout healing: a badly hurt team withdraws together, heals and scouts again', function()
+    depot(100, 0)
+    local list = scouting({'carrier', 'carrier', 'carrier'})
+    for _, e in ipairs(list) do e.health = 150 end -- 37.5 %: no convoy, team below half
+    scout.tick()
+    local team = scout_state().teams[1]
+    assert(team.withdraw and not team.hop, 'team did not withdraw')
+    for _, e in ipairs(list) do
+      assert(e.command.destination.x == 100 and e.command.radius == retreat.ARRIVAL_RADIUS, 'soldier not sent to the barracks')
+    end
+    scout.tick()
+    assert(team.withdraw, 'withdraw ended before healing')
+    for _, e in ipairs(list) do e.health = 400 end
+    scout.tick()
+    assert(not team.withdraw and team.formed == 3, 'healed team did not resume')
+    scout.tick()
+    assert(team.hop, 'resumed team did not hop')
+  end)
+
+  test('scout healing: losing half the team triggers a withdraw', function()
+    depot(100, 0)
+    local list = scouting({'carrier', 'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    kill(list[1])
+    kill(list[2])
+    scout.tick()
+    assert(scout_state().teams[1].withdraw, 'half the team lost did not withdraw')
+  end)
+
+  test('scout healing: with no barracks in range the team fights on and checks again later', function()
+    local list = scouting({'carrier', 'carrier', 'carrier'})
+    for _, e in ipairs(list) do e.health = 150 end
+    scout.tick()
+    local team = scout_state().teams[1]
+    assert(not team.withdraw and team.hop, 'team withdrew without a barracks')
+    assert(team.withdraw_after == game.tick + geometry.NO_BARRACKS_RETRY, 'no retry delay')
+  end)
+
+  test('scout healing: a stuck withdraw ends after the timeout and waits before the next', function()
+    depot(100, 0)
+    local list = scouting({'carrier', 'carrier', 'carrier'})
+    for _, e in ipairs(list) do e.health = 150 end
+    scout.tick()
+    local team = scout_state().teams[1]
+    assert(team.withdraw, 'team did not withdraw')
+    scout.tick() -- records the closest distance so far; nobody moves after this
+    game.tick = game.tick + retreat.TIMEOUT
+    scout.tick()
+    assert(not team.withdraw and team.withdraw_after == game.tick + retreat.TIMEOUT, 'stuck withdraw kept going')
+    scout.tick()
+    assert(not team.withdraw and team.hop, 'withdrew again during the cooldown')
+  end)
+
+  test('scout healing: a destroyed barracks with none left ends the withdraw', function()
+    local b = depot(100, 0)
+    local list = scouting({'carrier', 'carrier', 'carrier'})
+    for _, e in ipairs(list) do e.health = 150 end
+    scout.tick()
+    local team = scout_state().teams[1]
+    assert(team.withdraw)
+    b.valid = false
+    scout.tick()
+    assert(not team.withdraw and team.withdraw_after, 'withdraw kept a destroyed barracks')
+    scout.tick()
+    assert(team.hop, 'team did not go back to scouting')
+  end)
+
+  test('scout healing: a soldier pushed away during a withdraw is sent back after its completion', function()
+    depot(100, 0)
+    local list = scouting({'carrier', 'carrier', 'carrier'})
+    for _, e in ipairs(list) do e.health = 150 end
+    scout.tick()
+    list[1].position, list[1].command = {x = 150, y = 0}, nil
+    scout.tick()
+    assert(list[1].command == nil, 'resent while it may still be walking')
+    scout.on_command_completed(list[1].unit_number, defines.behavior_result.success)
+    scout.tick()
+    assert(list[1].command and list[1].command.destination.x == 100, 'displaced soldier not sent back')
+  end)
+
+  test('scout healing: one hurt soldier leaves in a convoy without stalling the hop', function()
+    depot(100, 0)
+    local list = scouting({'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    local team = scout_state().teams[1]
+    local first = team.hop
+    list[3].health = 100
+    scout.tick()
+    assert(retreat.is_away(team, list[3].unit_number) and not team.withdraw, 'wrong retreat')
+    assert(not first.pending[list[3].unit_number], 'convoy soldier still pending')
+    scout.on_command_completed(list[1].unit_number, defines.behavior_result.success)
+    scout.on_command_completed(list[2].unit_number, defines.behavior_result.success)
+    scout.tick()
+    assert(team.hop ~= first and not team.hop.pending[list[3].unit_number], 'hop waited for the convoy')
+  end)
+
+  test('scout healing: a team with every member away waits, then resumes when they heal', function()
+    depot(100, 0)
+    local list = scouting({'carrier', 'carrier'})
+    scout.tick()
+    local team = scout_state().teams[1]
+    for _, e in ipairs(list) do e.health = 100 end
+    scout.tick()
+    assert(retreat.is_away(team, list[1].unit_number) and retreat.is_away(team, list[2].unit_number))
+    local orders = {list[1].command, list[2].command}
+    scout.tick()
+    assert(list[1].command == orders[1] and list[2].command == orders[2], 'away soldiers re-commanded')
+    assert(scout_state().teams[1] == team, 'empty team merged into nothing')
+    for _, e in ipairs(list) do e.health = 400 end
+    scout.tick()
+    assert(team.hop and team.hop.pending[list[1].unit_number], 'team did not resume after healing')
+  end)
+
+  test('scout healing: scouting switched off and on mid-convoy starts clean', function()
+    depot(100, 0)
+    local list = scouting({'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    list[3].health = 100
+    scout.tick()
+    scout.set(1, 1, false)
+    scout.set(1, 1, true)
+    assert(scout.on_command_completed(list[3].unit_number, defines.behavior_result.success))
+    scout.tick()
+    assert(scout_state().team_of[list[3].unit_number], 'fresh teams left out the returning soldier')
+  end)
 end
