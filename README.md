@@ -49,7 +49,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 
 ### Mobile headquarters
 
-Research **Mobile headquarters** (automation to utility science), then choose **Build Mobile Headquarters** in a barracks. It costs 2,000 steel, 500 gears, 200 electric engines, 200 processing units, 200 solar panels, 200 accumulators, 20 roboports and 20 radars, and takes 10 minutes.
+Research **Mobile headquarters** (automation to utility science), then choose **Build Mobile Headquarters** in a barracks. It costs 400 steel, 100 gears, 40 electric engines, 40 processing units, 40 solar panels, 40 accumulators, 4 roboports and 4 radars, and takes 60 seconds.
 
 - **Body:** about 9 by 14 tiles, 400 HP, one-sixth of a carrier's speed. It has no weapon and never fights back, so escort it.
 - **Healing:** 20 HP per second to every soldier within 24 tiles, also while it drives. Injured escort and scout soldiers retreat to it when it is nearer than any barracks, and follow it if it drives on.

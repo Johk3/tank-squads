@@ -11,6 +11,9 @@ if not t then
   local radar = prototypes.entity['tank-squad-hq-radar']
   assert(radar.get_max_distance_of_nearby_sector_revealed() == 8 and radar.get_max_distance_of_sector_revealed() == 32, 'wrong radar range')
   assert(prototypes.recipe['tank-squad-train-headquarters'].category == 'tank-squad-training', 'headquarters is not built at a barracks')
+  local hq_recipe = prototypes.recipe['tank-squad-train-headquarters']
+  assert(hq_recipe.energy == 60, 'headquarters takes ' .. hq_recipe.energy .. ' s to build')
+  for _, ingredient in pairs(hq_recipe.ingredients) do if ingredient.name == 'steel-plate' then assert(ingredient.amount == 400, 'headquarters costs ' .. ingredient.amount .. ' steel') end end
   local s = game.surfaces['headquarters-test'] or game.create_surface('headquarters-test', {width=512,height=512,autoplace_controls={}})
   s.request_to_generate_chunks({0,0}, 6)
   s.force_generate_chunk_requests()
