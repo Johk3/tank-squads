@@ -491,6 +491,23 @@ test("barracks prototype is a crafting machine with three training recipes", fun
     assert(item and item.hidden == true, "recruit item missing or visible in the crafting menu")
     assert(item.stack_size == 1, "recruit item stacks")
   end
+
+  -- A recipe without its own name borrows its product's; one of the two
+  -- must be in the locale, or the barracks shows an unknown key.
+  local locale, section, keys = io.open("locale/en/tank-squads.cfg"):read("*a"), nil, {}
+  for line in locale:gmatch("[^\n]+") do
+    local header = line:match("^%[(.+)%]$")
+    if header then section = header; keys[section] = keys[section] or {}
+    elseif section then
+      local key = line:match("^([^=]+)=")
+      if key then keys[section][key] = true end
+    end
+  end
+  for name, recipe in pairs(data.raw.recipe) do
+    local product = recipe.results and recipe.results[1] and recipe.results[1].name
+    assert(keys["recipe-name"][name] or (product and keys["item-name"][product]),
+      "recipe " .. name .. " has no locale name")
+  end
 end)
 
 test("division keybindings assign and recall through control.lua", function()
