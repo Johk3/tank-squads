@@ -304,15 +304,10 @@ local function advance(a, members, c, tick)
 end
 
 -- Called by the offensive formation once it has picked a leg target. Returns
--- true when a nest assault replaced the plain leg. The kind check runs first,
--- so a single-kind division never searches.
+-- true when a nest assault replaced the plain leg. Any division stages: one
+-- of a single kind skips the phases it has no tanks for, so carriers alone
+-- gather on the arc and then attack together.
 function M.try_start(state, members, target, forces)
-  local kinds, count = {}, 0
-  for _, e in ipairs(members) do
-    local kind = M.kind(e.name)
-    if not kinds[kind] then kinds[kind], count = true, count + 1 end
-  end
-  if count < 2 then return false end
   local origin = target.position
   local found = members[1].surface.find_entities_filtered{position = origin, radius = M.NEST_SEARCH,
     type = {'unit-spawner', 'turret'}, force = forces}

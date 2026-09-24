@@ -177,16 +177,35 @@ return function(ctx)
     end
   end)
 
-  test('assault start: one soldier kind, or no spawner near the target, keeps the plain leg', function()
-    local structures, searches = world()
-    local target = spawner(structures, 300, 0)
-    local state = {}
-    assert(not assault.try_start(state, {tank(nil, 0, 0), tank(nil, 2, 0)}, target, {'enemy'}))
-    assert(state.assault == nil and searches.n == 0, 'single-kind division searched for a nest')
+  test('assault start: no spawner near the target keeps the plain leg', function()
+    local structures = world()
     local lone = worm(structures, 200, 0, 30)
     spawner(structures, 240, 0)
+    local state = {}
     assert(not assault.try_start(state, mixed(0), lone, {'enemy'}), 'spawner 40 tiles away made a nest')
     assert(state.assault == nil)
+  end)
+
+  test('assault phases: a carrier-only division stages on the arc, then attacks together', function()
+    local structures = world()
+    local target = spawner(structures, 300, 0)
+    local members = {tank(nil, 0, 0), tank(nil, 2, 0), tank(nil, 4, 0)}
+    local state = {}
+    assert(assault.try_start(state, members, target, {'enemy'}), 'carrier-only division did not stage')
+    local a = state.assault
+    for _, e in ipairs(members) do
+      assert(a.roles[e.unit_number] == 'carrier', 'a carrier got another role')
+      assert(e.command.type == defines.command.go_to_location and e.command.destination == a.slots[e.unit_number],
+        'carrier not sent to the staging arc')
+    end
+    assault.tick(a, members)
+    assert(a.phase == 'stage', 'carriers attacked before gathering')
+    arrive(a, members)
+    assault.tick(a, members)
+    assert(a.phase == 'follow', 'gathered carriers did not attack')
+    for _, e in ipairs(members) do
+      assert(e.command.type == defines.command.attack_area, 'a gathered carrier did not attack')
+    end
   end)
 
   test('assault phases: stage, barrage on worms, flame push, carrier follow, done', function()
@@ -422,7 +441,7 @@ return function(ctx)
     end
   end)
 
-  test('assault wiring: worm-only targets, the defensive formation and single-kind divisions keep plain legs', function()
+  test('assault wiring: worm-only targets and the defensive formation keep plain legs; carrier-only escorts stage', function()
     local structures = escort_world()
     worm(structures, 290, 0, 30)
     local state = offensive(mixed(5))
@@ -434,8 +453,8 @@ return function(ctx)
     divisions.assign(1, 4, {tank(nil, 5, 4), tank(nil, 7, 4)})
     escort.start(1, 4, 2, 'offensive')
     settle()
-    local plain = divisions.record(1, 4).escort
-    assert(plain.assault == nil and plain.leg.command.type == defines.command.attack_area, 'carrier-only escort changed')
+    local carriers = divisions.record(1, 4).escort
+    assert(carriers.assault and carriers.assault.phase == 'stage' and carriers.leg == nil, 'carrier-only escort did not stage')
   end)
 
   test('assault wiring: a manual attack order on a nest is unchanged', function()

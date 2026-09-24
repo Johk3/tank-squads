@@ -15,7 +15,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 - **Patrol routes.** Draw a waypoint loop for a division. It spreads out over the area the route encloses instead of walking it in single file.
 - **Scout mode.** A division splits into up to four teams that each explore their own direction. Flame tanks lead, carriers follow and siege tanks cover them from 30 tiles back. Teams keep pushing outward until water or cliffs stop them.
 - **Escorts.** Assign a division to any player on your team, as a **defensive** ring around them or an **offensive** roaming band that clears everything it finds.
-- **Nest assaults.** Mixed offensive divisions attack biter nests in stages. Siege tanks shell the worms from out of range, flame tanks push in, and carriers follow.
+- **Nest assaults.** Offensive divisions gather on an arc outside a biter nest before they attack. Siege tanks shell the worms from out of range, flame tanks push in, and carriers follow. A division of carriers alone gathers, then attacks together.
 - **Healing retreat.** Badly damaged escort and scout soldiers drive back to the nearest barracks or mobile headquarters in guarded convoys, heal, and return to their post. A scout team that takes too much damage pulls back together.
 - **Automatic reinforcements.** Link a barracks to a division and set a target strength. It replaces losses automatically and pauses when the division is full.
 - **Map vision.** Soldiers keep the map live around themselves, so you can watch fights from the map view without radars.

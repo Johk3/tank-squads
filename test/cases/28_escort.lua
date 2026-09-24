@@ -71,10 +71,10 @@ local ok, result = pcall(function()
   biter.destroy()
   if not remote.call('tank-squads', 'escort_start', owner, 4, ward, 'offensive') then error('offensive escort rejected') end
   remote.call('tank-squads', 'escort_tick')
-  state = remote.call('tank-squads', 'escort_state', owner, 4)
-  if not (state.leg and math.abs(state.leg.x - nest.position.x) < 1 and math.abs(state.leg.y - nest.position.y) < 1) then
-    error('offensive leg did not target the nest')
-  end
+  local assault = storage.divisions[owner].slots[4].escort.assault
+  local staged = false
+  for _, structure in ipairs(assault and assault.structures or {}) do if structure.entity == nest then staged = true end end
+  if not (staged and assault.phase == 'stage') then error('offensive escort did not stage against the nest') end
   remote.call('tank-squads', 'escort_stop', owner, 4)
 end)
 for _, e in ipairs(created) do if e.valid then e.destroy() end end

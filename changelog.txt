@@ -2,6 +2,7 @@
 Version: 0.15.1
 Date: 2026-09-24
   Changes:
+    - Offensive divisions of a single tank kind, such as carriers alone, now gather on the staging arc outside a nest before they attack, instead of driving straight at it. Carriers attack together once gathered.
     - The mobile headquarters takes 60 seconds to build instead of 10 minutes and costs a fifth as much: 400 steel, 100 gears, 40 electric engines, 40 processing units, 40 solar panels, 40 accumulators, 4 roboports and 4 radars.
   Bugfixes:
     - The three chaingun carrier training recipes show their names instead of an unknown key.

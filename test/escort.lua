@@ -635,12 +635,21 @@ return function(ctx)
     end
   end)
 
+  -- Stand-in enemies without a type are biter units, so a nest search
+  -- (spawners and worms only) never mistakes them for a nest.
+  local function typed(q, e)
+    if not q.type then return true end
+    local kind = e.type or 'unit'
+    for _, t in ipairs(type(q.type) == 'table' and q.type or {q.type}) do if t == kind then return true end end
+    return false
+  end
+
   local function band_surface(surface, targets)
     surface.find_entities_filtered = function(q)
       local out = {}
       for _, e in ipairs(targets) do
         local dx, dy = e.position.x - q.position.x, e.position.y - q.position.y
-        if e.valid and dx * dx + dy * dy <= q.radius * q.radius then out[#out + 1] = e end
+        if e.valid and dx * dx + dy * dy <= q.radius * q.radius and typed(q, e) then out[#out + 1] = e end
       end
       return out
     end
@@ -671,7 +680,11 @@ return function(ctx)
     local nearest = soldier('enemy', nil, 300, 0)
     local others = {soldier('enemy', nil, 0, 400), soldier('enemy', nil, -350, 0), soldier('enemy', nil, 0, -300)}
     local all = {nearest, others[1], others[2], others[3]}
-    surface.find_entities_filtered = function() return all end
+    surface.find_entities_filtered = function(q)
+      local out = {}
+      for _, e in ipairs(all) do if typed(q, e) then out[#out + 1] = e end end
+      return out
+    end
     escort.start(1, 3, 2, 'offensive')
     settle()
     local state = divisions.record(1, 3).escort

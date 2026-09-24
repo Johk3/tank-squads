@@ -5,8 +5,8 @@
 # nearest target is its own nest.
 # Usage: test/bench-assault.sh [sweeps] [mixed|carrier]
 #
-# carrier is the baseline: the same ten divisions with carriers only, so
-# every sweep runs a plain offensive leg against the same nests.
+# carrier runs the same ten divisions with carriers only. They stage on the
+# arc too, then skip the barrage and push and attack together.
 #
 # Owners and wards are faked inside the mod context, as bench-escort.sh does.
 # game.tick is proxied and never advances, so phases change only when the
@@ -14,7 +14,8 @@
 #   start   - the one sweep that picks the targets and starts all 10 assaults
 #   stage   - average sweep while every division walks to its staging arc
 #   barrage - average sweep once every soldier stands on its slot
-# The carrier baseline reports its start sweep and its average leg sweep.
+# The carrier run reports start, stage and follow: the average sweep once
+# every carrier attacks.
 # Engine pathfinding and combat are not included.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -90,16 +91,6 @@ local ok, err = pcall(function()
     end
     return n
   end
-  if '$COMPOSITION' == 'carrier' then
-    if phases('stage') ~= 0 then error('carrier-only divisions started assaults') end
-    local p_leg = game.create_profiler()
-    for _ = 1, $SWEEPS do remote.call('tank-squads', 'escort_tick') end
-    p_leg.stop()
-    p_leg.divide($SWEEPS)
-    for _, o in ipairs(owners) do remote.call('tank-squads', 'escort_stop', o[1], o[2]) end
-    rcon.print({'', 'start sweep (10 plain legs): ', p_start, '\nleg sweep avg: ', p_leg})
-    return
-  end
   if phases('stage') ~= 10 then error('only ' .. phases('stage') .. ' assaults staged') end
   local p_stage = game.create_profiler()
   for _ = 1, $SWEEPS do remote.call('tank-squads', 'escort_tick') end
@@ -110,13 +101,14 @@ local ok, err = pcall(function()
     for unit, slot in pairs(a.slots) do game.get_entity_by_unit_number(unit).teleport(slot) end
   end
   remote.call('tank-squads', 'escort_tick')
-  if phases('barrage') ~= 10 then error('only ' .. phases('barrage') .. ' barrages') end
-  local p_barrage = game.create_profiler()
+  local next_phase = '$COMPOSITION' == 'mixed' and 'barrage' or 'follow'
+  if phases(next_phase) ~= 10 then error('only ' .. phases(next_phase) .. ' in ' .. next_phase) end
+  local p_next = game.create_profiler()
   for _ = 1, $SWEEPS do remote.call('tank-squads', 'escort_tick') end
-  p_barrage.stop()
-  p_barrage.divide($SWEEPS)
+  p_next.stop()
+  p_next.divide($SWEEPS)
   for _, o in ipairs(owners) do remote.call('tank-squads', 'escort_stop', o[1], o[2]) end
-  rcon.print({'', 'start sweep (10 assaults): ', p_start, '\nstage sweep avg: ', p_stage, '\nbarrage sweep avg: ', p_barrage})
+  rcon.print({'', 'start sweep (10 assaults): ', p_start, '\nstage sweep avg: ', p_stage, '\n', next_phase, ' sweep avg: ', p_next})
 end)
 for _, e in ipairs(created) do if e.valid then e.destroy() end end
 game, rendering = engine_game, engine_rendering
