@@ -110,8 +110,11 @@ roboport.default_roboport_count_output_signal = nil
 
 local radar = hidden(copy(data.raw.radar.radar))
 radar.name = 'tank-squad-hq-radar'
-radar.max_distance_of_nearby_sector_revealed = 8
-radar.max_distance_of_sector_revealed = 32
+-- A little more than a base radar (3 and 14). Every radar's live area and
+-- sector scans share the force's charting with the soldiers' map vision, so
+-- a much larger reach starves the soldiers' charts and hides them in fog.
+radar.max_distance_of_nearby_sector_revealed = 4
+radar.max_distance_of_sector_revealed = 16
 radar.energy_usage = '3MW'
 radar.pictures = {layers = {{filename = '__core__/graphics/empty.png', width = 1, height = 1,
   direction_count = 1}}}

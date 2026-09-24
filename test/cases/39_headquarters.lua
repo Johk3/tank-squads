@@ -9,7 +9,7 @@ if not t then
   local roboport = prototypes.entity['tank-squad-hq-roboport']
   assert(roboport.logistic_radius == 625 and roboport.construction_radius == 1375, 'roboport reach is not 25x')
   local radar = prototypes.entity['tank-squad-hq-radar']
-  assert(radar.get_max_distance_of_nearby_sector_revealed() == 8 and radar.get_max_distance_of_sector_revealed() == 32, 'wrong radar range')
+  assert(radar.get_max_distance_of_nearby_sector_revealed() == 4 and radar.get_max_distance_of_sector_revealed() == 16, 'wrong radar range')
   assert(prototypes.recipe['tank-squad-train-headquarters'].category == 'tank-squad-training', 'headquarters is not built at a barracks')
   local hq_recipe = prototypes.recipe['tank-squad-train-headquarters']
   assert(hq_recipe.energy == 60, 'headquarters takes ' .. hq_recipe.energy .. ' s to build')
