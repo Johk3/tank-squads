@@ -8,7 +8,7 @@ TMP_OUT="$OUT.tmp"
 STAGE="$(mktemp -d)"
 DEST="$STAGE/tank-squads_$VERSION"
 mkdir -p "$DEST" "$ROOT/dist"
-for f in info.json data.lua settings.lua control.lua changelog.txt README.md prototypes scripts locale graphics; do
+for f in info.json data.lua settings.lua control.lua changelog.txt README.md LICENSE prototypes scripts locale graphics; do
   cp -r "$ROOT/$f" "$DEST/"
 done
 # Local development notes stay out of the release.

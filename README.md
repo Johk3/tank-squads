@@ -104,6 +104,12 @@ In testing, 200 carriers in constant combat cost about **0.01 ms per tick** of s
 
 ---
 
+## License
+
+Copyright (C) 2026 johk. Licensed under the [GNU General Public License v3.0](https://github.com/johk3/tank-squads/blob/master/LICENSE): you may share and modify this mod, as long as your version stays under the same license.
+
+---
+
 ## Development
 
 Build a release zip for the mod portal:
