@@ -720,6 +720,21 @@ test("division panel lists bindings, counts, selection and scout status", functi
   assert(not frame.visible, "empty panel remains visible")
 end)
 
+test("division panel loads an empty division saved without reinforcement sources", function()
+  local panel = require("scripts.panel")
+  players[1].gui = {left = gui_element(), screen = gui_element()}
+  players[1].set_shortcut_toggled = function() end
+  divisions.assign(1, 4, {soldier()})
+  divisions.assign(1, 2, {soldier()})
+  -- Older versions kept empty records and had no reinforcement_sources field.
+  local record = storage.divisions[1].slots[2]
+  record.members, record.reinforcement_sources = {}, nil
+  assert(divisions.is_reinforced(record) == false, "is_reinforced is not a boolean")
+  panel.update(1)
+  local button = players[1].gui.screen.tank_squads_divisions.body.divisions.row_2.division_2
+  assert(button.enabled == false, "empty legacy division enabled or given nil")
+end)
+
 test("division window folds, switches to short rows and keeps its choices", function()
   dofile("control.lua")
   local panel = require("scripts.panel")

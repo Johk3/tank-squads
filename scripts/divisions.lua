@@ -198,7 +198,7 @@ function M.clear(player_index, n)
 end
 
 function M.is_reinforced(record)
-  return record.reinforcement_sources and next(record.reinforcement_sources) ~= nil
+  return record.reinforcement_sources ~= nil and next(record.reinforcement_sources) ~= nil
 end
 
 function M.clear_player(player_index)
