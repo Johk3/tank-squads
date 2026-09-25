@@ -262,7 +262,6 @@ local function sweep(id, record)
     for _, helper in pairs(record.helpers) do if helper.valid then helper.force = entity.force end end
     record.force_index = entity.force_index
   end
-  veterans.repair(entity)
   local position = entity.position
   local anchor, last = record.anchor, record.last
   local dx, dy = position.x - anchor.x, position.y - anchor.y

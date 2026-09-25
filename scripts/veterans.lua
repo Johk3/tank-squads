@@ -5,12 +5,12 @@
 -- storage.veterans[unit_number] = {
 --   adjective, noun  - name word indices (scripts/unit_names.lua)
 --   xp, kills, rank  - soldiers only; the headquarters has none
---   labels           - alt-mode render objects (scripts/unit_labels.lua)
 -- }
+-- The hover card (scripts/unit_card.lua) shows the record. Nothing is drawn
+-- over the units: a render object per unit costs the engine work every tick.
 local names = require("scripts.names")
 local ranks = require("scripts.ranks")
 local unit_names = require("scripts.unit_names")
-local labels = require("scripts.unit_labels")
 
 local M = {}
 
@@ -50,15 +50,8 @@ end
 function M.unregister(unit_number)
   local record = M.get(unit_number)
   if not record then return end
-  labels.clear(record)
   unit_names.release(record)
   storage.veterans[unit_number] = nil
-end
-
--- Called by the sweeps for every living unit.
-function M.repair(entity)
-  local record = M.get(entity.unit_number)
-  if record then labels.repair(entity, record) end
 end
 
 local function apply_speed(entity, record)
@@ -67,8 +60,9 @@ end
 
 local function promote(entity, record, rank)
   record.rank = rank
+  local gun = storage.weapons and storage.weapons[entity.unit_number]
+  if gun then gun.rank = rank end
   apply_speed(entity, record)
-  labels.set_rank(entity, record)
   local text = {"tank-squads.promoted", unit_names.localised(record), {"tank-squads.rank-" .. rank}}
   for _, player in pairs(entity.force.connected_players) do
     player.create_local_flying_text{text = text, position = entity.position, surface = entity.surface}
@@ -112,16 +106,24 @@ function M.on_damaged(event)
   entity.health = entity.health + event.final_damage_amount * ranks.bonus(rank).reduction
 end
 
--- Runs for every shot and every siege shell impact. Recruits cost one lookup.
-function M.on_shot(event)
-  local id, source = event.effect_id, nil
-  if id == M.SHOT then source = event.source_entity
-  elseif id == M.SHELL_HIT then source = event.cause_entity
-  else return end
-  if not (source and source.valid) then return end
-  local record = storage.veterans and storage.veterans[source.unit_number]
-  local rank = record and record.rank
-  if not (rank and rank > 0) then return end
+-- Runs for every shot and every siege shell impact. A shot's shooter is the
+-- gun record weapons.on_shot already resolved, so a recruit's shot reads no
+-- entity at all. Shell impacts are rare and look the siege tank up.
+function M.on_shot(event, shooter)
+  local id, source, rank = event.effect_id, nil, nil
+  if id == M.SHOT then
+    rank = shooter and shooter.rank
+    if not (rank and rank > 0) then return end
+    source = event.source_entity
+  elseif id == M.SHELL_HIT then
+    source = event.cause_entity
+    if not (source and source.valid) then return end
+    local record = storage.veterans and storage.veterans[source.unit_number]
+    rank = record and record.rank
+    if not (rank and rank > 0) then return end
+  else
+    return
+  end
   local base = M.BASE[source.name]
   if not base or (base.on_hit == true) ~= (id == M.SHELL_HIT) then return end
   local target = event.target_entity

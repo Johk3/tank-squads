@@ -8,7 +8,9 @@ local M = {}
 
 function M.register(entity)
   if not (entity and entity.valid and names.soldier_set[entity.name]) then return end
-  veterans.register(entity)
+  -- The gun record carries the rank, so the shot hook reads it without
+  -- touching the entity.
+  local rank = veterans.register(entity).rank
   vision.track(entity)
   storage.weapons = storage.weapons or {}
   local visual = appearance.weapons[entity.name]
@@ -17,6 +19,7 @@ function M.register(entity)
   local record = storage.weapons[entity.unit_number]
   if record and record.gun.valid then
     record.gun.oriented_offset = {0, offset}
+    record.rank = rank
     return record
   end
   local args = {
@@ -35,7 +38,7 @@ function M.register(entity)
     gun = rendering.draw_sprite(args)
   end
   record = {entity = entity, gun = gun, aim_timeout = visual and visual.aim_timeout or 60,
-    recoil_ticks = visual and visual.recoil_ticks}
+    recoil_ticks = visual and visual.recoil_ticks, rank = rank}
   storage.weapons[entity.unit_number] = record
   local index = storage.weapon_slices
   if index then index.slices[entity.unit_number % index.phases][entity.unit_number] = true end
@@ -54,6 +57,7 @@ function M.unregister(unit_number)
   if index then index.slices[unit_number % index.phases][unit_number] = nil end
 end
 
+-- Returns the shooter's gun record when it has one, for the rank bonus.
 -- The weapon's native attack supplies the actual target. Once assigned, the
 -- renderer follows both entities and rotates the gun without Lua position or
 -- angle polling. Repeated shots at the same target only update the timestamp.
@@ -70,9 +74,9 @@ function M.on_shot(event)
   -- Sustained fire: the gun already tracks this target.
   if record and record.target == target and record.gun.valid then
     record.last_shot = event.tick
-    return
+    return record
   end
-  if source.surface_index ~= target.surface_index then return end
+  if source.surface_index ~= target.surface_index then return record end
   if not (record and record.gun.valid) then record = M.register(source) end
   if not record then return end
   if record.recoil_ticks and not record.recoiling then
@@ -86,6 +90,7 @@ function M.on_shot(event)
     record.target = target
   end
   record.last_shot = event.tick
+  return record
 end
 
 -- Piggybacks on the existing one-second sweep. No enemy searches, movement,
@@ -96,7 +101,6 @@ local function check(id, record)
   elseif not record.gun.valid then
     M.register(record.entity)
   else
-    veterans.repair(record.entity)
     if record.recoiling and game.tick - record.last_shot >= record.recoil_ticks then
       record.gun.animation_speed, record.gun.animation_offset = 0, 0
       record.recoiling = nil

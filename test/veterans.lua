@@ -57,58 +57,12 @@ return function(ctx)
     for i = 1, unit_names.ADJECTIVES do assert(text:find('\nname%-adjective%-' .. i .. '='), 'missing adjective ' .. i) end
     for i = 1, unit_names.NOUNS do assert(text:find('\nname%-noun%-' .. i .. '='), 'missing noun ' .. i) end
   end)
-  local labels = require('scripts.unit_labels')
-
   local function alt_draws()
     local out = {}
     for _, d in ipairs(ctx.draws()) do if d.valid and d.args.only_in_alt_mode then out[#out + 1] = d end end
     return out
   end
 
-  test('labels: a recruit shows only its name, to its force, in alt mode', function()
-    local e = ctx.soldier()
-    local record = {adjective = 1, noun = 2, xp = 0, rank = 0, kills = 0}
-    labels.draw(e, record)
-    local drawn = alt_draws()
-    assert(#drawn == 1 and drawn[1].args.text[2][1] == 'tank-squads.name-adjective-1', 'recruit label wrong')
-    assert(drawn[1].args.forces[1] == e.force and drawn[1].args.target.entity == e)
-    assert(drawn[1].args.target.offset[2] < 0, 'name not above the unit')
-  end)
-
-  test('labels: promotion adds a rank badge and later promotions swap it in place', function()
-    local e = ctx.soldier()
-    local record = {adjective = 1, noun = 2, xp = 60, rank = 1, kills = 0}
-    labels.set_rank(e, record)
-    assert(#alt_draws() == 0, 'set_rank drew labels before the sweep')
-    labels.draw(e, record)
-    local badge = record.labels.rank
-    assert(badge and badge.args.sprite == 'tank-squad-rank-1')
-    record.rank = 2
-    labels.set_rank(e, record)
-    assert(record.labels.rank == badge and badge.sprite == 'tank-squad-rank-2', 'promotion recreated the badge')
-  end)
-
-  test('labels: repair redraws missing labels and follows a force change', function()
-    local e = ctx.soldier()
-    local record = {adjective = 1, noun = 2}
-    labels.repair(e, record)
-    local name = record.labels.name
-    local count = #ctx.draws()
-    labels.repair(e, record)
-    assert(#ctx.draws() == count, 'intact labels redrawn')
-    e.force = {index = 2}
-    labels.repair(e, record)
-    assert(not name.valid and record.labels.name.args.forces[1] == e.force, 'labels kept the old force')
-    labels.clear(record)
-    assert(record.labels == nil and #alt_draws() == 0)
-  end)
-
-  test('labels: the headquarters name sits above its large body', function()
-    local hq = ctx.soldier()
-    hq.name = require('scripts.names').headquarters
-    labels.draw(hq, {adjective = 1, noun = 1})
-    assert(alt_draws()[1].args.target.offset[2] < -7.9)
-  end)
   local veterans = require('scripts.veterans')
   local names = require('scripts.names')
 
@@ -122,10 +76,8 @@ return function(ctx)
     assert(storage.name_taken[key] == 1, 'second register drew another name')
     local hq_record = veterans.register(hq)
     assert(hq_record.adjective and hq_record.xp == nil and hq_record.rank == nil)
-    veterans.repair(e)
-    assert(record.labels and record.labels.name.valid, 'sweep repair drew no label')
     veterans.unregister(e.unit_number)
-    assert(veterans.get(e.unit_number) == nil and storage.name_taken[key] == nil and not record.labels)
+    assert(veterans.get(e.unit_number) == nil and storage.name_taken[key] == nil)
   end)
 
   test('kills: the killing soldier gains one kill and XP weighted by the victim', function()
@@ -155,13 +107,11 @@ return function(ctx)
   test('promotion: crossing a threshold raises rank, speed and tells the force', function()
     local e = ctx.soldier()
     local record = veterans.register(e)
-    veterans.repair(e)
     veterans.add_xp(e, record, 49)
     assert(record.rank == 0 and e.speed == 0.12)
     veterans.add_xp(e, record, 1)
     assert(record.rank == 1, 'no promotion at 50 XP')
     assert(math.abs(e.speed - 0.12 * 1.1) < 1e-9, 'speed ' .. e.speed)
-    assert(record.labels.rank and record.labels.rank.args.sprite == 'tank-squad-rank-1', 'no rank badge')
     local flying = ctx.players()[1].flying
     assert(#flying == 1 and flying[1].text[1] == 'tank-squads.promoted' and flying[1].text[3][1] == 'tank-squads.rank-1')
     veterans.add_xp(e, record, 2000)
@@ -177,7 +127,9 @@ return function(ctx)
     weapons.register(e)
     local record = assert(veterans.get(e.unit_number), 'registered soldier has no record')
     weapons.tick()
-    assert(record.labels and record.labels.name.valid, 'weapons sweep drew no label')
+    -- Names show on the hover card only: an alt-mode label per unit costs
+    -- the engine work every tick for every unit.
+    assert(#alt_draws() == 0 and record.labels == nil, 'sweep drew alt-mode labels')
     weapons.unregister(e.unit_number)
     assert(veterans.get(e.unit_number) == nil, 'unregistered soldier kept its record')
   end)
@@ -219,23 +171,24 @@ return function(ctx)
     local e = ranked(names.soldier_names[1], 1)
     local target = ctx.soldier('enemy')
     e.force.get_ammo_damage_modifier = function(category) return category == 'bullet' and 0.5 or 0 end
-    veterans.on_shot{effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}, {rank = 1})
     local hit = target.damaged[1]
     assert(hit and math.abs(hit.amount - 6 * 0.2 * 1.5) < 1e-9, 'bonus ' .. tostring(hit and hit.amount))
     assert(hit.type == 'physical' and hit.force == e.force and hit.source == e and hit.cause == e)
     local recruit = ranked(names.soldier_names[1], 0)
-    veterans.on_shot{effect_id = 'tank-squad-shot', source_entity = recruit, target_entity = target}
-    veterans.on_shot{effect_id = 'another-mod', source_entity = e, target_entity = target}
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = recruit, target_entity = target}, {rank = 0})
+    veterans.on_shot({effect_id = 'another-mod', source_entity = e, target_entity = target}, {rank = 1})
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = target})
     local gone = ctx.soldier('enemy')
     gone.valid = false
-    veterans.on_shot{effect_id = 'tank-squad-shot', source_entity = e, target_entity = gone}
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = gone}, {rank = 1})
     assert(#target.damaged == 1 and #gone.damaged == 0, 'bonus from a recruit, another mod or a dead target')
   end)
 
   test('bonuses: a siege tank adds its bonus when the shell lands, not when it fires', function()
     local siege = ranked('tank-squad-siege', 3)
     local target = ctx.soldier('enemy')
-    veterans.on_shot{effect_id = 'tank-squad-shot', source_entity = siege, target_entity = target}
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = siege, target_entity = target}, {rank = 3})
     assert(#target.damaged == 0, 'siege bonus landed on firing')
     veterans.on_shot{effect_id = 'tank-squad-shell-hit', cause_entity = siege, target_entity = target}
     assert(#target.damaged == 1 and math.abs(target.damaged[1].amount - 750) < 1e-9)
@@ -243,6 +196,27 @@ return function(ctx)
     veterans.on_shot{effect_id = 'tank-squad-shell-hit', cause_entity = siege, target_entity = target}
     veterans.on_shot{effect_id = 'tank-squad-shell-hit', target_entity = target}
     assert(#target.damaged == 1, 'shell of a dead siege tank dealt a bonus')
+  end)
+
+  test('bonuses: a recruit\'s shot reads nothing from the shooter or its target', function()
+    local e = ranked(names.soldier_names[1], 0)
+    local target = ctx.soldier('enemy')
+    local reads = {ctx.count_reads(e, 'unit_number'), ctx.count_reads(e, 'valid'), ctx.count_reads(target, 'valid')}
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}, {rank = 0})
+    for _, r in ipairs(reads) do assert(r.n == 0, 'a recruit shot read an entity field') end
+    assert(#target.damaged == 0)
+  end)
+
+  test('bonuses: the weapons record carries the rank the shot hook reads', function()
+    local weapons = require('scripts.weapons')
+    local e = ctx.soldier()
+    weapons.register(e)
+    assert(storage.weapons[e.unit_number].rank == 0, 'new gun record lacks the rank')
+    veterans.add_xp(e, veterans.get(e.unit_number), 300)
+    assert(storage.weapons[e.unit_number].rank == 2, 'promotion did not reach the gun record')
+    storage.weapons[e.unit_number].gun.valid = false
+    weapons.tick()
+    assert(storage.weapons[e.unit_number].rank == 2, 'a repaired gun record lost the rank')
   end)
 
   test('bonuses: control routes damage and shot events to the service records', function()
