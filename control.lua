@@ -124,11 +124,18 @@ script.on_configuration_changed(function()
   headquarters.reconcile()
   veterans.reapply()
   divisions.reconcile_ownership()
-  -- Headquarters rings from older versions are too small to show; the
-  -- refresh below redraws them at the current size.
+  -- Headquarters rings from older versions are too small to show, and rings
+  -- from an older palette have the wrong colour; the refresh below redraws
+  -- them. Escort shapes redraw on their next sweep.
   for _, state in pairs(storage.divisions or {}) do
     for _, record in pairs(state.slots) do
       for id in pairs(storage.headquarters or {}) do render.forget_ring(record, id) end
+      record.render = record.render or {rings = {}, route = {}}
+      if record.render.palette ~= render.PALETTE then
+        render.clear_rings(record)
+        render.clear_escort(record)
+        record.render.palette = render.PALETTE
+      end
     end
   end
   divisions.refresh()

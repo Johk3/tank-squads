@@ -76,7 +76,8 @@ function M.record(player_index, n)
   local state = player_state(player_index)
   local record = state.slots[n]
   if not record then
-    record = {members = {}, mode = "idle", patrol = nil, scout = nil, render = {rings = {}, route = {}}}
+    record = {members = {}, mode = "idle", patrol = nil, scout = nil,
+      render = {rings = {}, route = {}, palette = render.PALETTE}}
     state.slots[n] = record
   end
   record.render = record.render or {rings = {}, route = {}}

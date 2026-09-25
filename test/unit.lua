@@ -656,7 +656,7 @@ test("map markers follow one member per surface without redraws", function()
   divisions.refresh()
   local labels = {}
   for _, draw in ipairs(draws) do
-    if draw.valid and draw.args.render_mode == "chart" and draw.args.target == a then
+    if draw.valid and draw.args.render_mode == "chart" and draw.args.target == a and draw.args.text then
       labels[#labels + 1] = draw
       assert(draw.args.text == "3", "map marker lacks division number")
       assert(draw.args.scale_with_zoom == true, "map marker shrinks when zooming out")
@@ -675,7 +675,7 @@ test("map markers follow one member per surface without redraws", function()
   assert(not labels[1].valid, "dead leader kept map marker")
   local found = false
   for _, draw in ipairs(draws) do
-    if draw.valid and draw.args.render_mode == "chart" and draw.args.target == b then found = true end
+    if draw.valid and draw.args.render_mode == "chart" and draw.args.target == b and draw.args.text then found = true end
   end
   assert(found, "surviving division lost map marker")
   divisions.clear_player(1)
@@ -1217,6 +1217,8 @@ require('test.assault'){test = test, soldier = soldier, building = building, gui
 require('test.scout_geometry'){test = test}
 require('test.scout_teams'){test = test, soldier = soldier, building = building}
 require('test.headquarters'){test = test, soldier = soldier}
+require('test.insignia'){test = test, soldier = soldier, handlers = function() return handlers end,
+  draws = function() return draws end, players = function() return players end}
 require('test.veterans'){test = test, soldier = soldier, handlers = function() return handlers end,
   draws = function() return draws end, players = function() return players end}
 print(string.format("%d passed, %d failed", passed, failed))

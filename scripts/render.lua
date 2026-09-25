@@ -1,19 +1,19 @@
+local insignia = require("scripts.insignia")
+
 local M = {}
 
--- Slot 0 is the ad-hoc drag selection and keeps 0.2.0's green. Slots 1-9 are
--- distinct enough to tell apart on screen at normal zoom.
-M.COLORS = {
-  [0] = {r = 0.2, g = 1.0, b = 0.35, a = 0.9},
-  [1] = {r = 1.0, g = 0.3, b = 0.3, a = 0.9},
-  [2] = {r = 0.3, g = 0.6, b = 1.0, a = 0.9},
-  [3] = {r = 1.0, g = 0.85, b = 0.2, a = 0.9},
-  [4] = {r = 0.8, g = 0.4, b = 1.0, a = 0.9},
-  [5] = {r = 0.2, g = 0.9, b = 0.9, a = 0.9},
-  [6] = {r = 1.0, g = 0.6, b = 0.15, a = 0.9},
-  [7] = {r = 0.6, g = 1.0, b = 0.3, a = 0.9},
-  [8] = {r = 1.0, g = 0.4, b = 0.7, a = 0.9},
-  [9] = {r = 0.7, g = 0.7, b = 0.75, a = 0.9},
-}
+-- Slot 0 is the ad-hoc drag selection and keeps 0.2.0's green. Slots 1-9
+-- take their insignia's accent colour.
+M.COLORS = {[0] = {r = 0.2, g = 1.0, b = 0.35, a = 0.9}}
+for n, slot in pairs(insignia.SLOTS) do M.COLORS[n] = slot.color end
+-- Bumped whenever COLORS change; the configuration change redraws rings and
+-- escort shapes of records drawn with another palette.
+M.PALETTE = 2
+
+-- Insignia sizes in tiles. The world badge floats over the leader; the map
+-- badge sits above the slot number, which keeps its screen size.
+local BADGE_TILES, BADGE_HEIGHT = 2.5, 3
+local MAP_BADGE_TILES, MAP_BADGE_HEIGHT = 14, 9
 
 local function destroy(objects, key)
   local object = objects[key]
@@ -21,11 +21,33 @@ local function destroy(objects, key)
   objects[key] = nil
 end
 
+local function destroy_marker(marker)
+  for _, key in ipairs({"object", "badge", "map_badge"}) do
+    local object = marker[key]
+    if object and object.valid then object.destroy() end
+  end
+end
+
+-- Whole-force badges: the insignia is the division's public identity.
+local function draw_badges(marker, n, leader)
+  local sprite = insignia.sprite(n)
+  if not sprite then return end
+  for _, key in ipairs({"badge", "map_badge"}) do
+    if marker[key] and marker[key].valid then marker[key].destroy() end
+  end
+  local forces, scale = {leader.force}, BADGE_TILES / insignia.SPRITE_TILES
+  marker.badge = rendering.draw_sprite{sprite = sprite, target = {entity = leader, offset = {0, -BADGE_HEIGHT}},
+    surface = leader.surface, forces = forces, x_scale = scale, y_scale = scale, render_layer = "air-object"}
+  local map_scale = MAP_BADGE_TILES / insignia.SPRITE_TILES
+  marker.map_badge = rendering.draw_sprite{sprite = sprite, target = {entity = leader, offset = {0, -MAP_BADGE_HEIGHT}},
+    surface = leader.surface, forces = forces, x_scale = map_scale, y_scale = map_scale, render_mode = "chart"}
+end
+
 function M.clear_rings(record)
   record.render = record.render or {rings = {}, route = {}}
   for key in pairs(record.render.rings) do destroy(record.render.rings, key) end
   for key, marker in pairs(record.render.markers or {}) do
-    if marker.object.valid then marker.object.destroy() end
+    destroy_marker(marker)
     record.render.markers[key] = nil
   end
 end
@@ -41,7 +63,7 @@ function M.markers(player_index, n, record, entities)
   for index, marker in pairs(markers) do
     local leader = leaders[index]
     if not leader or not marker.object.valid or marker.unit_number ~= leader.unit_number then
-      if marker.object.valid then marker.object.destroy() end
+      destroy_marker(marker)
       markers[index] = nil
     end
   end
@@ -59,6 +81,10 @@ function M.markers(player_index, n, record, entities)
     local object = markers[index].object
     if object.scale ~= 2 then object.scale = 2 end
     if not object.scale_with_zoom then object.scale_with_zoom = true end
+    local marker = markers[index]
+    if n ~= 0 and not (marker.badge and marker.badge.valid and marker.map_badge and marker.map_badge.valid) then
+      draw_badges(marker, n, leader)
+    end
   end
 end
 
