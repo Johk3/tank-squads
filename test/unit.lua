@@ -1094,7 +1094,12 @@ test("custom vehicles keep combat balance and add harmless native tracers", func
           actual_damage = actual_damage + effect.damage.amount
         end
         if effect.type == "script" and effect.effect_id == "tank-squad-shot" then aiming = not action.probability end
-        if effect.type == "create-entity" then sparks = effect end
+        if effect.type == "create-entity" then
+          -- The shot hook's rank bonus can kill the target, and the engine
+          -- stops the game when an oriented spark is created without one.
+          assert(not aiming, "hit sparks come after the shot hook")
+          sparks = effect
+        end
       end
     end
     assert(actual_damage == damage[tier], "bullet damage changed")

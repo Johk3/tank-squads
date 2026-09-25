@@ -54,10 +54,12 @@ local function soldier(suffix, hp, damage, tint)
             action_delivery = {
               type = "instant",
               target_effects = {
-                {type = "script", effect_id = "tank-squad-shot"},
                 -- Hit sparks are only visual, so skip them in fights no
-                -- player is near enough to see.
+                -- player is near enough to see. They come before the shot
+                -- hook: its rank bonus can kill the target, and the engine
+                -- cannot create an oriented spark without one.
                 {type = "create-entity", entity_name = "explosion-gunshot-small", only_when_visible = true},
+                {type = "script", effect_id = "tank-squad-shot"},
                 {type = "damage", damage = {amount = damage, type = "physical"}},
               },
             },
