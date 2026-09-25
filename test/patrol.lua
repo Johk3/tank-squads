@@ -3,6 +3,7 @@ return function(ctx)
   local geometry = require('scripts.patrol_geometry')
   local divisions = require('scripts.divisions')
   local patrol = require('scripts.patrol')
+  local retreat = require('scripts.retreat')
 
   local function close(a, b) return math.abs(a - b) < 1e-6 end
   local function distance(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) end
@@ -351,5 +352,167 @@ return function(ctx)
     patrol.on_damaged{entity = members[2], cause = biter}
     assert(sent == 5, 'a division off patrol answered the alarm')
     assert(r)
+  end)
+
+  local function depot(x, y)
+    local b = ctx.building()
+    b.position = {x = x, y = y}
+    return b
+  end
+
+  local function patrol_of(n, count)
+    local members = {}
+    for i = 1, count do members[i] = soldier(nil, nil, -200 + 10 * i, -200) end
+    divisions.assign(1, n, members)
+    local r = route(n, square)
+    patrol.start(1, n)
+    return members, r
+  end
+
+  test('patrol retreat: an injured soldier drives to the nearest barracks and leaves its post', function()
+    depot(-250, -250)
+    local members, r = patrol_of(1, 3)
+    local hurt = members[1]
+    hurt.health = 60
+    patrol.tick()
+    assert(retreat.is_away(r, hurt.unit_number), 'the injured soldier stayed')
+    assert(hurt.command.destination.x == -250, 'not sent to the barracks')
+    assert(r.dirty, 'posts not marked for a new deal')
+    patrol.tick()
+    assert(not r.posts[hurt.unit_number], 'the away soldier kept a post')
+    assert(r.posts[members[2].unit_number] and r.posts[members[3].unit_number], 'the others lost their posts')
+    assert(hurt.command.destination.x == -250, 'the new deal sent the injured soldier back to the route')
+  end)
+
+  test('patrol retreat: guards go only with more than ten soldiers, never the headquarters or a responder', function()
+    depot(-250, -250)
+    local function guards(n, count)
+      local members = {}
+      for i = 1, count do
+        members[i] = soldier(nil, nil, -200 + 10 * i, -200)
+        members[i].health = 300
+      end
+      local hq = soldier(nil, nil, 0, 0)
+      hq.name = 'tank-squad-headquarters'
+      members[#members + 1] = hq
+      divisions.assign(1, n, members)
+      local r = route(n, square)
+      patrol.start(1, n)
+      members[1].health = 60
+      members[2].health = 400
+      r.responders = {[members[2].unit_number] = game.tick}
+      patrol.tick()
+      assert(not retreat.is_away(r, hq.unit_number), 'the headquarters left')
+      assert(not retreat.is_away(r, members[2].unit_number), 'a responder was sent as a guard')
+      local away = 0
+      for _, e in ipairs(members) do if retreat.is_away(r, e.unit_number) then away = away + 1 end end
+      return away - 1
+    end
+    assert(guards(1, 10) == 0, 'ten soldiers and a headquarters sent a guard')
+    assert(guards(2, 11) == 1, 'eleven soldiers did not send one guard')
+  end)
+
+  test('patrol retreat: a healed soldier rejoins and takes up a post', function()
+    depot(-250, -250)
+    local members, r = patrol_of(1, 3)
+    local hurt = members[1]
+    hurt.health = 60
+    patrol.tick()
+    patrol.tick()
+    assert(not r.posts[hurt.unit_number])
+    hurt.position = {x = -250, y = -248}
+    hurt.health = 400
+    patrol.tick()
+    assert(not retreat.is_away(r, hurt.unit_number) and r.dirty, 'the healed soldier did not rejoin')
+    patrol.tick()
+    local post = r.posts[hurt.unit_number]
+    assert(post and hurt.command.destination == post.anchor, 'the healed soldier got no post')
+  end)
+
+  test('patrol retreat: restarting a patrol forgets an interrupted retreat', function()
+    depot(-250, -250)
+    local members, r = patrol_of(1, 3)
+    members[1].health = 60
+    patrol.tick()
+    assert(retreat.is_away(r, members[1].unit_number), 'the injured soldier stayed')
+    divisions.record(1, 1).mode = 'idle'
+    members[1].health = 400
+    patrol.start(1, 1)
+    assert(r.retreat == nil, 'restart kept the retreat state')
+    assert(r.posts[members[1].unit_number], 'restart left the soldier without a post')
+  end)
+
+  test('patrol retreat: an injured soldier with no depot in reach keeps its post without new deals', function()
+    local members, r = patrol_of(1, 3)
+    members[1].health = 60
+    local sent = 0
+    for _, e in ipairs(members) do e.commandable.set_command = function(c) sent = sent + 1; e.command = c end end
+    for _ = 1, 3 do patrol.tick() end
+    assert(sent == 0 and not r.dirty, 'a soldier with nowhere to heal caused new orders')
+    assert(not retreat.is_away(r, members[1].unit_number))
+  end)
+
+  test('patrol retreat: a patrol of only a headquarters never retreats', function()
+    depot(-250, -250)
+    local hq = soldier(nil, nil, 0, 0)
+    hq.name = 'tank-squad-headquarters'
+    divisions.assign(1, 1, {hq})
+    local r = route(1, square)
+    patrol.start(1, 1)
+    hq.health = 60
+    patrol.tick()
+    assert(r.retreat == nil and not r.dirty, 'the headquarters retreated')
+  end)
+
+  test('patrol retreat: a failed leg\'s retry does not pull an away soldier back to the route', function()
+    depot(-250, -250)
+    local members, r = patrol_of(1, 3)
+    local hurt = members[1]
+    patrol.advance(hurt.unit_number, defines.behavior_result.fail)
+    assert(r.retry and r.retry[hurt.unit_number], 'no retry pending')
+    hurt.health = 60
+    patrol.tick()
+    assert(retreat.is_away(r, hurt.unit_number), 'the injured soldier stayed')
+    assert(hurt.command.destination.x == -250, 'the retry sent the away soldier back to the route')
+    assert(not (r.retry and r.retry[hurt.unit_number]), 'the retry was kept for an away soldier')
+  end)
+
+  test('patrol retreat: an away soldier that dies is dropped from its convoy', function()
+    depot(-250, -250)
+    local members, r = patrol_of(1, 3)
+    local hurt = members[1]
+    hurt.health = 60
+    patrol.tick()
+    patrol.tick()
+    divisions.forget(hurt.unit_number)
+    hurt.valid = false
+    patrol.forget(hurt.unit_number)
+    patrol.tick()
+    assert(next(r.retreat.convoys) == nil, 'the convoy outlived its only soldier')
+    assert(not retreat.is_away(r, hurt.unit_number), 'a dead soldier is still away')
+  end)
+
+  test('patrol retreat: one sweep reads the retreat settings once, however many patrols run', function()
+    patrol_of(1, 3)
+    patrol_of(2, 3)
+    local global, reads = settings.global, 0
+    settings.global = setmetatable({}, {__index = function(_, k) reads = reads + 1; return global[k] end})
+    patrol.tick()
+    settings.global = global
+    local expected = #require('scripts.config').DEFINITIONS
+    assert(reads == expected, 'settings read ' .. reads .. ' times, expected ' .. expected)
+  end)
+
+  test('patrol retreat: a healthy patrol sweep sends no orders and reads no positions', function()
+    local members, r = patrol_of(1, 6)
+    local reads, sent = {}, 0
+    for i, e in ipairs(members) do
+      reads[i] = ctx.count_reads(e, 'position')
+      e.commandable.set_command = function(c) sent = sent + 1; e.command = c end
+    end
+    patrol.tick()
+    for i = 1, 6 do assert(reads[i].n == 0, 'a healthy sweep read positions') end
+    assert(sent == 0, 'a healthy sweep sent orders')
+    assert(r.retreat and next(r.retreat.away) == nil)
   end)
 end

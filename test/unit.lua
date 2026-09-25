@@ -1248,7 +1248,7 @@ require('test.reinforcements'){test = test, soldier = soldier, building = buildi
 require('test.escort'){test = test, soldier = soldier, building = building, gui_element = gui_element,
   handlers = function() return handlers end, draws = function() return draws end, count_reads = count_reads}
 require('test.division_index'){test=test, soldier=soldier, building=building}
-require('test.patrol'){test = test, soldier = soldier, count_reads = count_reads}
+require('test.patrol'){test = test, soldier = soldier, building = building, count_reads = count_reads}
 require('test.vision'){test = test, soldier = soldier, count_reads = count_reads, handlers = function() return handlers end}
 require('test.assault'){test = test, soldier = soldier, building = building, gui_element = gui_element,
   handlers = function() return handlers end}

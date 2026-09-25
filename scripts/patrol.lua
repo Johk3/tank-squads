@@ -4,6 +4,8 @@ local divisions = require("scripts.divisions")
 local render = require("scripts.render")
 local geometry = require("scripts.escort_geometry")
 local patrol_geometry = require("scripts.patrol_geometry")
+local retreat = require("scripts.retreat")
+local config = require("scripts.config")
 
 local M = {}
 
@@ -113,7 +115,8 @@ local function assign(player_index, n, r, all)
   if not r.surface_index and members[1] then r.surface_index = members[1].surface_index end
   local keyed = {}
   for _, soldier in pairs(members) do
-    if soldier.surface_index == r.surface_index then
+    -- A soldier away healing or guarding has no post until it rejoins.
+    if soldier.surface_index == r.surface_index and not retreat.is_away(r, soldier.unit_number) then
       keyed[#keyed + 1] = {entity = soldier, id = soldier.unit_number, position = soldier.position,
         hq = soldier.name == names.headquarters}
     end
@@ -186,7 +189,7 @@ function M.start(player_index, n)
   record.mode = "patrol"
   record.order = nil
   record.scout = nil
-  r.retry, r.responders, r.alarm_tick = nil, nil, nil
+  r.retry, r.responders, r.alarm_tick, r.retreat = nil, nil, nil, nil
   assign(player_index, n, r, true)
   return #r.waypoints
 end
@@ -269,17 +272,47 @@ function M.advance(unit_number, result)
   return post.i
 end
 
+-- Soldiers that can retreat: members on the route's surface. The unarmed
+-- headquarters never retreats and never guards; it is a depot itself.
+local function retreat_members(player_index, n, r)
+  local out = {}
+  for _, e in ipairs(divisions.cached(player_index, n)) do
+    if e.valid and e.surface_index == r.surface_index and e.name ~= names.headquarters then out[#out + 1] = e end
+  end
+  return out
+end
+
+-- A rejoin always reports a change, which deals the posts again.
+local function rejoined() end
+
+-- Injured soldiers leave for a depot as in escort mode (scripts/retreat.lua).
+-- Anyone leaving or rejoining deals the posts again on the next sweep, once,
+-- through the same path as a casualty. The settings are read once per call,
+-- and only when a patrol division in this phase has soldiers.
 function M.tick(phase)
+  local cfg
   each_route(function(player_index, n, r, record)
     if record.mode ~= "patrol" or not divisions.in_phase(player_index, n, phase) then return end
     if r.dirty or not r.posts then
       if #r.waypoints > 0 then assign(player_index, n, r, not r.posts) end
       return
     end
+    local members = retreat_members(player_index, n, r)
+    if members[1] then
+      cfg = cfg or config.escort()
+      local _, changed = retreat.sweep(r, members, {
+        force = members[1].force, surface_index = r.surface_index,
+        retreat = cfg.retreat, rejoin = cfg.rejoin, range = cfg.range,
+        responders = r.responders, on_rejoin = rejoined,
+      })
+      if changed then r.dirty = true end
+    end
     if not r.retry then return end
     local tick = game.tick
     for id, due in pairs(r.retry) do
-      if tick >= due then
+      if retreat.is_away(r, id) then
+        r.retry[id] = nil
+      elseif tick >= due then
         r.retry[id] = nil
         local post, soldier = r.posts[id], game.get_entity_by_unit_number(id)
         if post and post.i and soldier and soldier.valid then go(soldier, target(post)) end
