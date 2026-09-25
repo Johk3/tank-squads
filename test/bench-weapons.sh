@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# Isolated native combat benchmark. Usage: bash test/bench-weapons.sh [count] [idle|fire] [carrier|mixed|siege|flame]
+# Isolated native combat benchmark. Usage: bash test/bench-weapons.sh [count] [idle|fire] [carrier|mixed|siege|flame] [xp]
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 COUNT="${1:-200}"
 MODE="${2:-fire}"
 COMPOSITION="${3:-carrier}"
+XP="${4:-0}"
 [[ "$COUNT" =~ ^[0-9]+$ ]] && (( COUNT >= 1 && COUNT <= 1000 )) || exit 2
 [[ "$MODE" == idle || "$MODE" == fire ]] || exit 2
 [[ "$COMPOSITION" == carrier || "$COMPOSITION" == mixed || "$COMPOSITION" == siege || "$COMPOSITION" == flame ]] || exit 2
+[[ "$XP" =~ ^[0-9]+$ ]] || exit 2
 setup_sandbox
 trap stop_server EXIT
 start_server
-SAVE="weapons-$COUNT-$MODE-$COMPOSITION"
+SAVE="weapons-$COUNT-$MODE-$COMPOSITION-xp$XP"
 LUA=$(cat <<LUA
 local name = 'tank-squads-weapon-benchmark-$COUNT'
 for _, surface in pairs(game.surfaces) do
@@ -39,6 +41,7 @@ for i = 1, $COUNT do
   local a = s.create_entity{name = unit, position = {0, y}, force = f, raise_built = true}
   local target = s.create_entity{name = 'tank', position = {distance, y}, force = 'enemy'}
   if not (a and target and storage.weapons[a.unit_number]) then error('benchmark spawn failed') end
+  if $XP > 0 then remote.call('tank-squads', 'veteran_add_xp', a.unit_number, $XP) end
   if '$MODE' == 'fire' then a.commandable.set_command{type = defines.command.attack, target = target, distraction = defines.distraction.none} end
   count = count + 1
 end
