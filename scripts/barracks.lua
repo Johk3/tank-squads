@@ -150,7 +150,7 @@ end
 
 -- Mining hands the output inventory to the player, where a recruit item can
 -- never become a soldier. Deploy every buffered recruit first: a linked
--- barracks fills its division up to the target, and the rest walk to the
+-- barracks fills its own quota in its division, and the rest walk to the
 -- rally point. A recruit with no free space nearby is still lost.
 function M.evacuate(entity)
   local b = M.record(entity)
@@ -210,8 +210,7 @@ function M.tick(phase)
       end
     end
   end
-  -- Barracks linked to one division share a phase, so a deployment that
-  -- fills the division pauses its other producers in the same sweep.
+  -- A barracks whose deployment filled its quota pauses in the same sweep.
   for _, b in ipairs(swept) do
     if b.entity.valid then reinforcements.sync_production(b) end
   end

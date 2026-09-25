@@ -1,5 +1,6 @@
 local barracks = require('scripts.barracks')
 local divisions = require('scripts.divisions')
+local reinforcements = require('scripts.reinforcements')
 local M = {}
 local NAME = 'tank_squads_reinforcements'
 
@@ -20,9 +21,8 @@ function M.refresh(player_index)
   frame.actions.apply.enabled = editable
   frame.actions.disable.enabled = editable and binding ~= nil
   if binding then
-    local record = divisions.record(binding.player_index, binding.division)
-    frame.status.caption = {'tank-squads.reinforcement-status', binding.division,
-      divisions.fighters(binding.player_index, binding.division), record.reinforcement_target or 0}
+    local target, recruits = reinforcements.quota(b)
+    frame.status.caption = {'tank-squads.reinforcement-status', binding.division, recruits or 0, target or 0}
     if not editable then frame.status.caption = {'tank-squads.reinforcement-other-owner'} end
   else
     frame.status.caption = {'tank-squads.reinforcement-off'}
@@ -36,7 +36,7 @@ function M.open(event)
   if not (player and b and b.entity.force == player.force) then return end
   local binding = b.reinforcement
   local n = binding and binding.division or math.max(1, divisions.selected(event.player_index))
-  local record = divisions.record(binding and binding.player_index or event.player_index, n)
+  local target = reinforcements.quota(b) or 10
   local frame = player.gui.relative.add{type = 'frame', name = NAME, direction = 'vertical',
     caption = {'tank-squads.reinforcement-title'}, tags = {barracks = b.entity.unit_number},
     anchor = {gui = defines.relative_gui_type.assembling_machine_gui, position = defines.relative_gui_position.right}}
@@ -48,7 +48,7 @@ function M.open(event)
   for i = 1, 9 do items[i] = {'tank-squads.division-number', i} end
   frame.add{type = 'drop-down', name = 'division', items = items, selected_index = n}
   frame.add{type = 'label', caption = {'tank-squads.reinforcement-target'}}
-  frame.add{type = 'textfield', name = 'target', text = tostring(record.reinforcement_target or math.max(20, #record.members)),
+  frame.add{type = 'textfield', name = 'target', text = tostring(target),
     numeric = true, allow_decimal = false, allow_negative = false}
   local actions = frame.add{type = 'flow', name = 'actions'}
   actions.add{type = 'button', name = 'apply', caption = {'tank-squads.reinforcement-apply'},

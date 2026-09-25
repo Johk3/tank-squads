@@ -416,14 +416,14 @@ test("mining a linked barracks fills its division and sends the rest to the rall
   output["tank-squad-recruit-1"] = 3
   handlers.on_pre_player_mined_item{entity = b, player_index = 1}
   assert(output["tank-squad-recruit-1"] == 0, "recruits left behind")
-  assert(divisions.size(1, 4) == 2, "division not filled to its target, or overfilled")
+  assert(divisions.size(1, 4) == 3, "quota not filled, or overfilled")
   local rallied = 0
   for _, e in pairs(entities) do
     if e ~= member and e.name == names.soldier_names[1] and e.command and not divisions.owner(e.unit_number) then
       rallied = rallied + 1
     end
   end
-  assert(rallied == 2, "surplus recruits did not head for the rally point")
+  assert(rallied == 1, "surplus recruits did not head for the rally point")
 end)
 
 test("registering a barracks twice cannot double its production", function()

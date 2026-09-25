@@ -91,7 +91,7 @@ function M.update(player_index)
   local frame = player.gui.screen[NAME]
   local populated = false
   for _, record in pairs(slots) do
-    if #record.members > 0 or record.reinforcement_target then populated = true; break end
+    if #record.members > 0 or divisions.is_reinforced(record) then populated = true; break end
   end
   if not populated then
     if frame then frame.visible = false end
@@ -118,13 +118,12 @@ function M.update(player_index)
     local row = frame.body.divisions["row_" .. n]
     local button = row["division_" .. n]
     row.visible = n ~= 0 or count > 0
-    button.enabled = count > 0 or (record ~= nil and record.reinforcement_target ~= nil)
+    button.enabled = count > 0 or (record ~= nil and divisions.is_reinforced(record))
     button.toggled = n == selected
     -- Avoid assigning captions each sweep when nothing changed. Localised control
     -- placeholders are resolved by Factorio, so rebound keys remain accurate.
-    local target = record and record.reinforcement_target
-    -- A reinforcement target counts carriers, so a headquarters is left out.
-    local carriers = target and divisions.fighters(player_index, n)
+    -- Linked barracks count only the soldiers they trained themselves.
+    local target, recruits = divisions.reinforcement(player_index, n, record)
     local state = record and record.escort
     local mode_caption = {"tank-squads.mode-" .. mode}
     local mode_key = mode
@@ -134,9 +133,9 @@ function M.update(player_index)
       mode_caption = {"tank-squads.mode-escort", ward and ward.name or "?", detail}
       mode_key = mode .. ":" .. state.ward .. ":" .. state.formation .. ":" .. tostring(state.available)
     end
-    local signature = count .. ":" .. mode_key .. ':' .. tostring(target) .. ':' .. tostring(carriers) .. ':' .. tostring(compact)
+    local signature = count .. ":" .. mode_key .. ':' .. tostring(target) .. ':' .. tostring(recruits) .. ':' .. tostring(compact)
     if button.tags.status ~= signature then
-      local size = target and {'tank-squads.reinforced-count', carriers, target} or count
+      local size = target and {'tank-squads.reinforced-count', recruits, target} or count
       if compact then
         button.caption = {"tank-squads.division-row-compact", n, size, mode_caption}
       else

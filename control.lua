@@ -16,6 +16,7 @@ local headquarters = require("scripts.headquarters")
 local render = require("scripts.render")
 local veterans = require("scripts.veterans")
 local unit_card = require("scripts.unit_card")
+local reinforcements = require("scripts.reinforcements")
 
 local function on_built(event)
   local entity = event.entity
@@ -126,6 +127,7 @@ script.on_configuration_changed(function()
   headquarters.reconcile()
   veterans.reapply()
   divisions.reconcile_ownership()
+  reinforcements.upgrade()
   -- Headquarters rings from older versions are too small to show, and rings
   -- from an older palette have the wrong colour; the refresh below redraws
   -- them. Escort shapes redraw on their next sweep.

@@ -134,24 +134,36 @@ function M.size(player_index, n)
   return #M.get(player_index, n)
 end
 
--- Headquarters in the division. Walks the headquarters registry, a handful
--- of entries at most, instead of reading every member's name, so saves
--- without a headquarters pay one nil check.
-function M.headquarters_count(player_index, n)
-  local headquarters = storage.headquarters
-  if not headquarters then return 0 end
-  local owners, count = ownership(), 0
-  for id in pairs(headquarters) do
+-- How many of a barracks' recruits still serve in the division. Drops the
+-- ones that died or left it, in place. Reads the ownership index, which the
+-- last roster check and every death keep current.
+function M.serving(player_index, n, recruits)
+  local owners, kept = ownership(), 0
+  for i = 1, #recruits do
+    local id = recruits[i]
     local owner = owners[id]
-    if owner and owner.player_index == player_index and owner.division == n then count = count + 1 end
+    if owner and owner.player_index == player_index and owner.division == n then
+      kept = kept + 1
+      recruits[kept] = id
+    end
   end
-  return count
+  for i = #recruits, kept + 1, -1 do recruits[i] = nil end
+  return kept
 end
 
--- Members that are no headquarters: the carriers a reinforcement target
--- counts. Uses the stored roster, which the last sweep validated.
-function M.fighters(player_index, n)
-  return #M.record(player_index, n).members - M.headquarters_count(player_index, n)
+-- The summed targets and serving recruits of the division's linked barracks,
+-- or nil when no barracks is linked. Takes the record so a read never
+-- creates an empty division.
+function M.reinforcement(player_index, n, record)
+  if not (record and M.is_reinforced(record)) then return nil end
+  local target, serving = 0, 0
+  for _, source in pairs(record.reinforcement_sources) do
+    if type(source) == "table" then
+      target = target + source.target
+      serving = serving + M.serving(player_index, n, source.recruits)
+    end
+  end
+  return target, serving
 end
 
 -- A same-tick cache of M.get(), for a hot per-sweep caller (escort) that

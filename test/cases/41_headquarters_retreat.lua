@@ -55,12 +55,9 @@ local ok, result = pcall(function()
   if hurt.health < 380 then error('headquarters did not heal the soldier: ' .. hurt.health) end
   remote.call('tank-squads', 'escort_tick')
   if next(state.retreat.away) then error('convoy did not rejoin after healing') end
-  if not remote.call('tank-squads', 'barracks_configure', owner, depot, 5, 12) then error('barracks link rejected') end
+  if not remote.call('tank-squads', 'barracks_configure', owner, depot, 5, 1) then error('barracks link rejected') end
   remote.call('tank-squads', 'tick')
-  if not depot.active then error('the headquarters counted as a carrier') end
-  remote.call('tank-squads', 'barracks_configure', owner, depot, 5, 11)
-  remote.call('tank-squads', 'tick')
-  if depot.active then error('a met carrier target did not pause the barracks') end
+  if not depot.active then error('soldiers the barracks did not train filled its quota') end
   remote.call('tank-squads', 'barracks_configure', owner, depot, nil)
   remote.call('tank-squads', 'escort_stop', owner, 5)
 end)
@@ -69,4 +66,4 @@ game, rendering = engine_game, engine_rendering
 storage.divisions = old_divisions
 storage.unit_divisions = old_index
 if not ok then error(result) end
-return 'PASS: injured soldier retreated to a nearer, moving headquarters, healed there and returned; the headquarters is no carrier'
+return 'PASS: injured soldier retreated to a nearer, moving headquarters, healed there and returned; a linked barracks counts only its own soldiers'

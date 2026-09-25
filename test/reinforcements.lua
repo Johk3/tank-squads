@@ -5,7 +5,7 @@ return function(ctx)
   local patrol = require('scripts.patrol')
   local commands = require('scripts.commands')
 
-  test('reinforcements append without changing selection and stop at target', function()
+  test('reinforcements append without changing selection and stop at the quota', function()
     local old = soldier()
     divisions.assign(1, 2, {old})
     divisions.recall(1, 3)
@@ -13,52 +13,74 @@ return function(ctx)
     assert(barracks.configure(b, 1, 2, 2))
     output['tank-squad-recruit-1'] = 3
     barracks.tick()
-    assert(divisions.size(1, 2) == 2, 'did not fill exactly the missing slot')
+    assert(divisions.size(1, 2) == 3, 'did not add exactly the quota')
     assert(divisions.selected(1) == 3, 'deployment changed player selection')
-    assert(output['tank-squad-recruit-1'] == 2, 'consumed recruits above target')
-    assert(b.active == false, 'full division did not pause production')
+    assert(output['tank-squad-recruit-1'] == 1, 'consumed recruits above the quota')
+    assert(b.active == false, 'a full quota did not pause production')
   end)
 
-  local function headquarters()
-    local hq = soldier()
-    hq.name = 'tank-squad-headquarters'
-    storage.headquarters = storage.headquarters or {}
-    storage.headquarters[hq.unit_number] = {entity = hq, force_index = hq.force_index, helpers = {}}
-    return hq
-  end
-
-  test('a headquarters in the division does not count towards the carrier target', function()
-    divisions.assign(1, 2, {headquarters(), soldier()})
+  test('soldiers the barracks did not train leave its quota alone', function()
+    divisions.assign(1, 2, {soldier(), soldier(), soldier()})
     local b, output = building()
     assert(barracks.configure(b, 1, 2, 2))
-    output['tank-squad-recruit-1'] = 3
+    output['tank-squad-recruit-1'] = 2
     barracks.tick()
-    assert(divisions.size(1, 2) == 3 and output['tank-squad-recruit-1'] == 2, 'the headquarters took a carrier slot')
-    assert(b.active == false, 'a full division did not pause production')
-    assert(divisions.fighters(1, 2) == 2)
+    assert(divisions.size(1, 2) == 5 and output['tank-squad-recruit-1'] == 0, 'assigned soldiers filled the quota')
   end)
 
-  test('a barracks training headquarters counts them, so it stops at the target', function()
-    divisions.assign(1, 2, {headquarters(), soldier()})
-    local b = building()
-    b.get_recipe = function() return {name = 'tank-squad-train-headquarters'} end
-    assert(barracks.configure(b, 1, 2, 2))
-    barracks.tick()
-    assert(b.active == false, 'a headquarters barracks kept training past the target')
-  end)
-
-  test('linked barracks share one cap and replace a casualty', function()
+  test('each linked barracks keeps its own quota and replaces its own casualty', function()
     local a, first = building()
     local b, second = building()
     assert(barracks.configure(a, 1, 2, 2))
-    assert(barracks.configure(b, 1, 2, 2))
+    assert(barracks.configure(b, 1, 2, 1))
     first['tank-squad-recruit-1'], second['tank-squad-recruit-1'] = 3, 3
     barracks.tick()
-    assert(divisions.size(1, 2) == 2, 'two producers overshot shared cap')
-    divisions.get(1, 2)[1].valid = false
+    assert(divisions.size(1, 2) == 3, 'the quotas were not added up')
+    assert(first['tank-squad-recruit-1'] == 1 and second['tank-squad-recruit-1'] == 2, 'a barracks overshot its quota')
+    local from_b = storage.divisions[1].slots[2].reinforcement_sources[b.unit_number].recruits[1]
+    game.get_entity_by_unit_number(from_b).valid = false
     barracks.tick()
-    assert(divisions.size(1, 2) == 2, 'casualty not replaced')
-    assert(first['tank-squad-recruit-1'] + second['tank-squad-recruit-1'] == 3)
+    assert(divisions.size(1, 2) == 3, 'casualty not replaced')
+    assert(first['tank-squad-recruit-1'] == 1 and second['tank-squad-recruit-1'] == 1, 'the wrong barracks replaced the casualty')
+  end)
+
+  test('each barracks links to its own division with its own quota', function()
+    local a, first = building()
+    local b, second = building()
+    assert(barracks.configure(a, 1, 2, 3))
+    assert(barracks.configure(b, 1, 5, 1))
+    first['tank-squad-recruit-1'], second['tank-squad-recruit-1'] = 4, 4
+    barracks.tick()
+    assert(divisions.size(1, 2) == 3 and divisions.size(1, 5) == 1)
+    local reinforcements = require('scripts.reinforcements')
+    assert(reinforcements.quota(barracks.record(a)) == 3 and reinforcements.quota(barracks.record(b)) == 1)
+  end)
+
+  test('a recruit moved to another division leaves the quota and is replaced', function()
+    local b, output = building()
+    assert(barracks.configure(b, 1, 2, 1))
+    output['tank-squad-recruit-1'] = 2
+    barracks.tick()
+    local recruit = divisions.get(1, 2)[1]
+    divisions.assign(1, 4, {recruit})
+    barracks.tick()
+    assert(divisions.size(1, 2) == 1 and divisions.get(1, 2)[1] ~= recruit, 'the moved recruit still counted')
+    assert(output['tank-squad-recruit-1'] == 0)
+  end)
+
+  test('a new target keeps the recruits and a new division starts afresh', function()
+    local reinforcements = require('scripts.reinforcements')
+    local b, output = building()
+    assert(barracks.configure(b, 1, 2, 2))
+    output['tank-squad-recruit-1'] = 2
+    barracks.tick()
+    assert(barracks.configure(b, 1, 2, 3))
+    local target, serving = reinforcements.quota(barracks.record(b))
+    assert(target == 3 and serving == 2, 'a new target dropped the recruits')
+    assert(barracks.configure(b, 1, 6, 3))
+    target, serving = reinforcements.quota(barracks.record(b))
+    assert(target == 3 and serving == 0, 'recruits followed the barracks to a new division')
+    assert(not next(divisions.record(1, 2).reinforcement_sources), 'the old division kept the barracks')
   end)
 
   test('full linked barracks resolve each member once per sweep and refresh after silent loss', function()
@@ -175,16 +197,33 @@ return function(ctx)
     frame.division.selected_index = 4
     frame.target.text = '12'
     gui.click{player_index = 1, element = frame.actions.apply}
-    assert(divisions.record(1, 4).reinforcement_target == 12)
+    assert(require('scripts.reinforcements').quota(barracks.record(b)) == 12)
     assert(barracks.record(b).reinforcement.division == 4)
+    -- Another barracks opens with its own settings.
+    local other = building()
+    player.opened = other
+    gui.open{player_index = 1, entity = other}
+    frame = player.gui.relative.tank_squads_reinforcements
+    assert(frame.division.selected_index == 1 and frame.target.text == '10', 'the new barracks showed another barracks\' settings')
+    frame.division.selected_index = 4
+    frame.target.text = '3'
+    gui.click{player_index = 1, element = frame.actions.apply}
+    assert(require('scripts.reinforcements').quota(barracks.record(b)) == 12, 'one barracks changed another one\'s quota')
+    player.opened = b
+    gui.open{player_index = 1, entity = b}
+    frame = player.gui.relative.tank_squads_reinforcements
+    assert(frame.division.selected_index == 4 and frame.target.text == '12')
     gui.click{player_index = 1, element = frame.actions.disable}
     assert(barracks.record(b).reinforcement == nil)
   end)
 
-  test('the panel and barracks window count carriers without the headquarters', function()
-    divisions.assign(1, 2, {headquarters(), soldier()})
-    local b = building()
+  test('the barracks window shows its own quota and the panel adds them up', function()
+    divisions.assign(1, 2, {soldier()})
+    local b, output = building()
     assert(barracks.configure(b, 1, 2, 5))
+    assert(barracks.configure(building(), 1, 2, 4))
+    output['tank-squad-recruit-1'] = 1
+    barracks.tick()
     local player = game.get_player(1)
     player.gui.relative = ctx.gui_element()
     player.opened = b
@@ -194,10 +233,10 @@ return function(ctx)
     gui.open{player_index = 1, entity = b}
     gui.refresh(1)
     local status = player.gui.relative.tank_squads_reinforcements.status.caption
-    assert(status[3] == 1 and status[4] == 5, 'barracks window counted the headquarters')
+    assert(status[3] == 1 and status[4] == 5, 'barracks window did not show its own quota')
     require('scripts.panel').update(1)
     local caption = player.gui.screen.tank_squads_divisions.body.divisions.row_2.division_2.caption
-    assert(caption[3][2] == 1 and caption[3][3] == 5, 'panel counted the headquarters')
+    assert(caption[3][2] == 1 and caption[3][3] == 9, 'panel did not add up the quotas')
   end)
 
   test('reinforcement setup rejects another surface and another player editing a binding', function()
@@ -216,7 +255,7 @@ return function(ctx)
     assert(barracks.configure(b, 1, 2, 1))
     barracks.unregister(b.unit_number)
     assert(not next(divisions.record(1, 2).reinforcement_sources))
-    assert(divisions.record(1, 2).reinforcement_target == nil)
+    assert(divisions.record(1, 2).reinforcement_surface_index == nil)
   end)
 
   test('force-change cleanup releases bindings even when barracks now share the new force', function()
@@ -230,5 +269,34 @@ return function(ctx)
     barracks.tick()
     assert(barracks.record(b).reinforcement == nil, 'orphaned owner binding survived force change')
     assert(b.active, 'orphaned producer remained permanently paused')
+  end)
+
+  test('upgrading splits a shared target between barracks and keeps their soldiers', function()
+    local reinforcements = require('scripts.reinforcements')
+    local hq = soldier()
+    hq.name = 'tank-squad-headquarters'
+    storage.headquarters = {[hq.unit_number] = {entity = hq, force_index = hq.force_index, helpers = {}}}
+    local members = {hq, soldier(), soldier(), soldier()}
+    divisions.assign(1, 2, members)
+    local a, first = building()
+    local c = building()
+    c.get_recipe = function() return {name = 'tank-squad-train-headquarters'} end
+    local record = divisions.record(1, 2)
+    for _, e in ipairs({a, c}) do barracks.record(e).reinforcement = {player_index = 1, division = 2} end
+    record.reinforcement_sources = {[a.unit_number] = true, [c.unit_number] = true}
+    record.reinforcement_surface_index = 1
+    record.reinforcement_target = 5
+    reinforcements.upgrade()
+    assert(record.reinforcement_target == nil)
+    local carrier, command = record.reinforcement_sources[a.unit_number], record.reinforcement_sources[c.unit_number]
+    assert(carrier.target == 3 and command.target == 2, 'the shared target was not split')
+    assert(#carrier.recruits == 3 and #command.recruits == 1, 'the members were not handed out')
+    for _, id in ipairs(carrier.recruits) do assert(id ~= hq.unit_number, 'a carrier barracks took the headquarters') end
+    assert(command.recruits[1] == hq.unit_number)
+    first['tank-squad-recruit-1'] = 1
+    barracks.tick()
+    assert(first['tank-squad-recruit-1'] == 1, 'a full carrier barracks trained after the upgrade')
+    reinforcements.upgrade()
+    assert(record.reinforcement_sources[a.unit_number] == carrier, 'a second upgrade changed the quotas')
   end)
 end
