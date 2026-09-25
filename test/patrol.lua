@@ -515,4 +515,33 @@ return function(ctx)
     assert(sent == 0, 'a healthy sweep sent orders')
     assert(r.retreat and next(r.retreat.away) == nil)
   end)
+
+  test('patrol retreat: an away soldier\'s arrival does not step a post', function()
+    depot(-250, -250)
+    local members, r = patrol_of(1, 3)
+    local hurt = members[1]
+    local post = r.posts[hurt.unit_number]
+    hurt.health = 60
+    patrol.tick()
+    local sent = hurt.command
+    assert(patrol.advance(hurt.unit_number, defines.behavior_result.success) == nil)
+    assert(hurt.command == sent and post.i == 0, 'the arrival moved the soldier along its old post')
+    local convoy = r.retreat.convoys[r.retreat.away[hurt.unit_number]]
+    assert(convoy.resend[hurt.unit_number], 'the arrival did not reach the convoy')
+  end)
+
+  test('patrol retreat: alarms skip away soldiers, and a hit on one raises none', function()
+    local members, _, r, biter = alarm_setup()
+    depot(-250, -250)
+    members[1].health = 60
+    patrol.tick()
+    assert(retreat.is_away(r, members[1].unit_number), 'the injured soldier stayed')
+    local convoy, sent = members[1].command, 0
+    for i = 2, 4 do members[i].commandable.set_command = function(c) sent = sent + 1; members[i].command = c end end
+    patrol.on_damaged{entity = members[1], cause = biter}
+    assert(sent == 0 and r.alarm_tick == nil, 'a hit on an away soldier raised the alarm')
+    patrol.on_damaged{entity = members[2], cause = biter}
+    assert(sent == 2, 'expected the two soldiers on patrol to help, got ' .. sent)
+    assert(members[1].command == convoy, 'the alarm called an away soldier')
+  end)
 end

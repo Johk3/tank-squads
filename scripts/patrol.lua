@@ -247,7 +247,14 @@ end
 function M.advance(unit_number, result)
   local _, _, record = divisions.owner(unit_number)
   local r = record and record.mode == "patrol" and record.patrol
-  local post = r and r.posts and r.posts[unit_number]
+  if not r then return nil end
+  -- Arriving at a depot is not a patrol event. An away soldier has no post
+  -- once the posts are dealt again, so this check comes first.
+  if retreat.is_away(r, unit_number) then
+    retreat.on_command_completed(r, unit_number, result)
+    return nil
+  end
+  local post = r.posts and r.posts[unit_number]
   if not post then return nil end
   local soldier = game.get_entity_by_unit_number(unit_number)
   if not (soldier and soldier.valid) then return nil end
@@ -349,6 +356,8 @@ function M.on_damaged(event)
   local player_index, n, record = divisions.owner(entity.unit_number)
   local r = record and record.mode == "patrol" and record.patrol
   if not (r and r.posts) then return end
+  -- A convoy far from the route must not pull the patrol after it.
+  if retreat.is_away(r, entity.unit_number) then return end
   local tick = game.tick
   if r.alarm_tick and tick < r.alarm_tick + M.ALARM_TICKS then return end
   local cause = event.cause
@@ -360,7 +369,7 @@ function M.on_damaged(event)
   for _, soldier in ipairs(divisions.cached(player_index, n)) do
     local id = soldier.unit_number
     if id ~= victim and r.posts[id] and soldier.surface_index == surface_index
-      and soldier.name ~= names.headquarters and not busy(r, id) then
+      and soldier.name ~= names.headquarters and not busy(r, id) and not retreat.is_away(r, id) then
       r.responders = r.responders or {}
       r.responders[id] = tick
       if r.retry then r.retry[id] = nil end
