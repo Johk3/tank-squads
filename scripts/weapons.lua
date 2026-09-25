@@ -2,11 +2,13 @@ local names = require("scripts.names")
 local combat = require('scripts.combat')
 local vision = require('scripts.vision')
 local appearance = require("scripts.appearance")
+local veterans = require("scripts.veterans")
 local colors = appearance.tier_colors
 local M = {}
 
 function M.register(entity)
   if not (entity and entity.valid and names.soldier_set[entity.name]) then return end
+  veterans.register(entity)
   vision.track(entity)
   storage.weapons = storage.weapons or {}
   local visual = appearance.weapons[entity.name]
@@ -43,6 +45,7 @@ end
 function M.unregister(unit_number)
   combat.forget(unit_number)
   vision.forget(unit_number)
+  veterans.unregister(unit_number)
   local record = storage.weapons and storage.weapons[unit_number]
   if not record then return end
   if record.gun.valid then record.gun.destroy() end
@@ -93,6 +96,7 @@ local function check(id, record)
   elseif not record.gun.valid then
     M.register(record.entity)
   else
+    veterans.repair(record.entity)
     if record.recoiling and game.tick - record.last_shot >= record.recoil_ticks then
       record.gun.animation_speed, record.gun.animation_offset = 0, 0
       record.recoiling = nil

@@ -14,6 +14,7 @@ local config = require("scripts.config")
 local vision = require("scripts.vision")
 local headquarters = require("scripts.headquarters")
 local render = require("scripts.render")
+local veterans = require("scripts.veterans")
 
 local function on_built(event)
   local entity = event.entity
@@ -40,6 +41,10 @@ for _, filter in ipairs(soldier_filters) do unit_filters[#unit_filters + 1] = fi
 local clone_filters = {}
 for _, filter in ipairs(filters) do clone_filters[#clone_filters + 1] = filter end
 for _, name in ipairs(headquarters.HELPER_NAMES) do clone_filters[#clone_filters + 1] = {filter = "name", name = name} end
+-- Our own deaths by name, plus enemy deaths for kill credit.
+local died_filters = {}
+for _, filter in ipairs(filters) do died_filters[#died_filters + 1] = filter end
+for _, filter in ipairs(veterans.KILL_FILTERS) do died_filters[#died_filters + 1] = filter end
 
 script.on_event(defines.events.on_built_entity, on_built, filters)
 script.on_event(defines.events.on_robot_built_entity, on_built, filters)
@@ -115,6 +120,7 @@ script.on_configuration_changed(function()
     end
   end
   headquarters.reconcile()
+  veterans.reapply()
   divisions.reconcile_ownership()
   -- Headquarters rings from older versions are too small to show; the
   -- refresh below redraws them at the current size.
@@ -158,8 +164,10 @@ script.on_event(defines.events.on_entity_died, function(event)
     -- Same order as for soldiers above.
     divisions.forget(entity.unit_number)
     patrol.forget(entity.unit_number)
+  else
+    veterans.on_kill(event)
   end
-end, filters)
+end, died_filters)
 
 script.on_event(defines.events.on_ai_command_completed, function(event)
   -- A finished distraction (a fight on the way) is reported on its own; the
@@ -302,6 +310,13 @@ script.on_nth_tick(PHASE_TICKS, function(event)
 end)
 
 remote.add_interface("tank-squads", {
+  veteran_add_xp = function(unit_number, amount)
+    local entity = game.get_entity_by_unit_number(unit_number)
+    local record = veterans.get(unit_number)
+    if not (entity and entity.valid and record and record.xp) then return nil end
+    veterans.add_xp(entity, record, amount)
+    return record.rank
+  end,
   barracks_configure = function(player_index, entity, division, target)
     return barracks.configure(entity, player_index, division, target)
   end,

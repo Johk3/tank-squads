@@ -947,8 +947,20 @@ test("entity events are filtered to the mod's own entities", function()
     for name in pairs(allowed) do assert(seen[name], event .. " misses " .. name) end
   end
   for _, event in ipairs({"on_built_entity", "on_robot_built_entity", "script_raised_built",
-      "script_raised_revive", "on_entity_died"}) do
+      "script_raised_revive"}) do
     check(event, expected)
+  end
+  -- Deaths also reach Lua for the enemy side only, to credit kills.
+  local own, kills = {}, {}
+  for _, f in ipairs(event_filters.on_entity_died) do
+    if f.filter == "name" then own[#own + 1] = f else kills[#kills + 1] = f end
+  end
+  event_filters.on_entity_died = own
+  check("on_entity_died", expected)
+  local kill_filters = require("scripts.veterans").KILL_FILTERS
+  assert(#kills == #kill_filters, "kill credit filters changed")
+  for i, f in ipairs(kills) do
+    assert(f.filter == kill_filters[i].filter and not f.mode, "kill filters narrow the unit filters")
   end
   -- Clones of headquarters helpers are removed; a cloned headquarters builds its own.
   local cloned = {}

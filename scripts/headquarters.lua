@@ -23,6 +23,7 @@
 local names = require('scripts.names')
 local appearance = require('scripts.appearance')
 local vision = require('scripts.vision')
+local veterans = require('scripts.veterans')
 
 local M = {}
 
@@ -148,6 +149,7 @@ end
 function M.register(entity)
   if not (entity and entity.valid and entity.name == names.headquarters) then return nil end
   storage.headquarters = storage.headquarters or {}
+  veterans.register(entity)
   local record = storage.headquarters[entity.unit_number]
   if record then return record end
   record = {entity = entity, force_index = entity.force_index, helpers = {}}
@@ -161,6 +163,7 @@ end
 -- Dying or script-destroyed headquarters spill their stored robots and
 -- repair packs where they stood, so nothing silently disappears.
 function M.unregister(unit_number)
+  veterans.unregister(unit_number)
   local headquarters = registry()
   local record = headquarters and headquarters[unit_number]
   if not record then return end
@@ -259,6 +262,7 @@ local function sweep(id, record)
     for _, helper in pairs(record.helpers) do if helper.valid then helper.force = entity.force end end
     record.force_index = entity.force_index
   end
+  veterans.repair(entity)
   local position = entity.position
   local anchor, last = record.anchor, record.last
   local dx, dy = position.x - anchor.x, position.y - anchor.y

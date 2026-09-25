@@ -109,4 +109,88 @@ return function(ctx)
     labels.draw(hq, {adjective = 1, noun = 1})
     assert(alt_draws()[1].args.target.offset[2] < -7.9)
   end)
+  local veterans = require('scripts.veterans')
+  local names = require('scripts.names')
+
+  test('records: soldiers enlist as recruits, the headquarters only gets a name', function()
+    local e, hq = ctx.soldier(), ctx.soldier()
+    hq.name = names.headquarters
+    local record = veterans.register(e)
+    assert(record.adjective and record.noun and record.xp == 0 and record.kills == 0 and record.rank == 0)
+    assert(veterans.register(e) == record, 'register is not idempotent')
+    local key = record.adjective * 1000 + record.noun
+    assert(storage.name_taken[key] == 1, 'second register drew another name')
+    local hq_record = veterans.register(hq)
+    assert(hq_record.adjective and hq_record.xp == nil and hq_record.rank == nil)
+    veterans.repair(e)
+    assert(record.labels and record.labels.name.valid, 'sweep repair drew no label')
+    veterans.unregister(e.unit_number)
+    assert(veterans.get(e.unit_number) == nil and storage.name_taken[key] == nil and not record.labels)
+  end)
+
+  test('kills: the killing soldier gains one kill and XP weighted by the victim', function()
+    local e, biter = ctx.soldier(), ctx.soldier('enemy')
+    biter.max_health = 75
+    local record = veterans.register(e)
+    veterans.on_kill{entity = biter, cause = e}
+    assert(record.kills == 1 and math.abs(record.xp - 7.5) < 1e-9, 'kill XP ' .. record.xp)
+  end)
+
+  test('kills: other causes are ignored without errors', function()
+    local e, biter, hq = ctx.soldier(), ctx.soldier('enemy'), ctx.soldier()
+    hq.name = names.headquarters
+    local record = veterans.register(e)
+    veterans.register(hq)
+    local dead = ctx.soldier()
+    dead.valid = false
+    veterans.on_kill{entity = biter}
+    veterans.on_kill{entity = biter, cause = dead}
+    veterans.on_kill{entity = biter, cause = {valid = true}}                -- no unit number
+    veterans.on_kill{entity = biter, cause = ctx.soldier()}                 -- no record
+    veterans.on_kill{entity = biter, cause = hq}                            -- no XP
+    assert(record.kills == 0 and record.xp == 0)
+    assert(veterans.get(hq.unit_number).xp == nil)
+  end)
+
+  test('promotion: crossing a threshold raises rank, speed and tells the force', function()
+    local e = ctx.soldier()
+    local record = veterans.register(e)
+    veterans.repair(e)
+    veterans.add_xp(e, record, 49)
+    assert(record.rank == 0 and e.speed == 0.12)
+    veterans.add_xp(e, record, 1)
+    assert(record.rank == 1, 'no promotion at 50 XP')
+    assert(math.abs(e.speed - 0.12 * 1.1) < 1e-9, 'speed ' .. e.speed)
+    assert(record.labels.rank and record.labels.rank.args.sprite == 'tank-squad-rank-1', 'no rank badge')
+    local flying = ctx.players()[1].flying
+    assert(#flying == 1 and flying[1].text[1] == 'tank-squads.promoted' and flying[1].text[3][1] == 'tank-squads.rank-1')
+    veterans.add_xp(e, record, 2000)
+    assert(record.rank == 3 and math.abs(e.speed - 0.12 * 1.3) < 1e-9, 'skipped ranks not applied')
+    e.speed = 0.12
+    veterans.reapply()
+    assert(math.abs(e.speed - 0.12 * 1.3) < 1e-9, 'configuration change lost the speed bonus')
+  end)
+
+  test('records: weapons and the sweep keep service records in step', function()
+    local weapons = require('scripts.weapons')
+    local e = ctx.soldier()
+    weapons.register(e)
+    local record = assert(veterans.get(e.unit_number), 'registered soldier has no record')
+    weapons.tick()
+    assert(record.labels and record.labels.name.valid, 'weapons sweep drew no label')
+    weapons.unregister(e.unit_number)
+    assert(veterans.get(e.unit_number) == nil, 'unregistered soldier kept its record')
+  end)
+
+  test('records: control credits enemy deaths and cleans up dead soldiers', function()
+    dofile('control.lua')
+    local e, biter = ctx.soldier(), ctx.soldier('enemy')
+    biter.name = 'small-biter'
+    biter.max_health = 15
+    local record = veterans.register(e)
+    ctx.handlers().on_entity_died{entity = biter, cause = e}
+    assert(record.kills == 1, 'control did not route the enemy death')
+    ctx.handlers().on_entity_died{entity = e}
+    assert(veterans.get(e.unit_number) == nil, 'dead soldier kept its record')
+  end)
 end
