@@ -10,6 +10,8 @@ local passed, failed = 0, 0
 local function gui_element(args)
   local element = {valid = true, style = {}, children = {}}
   for key, value in pairs(args or {}) do element[key] = value end
+  -- A style given by name reads back as a style object, as in the game.
+  if type(element.style) ~= "table" then element.style = {name = element.style} end
   element.add = function(spec)
     local child = gui_element(spec)
     element.children[#element.children + 1] = child
@@ -68,7 +70,7 @@ local function reset()
     end,
     is_chunk_charted = function(_, chunk) return charted[chunk.x .. ":" .. chunk.y] == true end,
   }
-  players[1] = {index = 1, force = force, surface = surface, gui = {left = gui_element(), relative = gui_element()}}
+  players[1] = {index = 1, force = force, surface = surface, gui = {left = gui_element(), relative = gui_element(), screen = gui_element()}}
   players[1].set_shortcut_toggled = function(_, value) players[1].shortcut_toggled = value end
   charted_lookup = charted
   -- A single connected player, like a real solo test session.
@@ -314,7 +316,7 @@ test("selecting a division draws its route and deselecting removes it", function
 end)
 
 test("dead soldiers lose rings without affecting another player's division", function()
-  players[2] = {index = 2, force = players[1].force, surface = surface, gui = {left = gui_element()}}
+  players[2] = {index = 2, force = players[1].force, surface = surface, gui = {left = gui_element(), screen = gui_element()}}
   players[2].set_shortcut_toggled = function() end
   local a, b = soldier(), soldier()
   divisions.assign(1, 1, {a})
@@ -432,7 +434,7 @@ end)
 
 test("removed players and force changes clear only their own selection", function()
   dofile("control.lua")
-  players[2] = {index = 2, force = players[1].force, surface = surface, gui = {left = gui_element()}}
+  players[2] = {index = 2, force = players[1].force, surface = surface, gui = {left = gui_element(), screen = gui_element()}}
   divisions.select_area(1, {soldier()})
   divisions.select_area(2, {soldier()})
   assert(divisions.size(1, 0) == 1 and divisions.size(2, 0) == 1, "selection did not take before the clear")
@@ -685,18 +687,18 @@ end)
 
 test("division panel lists bindings, counts, selection and scout status", function()
   local panel = require("scripts.panel")
-  players[1].gui = {left = gui_element()}
+  players[1].gui = {left = gui_element(), screen = gui_element()}
   local toggles = {}
   players[1].set_shortcut_toggled = function(name, value) toggles[name] = value end
   divisions.assign(1, 4, {soldier(), soldier()})
   panel.update(1)
-  local frame = players[1].gui.left.tank_squads_divisions
+  local frame = players[1].gui.screen.tank_squads_divisions
   assert(frame and frame.valid and frame.visible, "division panel missing")
-  local button = frame.divisions["division_4"]
+  local button = frame.body.divisions["division_4"]
   assert(button.enabled and button.toggled, "assigned division not selectable and highlighted")
   assert(button.caption[2] == 4 and button.caption[3] == 2, "division/count missing")
   assert(button.caption[4][1] == "tank-squads.select-key-4", "binding is hardcoded")
-  assert(not frame.divisions.division_2.enabled, "empty division enabled")
+  assert(not frame.body.divisions.division_2.enabled, "empty division enabled")
   scout.set(1, 4, true)
   panel.update(1)
   assert(toggles["tank-squad-scout-mode"], "scout shortcut not synchronized")
@@ -708,12 +710,68 @@ test("division panel lists bindings, counts, selection and scout status", functi
   assert(not frame.visible, "empty panel remains visible")
 end)
 
+test("division window folds, switches to short rows and keeps its choices", function()
+  dofile("control.lua")
+  local panel = require("scripts.panel")
+  divisions.assign(1, 4, {soldier(), soldier()})
+  panel.update(1)
+  local frame = players[1].gui.screen.tank_squads_divisions
+  assert(frame.titlebar.drag_target == frame and frame.titlebar.drag.drag_target == frame, "window cannot be dragged")
+  local button = frame.body.divisions.division_4
+  assert(button.style.minimal_width == 260 and frame.body.help.visible ~= false, "full rows changed")
+  handlers.on_gui_click{player_index = 1, element = frame.titlebar.compact}
+  assert(frame.body.help.visible == false and button.style.minimal_width == 0, "compact rows kept the help and width")
+  assert(button.caption[1] == "tank-squads.division-row-compact" and button.caption[3] == 2, "compact row caption")
+  handlers.on_gui_click{player_index = 1, element = frame.titlebar.collapse}
+  assert(frame.body.visible == false and frame.visible, "folding hid the whole window or kept the rows")
+  assert(frame.titlebar.collapse.sprite == "utility/expand")
+  -- Folded, the sweep leaves the rows alone; clicks on a division still work by key.
+  divisions.assign(1, 5, {soldier()})
+  panel.update(1)
+  local row = frame.body.divisions.division_5
+  assert(row.caption[3] == 0 and not row.enabled, "a folded window refreshed its rows")
+  handlers.on_gui_click{player_index = 1, element = frame.titlebar.collapse}
+  assert(frame.body.visible == true and row.caption[3] == 1 and row.enabled, "unfolding did not refresh the rows")
+  handlers.on_gui_click{player_index = 1, element = frame.titlebar.compact}
+  assert(frame.body.help.visible == true and button.style.minimal_width == 260)
+  assert(button.caption[1] == "tank-squads.division-row", "full rows did not come back")
+end)
+
+test("a selected headquarters gets a ring wide enough to show round its body", function()
+  local tank, hq = soldier(), soldier()
+  hq.name = names.headquarters
+  divisions.select_area(1, {tank, hq})
+  local radius = {}
+  for _, draw in ipairs(draws) do
+    if draw.valid and draw.args.radius then radius[draw.args.target] = draw.args.radius end
+  end
+  assert(radius[tank] == 1.7, "a tank ring changed size")
+  assert(radius[hq] and radius[hq] > 7.9, "the headquarters ring hides under its body")
+  -- Rings drawn by an older version are redrawn on upgrade.
+  dofile("control.lua")
+  storage.headquarters = {[hq.unit_number] = {entity = hq, force_index = hq.force_index, helpers = {}}}
+  local ring = divisions.record(1, 0).render.rings[hq.unit_number]
+  local kept = divisions.record(1, 0).render.rings[tank.unit_number]
+  handlers.configuration_changed()
+  assert(not ring.valid and divisions.record(1, 0).render.rings[hq.unit_number].valid, "the old ring stayed")
+  assert(kept.valid, "a tank ring was redrawn")
+end)
+
+test("division window replaces the old side panel", function()
+  local panel = require("scripts.panel")
+  local old = players[1].gui.left.add{type = "frame", name = "tank_squads_divisions"}
+  divisions.assign(1, 4, {soldier()})
+  panel.update(1)
+  assert(not old.valid, "the old side panel stayed")
+  assert(players[1].gui.screen.tank_squads_divisions.visible, "no window on the screen")
+end)
+
 test("GUI division clicks recall members and update selection", function()
   dofile("control.lua")
   divisions.assign(1, 2, {soldier()})
   divisions.assign(1, 3, {soldier()})
   require("scripts.panel").update(1)
-  local button = players[1].gui.left.tank_squads_divisions.divisions.division_2
+  local button = players[1].gui.screen.tank_squads_divisions.body.divisions.division_2
   handlers.on_gui_click{player_index = 1, element = button}
   assert(divisions.selected(1) == 2 and button.toggled, "click failed to recall division")
 end)

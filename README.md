@@ -68,7 +68,7 @@ Research **Mobile headquarters** (automation to utility science), then choose **
 | Move | Alt-drag over empty ground |
 | Attack an area | Alt-drag over enemies |
 | Assign selection to a division | Ctrl + 1–9 |
-| Select a division | Alt + 1–9, or click its row in the division panel |
+| Select a division | Alt + 1–9, or click its row in the division window. Drag the window by its title bar; its buttons fold it away or switch to short rows |
 | Patrol | Toggle patrol mode on the shortcut bar, then alt-drag to place waypoints |
 | Scout | Select a division and toggle scout mode on the shortcut bar |
 | Escort | Select a numbered division, press the escort shortcut, then pick a player and a formation |

@@ -67,9 +67,15 @@ function M.forget_ring(record, unit_number)
   destroy(record.render.rings, unit_number)
 end
 
+-- Ring radius by unit name. A ring is drawn on the ground, so it must reach
+-- past the body to show. The headquarters' body reaches 7.9 tiles from its
+-- centre; a ring the size of a tank's would stay hidden under it.
+M.RING_RADIUS = {["tank-squad-headquarters"] = 8.2}
+local RING_RADIUS = 1.7
+
 -- Creates any missing ring and leaves existing ones alone, so this is safe to
 -- call on every sweep. The renderer follows the entity itself, so no position
--- polling is needed.
+-- polling is needed. The name is read only when a ring is drawn.
 function M.rings(player_index, n, record, entities)
   record.render = record.render or {rings = {}, route = {}}
   local rings = record.render.rings
@@ -78,7 +84,7 @@ function M.rings(player_index, n, record, entities)
     if not (ring and ring.valid) then
       rings[entity.unit_number] = rendering.draw_circle{
         color = M.COLORS[n] or M.COLORS[0],
-        radius = 1.7, width = 2, filled = false,
+        radius = M.RING_RADIUS[entity.name] or RING_RADIUS, width = 2, filled = false,
         target = entity, surface = entity.surface,
         players = {player_index}, draw_on_ground = true,
       }

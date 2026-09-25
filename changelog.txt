@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.16.4
+Date: 2026-09-25
+  Changes:
+    - The division panel is now a window you can drag anywhere by its title bar. Its title bar buttons fold it down to the title bar and switch between full rows and short ones without key hints. Each player's choice is kept in the save.
+  Bugfixes:
+    - A selected mobile headquarters now keeps its division ring in view. The ring was a tank's size and stayed hidden under the headquarters' body.
+---------------------------------------------------------------------------------------------------
 Version: 0.16.3
 Date: 2026-09-24
   Features:

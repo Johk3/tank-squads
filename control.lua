@@ -13,6 +13,7 @@ local barracks_gui = require('scripts.barracks_gui')
 local config = require("scripts.config")
 local vision = require("scripts.vision")
 local headquarters = require("scripts.headquarters")
+local render = require("scripts.render")
 
 local function on_built(event)
   local entity = event.entity
@@ -84,6 +85,7 @@ local function clear_player(event)
   divisions.clear_player(event.player_index)
   escort.forget_ward(event.player_index)
   escort_gui.close(event.player_index)
+  if event.name == defines.events.on_player_removed then panel.clear_player(event.player_index) end
   if storage.patrol_mode then storage.patrol_mode[event.player_index] = nil end
   local player = game.get_player(event.player_index)
   if player then player.set_shortcut_toggled("tank-squad-patrol-mode", false) end
@@ -114,6 +116,13 @@ script.on_configuration_changed(function()
   end
   headquarters.reconcile()
   divisions.reconcile_ownership()
+  -- Headquarters rings from older versions are too small to show; the
+  -- refresh below redraws them at the current size.
+  for _, state in pairs(storage.divisions or {}) do
+    for _, record in pairs(state.slots) do
+      for id in pairs(storage.headquarters or {}) do render.forget_ring(record, id) end
+    end
+  end
   divisions.refresh()
   -- Upgrades and changed defaults re-space defensive rings and restart
   -- offensive legs under the current settings.
@@ -187,6 +196,7 @@ end
 script.on_event(defines.events.on_gui_click, function(event)
   if barracks_gui.click(event) then panel.update(event.player_index); return end
   if escort_gui.click(event) then panel.update(event.player_index); return end
+  if panel.click(event) then panel.update(event.player_index); return end
   local element = event.element
   if not (element and element.valid) then return end
   local n = element.tags.tank_squads_division

@@ -1098,13 +1098,13 @@ return function(ctx)
     escort.start(1, 3, 2, 'defensive')
     escort.tick()
     require('scripts.panel').update(1)
-    local caption = game.players[1].gui.left.tank_squads_divisions.divisions.division_3.caption
+    local caption = game.players[1].gui.screen.tank_squads_divisions.body.divisions.division_3.caption
     assert(caption[5][1] == 'tank-squads.mode-escort' and caption[5][2] == ward.name, 'escort caption missing')
     assert(caption[5][3][1] == 'tank-squads.formation-defensive')
     ward.character = nil
     escort.tick()
     require('scripts.panel').update(1)
-    caption = game.players[1].gui.left.tank_squads_divisions.divisions.division_3.caption
+    caption = game.players[1].gui.screen.tank_squads_divisions.body.divisions.division_3.caption
     assert(caption[5][3][1] == 'tank-squads.formation-waiting', 'waiting state not shown')
   end)
 end

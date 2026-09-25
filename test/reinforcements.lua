@@ -196,7 +196,7 @@ return function(ctx)
     local status = player.gui.relative.tank_squads_reinforcements.status.caption
     assert(status[3] == 1 and status[4] == 5, 'barracks window counted the headquarters')
     require('scripts.panel').update(1)
-    local caption = player.gui.left.tank_squads_divisions.divisions.division_2.caption
+    local caption = player.gui.screen.tank_squads_divisions.body.divisions.division_2.caption
     assert(caption[3][2] == 1 and caption[3][3] == 5, 'panel counted the headquarters')
   end)
 
