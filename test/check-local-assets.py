@@ -59,6 +59,9 @@ def main():
     references = set()
     for path in (ROOT / "prototypes").glob("*.lua"):
         references.update(re.findall(r'__tank-squads__/([^"\s]+\.png)', path.read_text()))
+    # Insignia and rank sprites are named in data modules, not literal paths.
+    for folder in ("graphics/insignias", "graphics/veteran-status"):
+        references.update(str(p.relative_to(ROOT)) for p in (ROOT / folder).glob("*.png"))
     assert references, "No bundled graphics referenced"
     for relative in sorted(references):
         path = ROOT / relative
@@ -87,6 +90,8 @@ def main():
                 x, y = (cell % 2) * 627, (cell // 2) * 627
                 count = sum(row[x:x + 627].count(0) for row in alpha[y:y + 627])
                 assert 627 * 627 * 0.1 < count < 627 * 627 * 0.9, f"Invalid recoil frame {cell}"
+        elif path.parent.name in {"insignias", "veteran-status"}:
+            assert (width, height) == (512, 512), "Badge size differs from prototypes/insignias.lua"
         else:
             assert (width, height) == (1254, 1254), "Icon size differs from prototype"
         print(f"PASS {relative}: {width}x{height}, {clear} transparent pixels")
