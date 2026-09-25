@@ -721,6 +721,28 @@ test("division panel lists bindings, counts, selection and scout status", functi
   assert(not frame.visible, "empty panel remains visible")
 end)
 
+test("division panel short rows hide the title so the window narrows", function()
+  local panel = require("scripts.panel")
+  players[1].gui = {left = gui_element(), screen = gui_element()}
+  players[1].set_shortcut_toggled = function() end
+  divisions.assign(1, 3, {soldier()})
+  panel.update(1)
+  local frame = players[1].gui.screen.tank_squads_divisions
+  local bar, row = frame.titlebar, frame.body.divisions.row_3
+  assert(bar.title.visible ~= false and frame.body.help.visible ~= false, "full rows lost the title or help")
+  panel.click({element = bar.compact, player_index = 1})
+  assert(bar.title.visible == false and frame.body.help.visible == false, "short rows keep the wide title")
+  assert(row.division_3.style.minimal_width == 0, "short rows keep the full width")
+  panel.update(1)
+  assert(row.division_3.caption[1] == "tank-squads.division-row-compact", "short caption missing")
+  panel.click({element = bar.compact, player_index = 1})
+  assert(bar.title.visible == true and row.division_3.style.minimal_width > 0, "full rows not restored")
+  -- A window kept from an older version gains the layout on upgrade.
+  storage.panel[1].compact = true
+  panel.rearrange(1)
+  assert(bar.title.visible == false, "upgrade left the wide title on short rows")
+end)
+
 test("division panel loads an empty division saved without reinforcement sources", function()
   local panel = require("scripts.panel")
   players[1].gui = {left = gui_element(), screen = gui_element()}

@@ -172,6 +172,7 @@ script.on_configuration_changed(function()
   escort.on_settings_changed()
   for player_index, state in pairs(storage.divisions or {}) do
     for n in pairs(state.slots) do patrol.draw(player_index, n) end
+    panel.rearrange(player_index)
     panel.update(player_index)
   end
 end)

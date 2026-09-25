@@ -77,6 +77,9 @@ local function arrange(frame, choice)
   bar.compact.toggled = choice.compact == true
   bar.compact.tooltip = choice.compact and {"tank-squads.divisions-full"} or {"tank-squads.divisions-compact"}
   body.help.visible = not choice.compact
+  -- The title is wider than short rows, so it would hold the window open
+  -- with empty space on the right. The drag handle still moves the window.
+  bar.title.visible = not choice.compact
   local width = choice.compact and WIDTH.compact or WIDTH.full
   for n = 0, 9 do body.divisions["row_" .. n]["division_" .. n].style.minimal_width = width end
 end
@@ -149,6 +152,14 @@ function M.update(player_index)
       button.tags = {tank_squads_division = n, status = signature}
     end
   end
+end
+
+-- Reapplies the layout to a window kept from an older version. A window
+-- without rows is left to M.update, which rebuilds it.
+function M.rearrange(player_index)
+  local player = game.get_player(player_index)
+  local frame = player and player.gui.screen[NAME]
+  if frame and frame.body.divisions.row_0 then arrange(frame, layout(player_index)) end
 end
 
 -- Title bar buttons. Returns true when the click was one of them.
