@@ -8,7 +8,8 @@ TMP_OUT="$OUT.tmp"
 STAGE="$(mktemp -d)"
 DEST="$STAGE/tank-squads_$VERSION"
 mkdir -p "$DEST" "$ROOT/dist"
-for f in info.json data.lua settings.lua control.lua changelog.txt README.md LICENSE prototypes scripts locale graphics; do
+# thumbnail.png is the mod portal's and in-game mod list's picture.
+for f in info.json thumbnail.png data.lua settings.lua control.lua changelog.txt README.md LICENSE prototypes scripts locale graphics; do
   cp -r "$ROOT/$f" "$DEST/"
 done
 # Local development notes stay out of the release.
@@ -43,6 +44,7 @@ z = zipfile.ZipFile('$TMP_OUT')
 tops = {n.split('/')[0] for n in z.namelist()}
 assert tops == {'tank-squads_$VERSION'}, tops
 assert any(n.endswith('info.json') for n in z.namelist())
+assert 'tank-squads_$VERSION/thumbnail.png' in z.namelist(), 'thumbnail.png missing'
 print('package ok')
 "
 

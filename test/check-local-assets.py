@@ -63,6 +63,8 @@ def main():
     for folder in ("graphics/insignias", "graphics/veteran-status"):
         references.update(str(p.relative_to(ROOT)) for p in (ROOT / folder).glob("*.png"))
     assert references, "No bundled graphics referenced"
+    # The mod portal and the in-game mod list show thumbnail.png at 144 px.
+    references.add("thumbnail.png")
     for relative in sorted(references):
         path = ROOT / relative
         assert path.is_file(), f"Missing bundled asset: {relative}"
@@ -90,6 +92,8 @@ def main():
                 x, y = (cell % 2) * 627, (cell // 2) * 627
                 count = sum(row[x:x + 627].count(0) for row in alpha[y:y + 627])
                 assert 627 * 627 * 0.1 < count < 627 * 627 * 0.9, f"Invalid recoil frame {cell}"
+        elif path.name == "thumbnail.png":
+            assert (width, height) == (144, 144), "Thumbnail is not 144x144"
         elif path.parent.name in {"insignias", "veteran-status"}:
             assert (width, height) == (512, 512), "Badge size differs from prototypes/insignias.lua"
         else:
