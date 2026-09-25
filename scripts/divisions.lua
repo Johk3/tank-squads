@@ -323,6 +323,25 @@ function M.assign(player_index, n, entities)
   return count
 end
 
+-- Moves the drag selection into the lowest empty division 1-9 and selects
+-- it, so a job can run on soldiers it owns. Returns the division, or nil
+-- when the selection is empty or every division is in use. A leftover job
+-- on an empty slot is cleared first, so the soldiers never inherit it.
+function M.promote(player_index)
+  local members = M.get(player_index, 0)
+  if #members == 0 then return nil end
+  local slots = player_state(player_index).slots
+  for n = 1, names.max_division do
+    local record = slots[n]
+    if not record or (not M.is_reinforced(record) and #M.get(player_index, n) == 0) then
+      M.clear(player_index, n)
+      M.assign(player_index, n, members)
+      return n
+    end
+  end
+  return nil
+end
+
 function M.recall(player_index, n)
   M.set_selected(player_index, n)
   return M.size(player_index, n)

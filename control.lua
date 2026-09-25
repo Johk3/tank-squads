@@ -256,10 +256,25 @@ local function set_patrol_mode(player_index, value)
   end
 end
 
+-- Jobs run on soldiers a division owns. With the drag selection selected,
+-- the selection first becomes the lowest empty division. Returns the
+-- division to use, 0 for an empty selection, or nil when none is free.
+local function job_division(player_index)
+  local n = divisions.selected(player_index)
+  if n ~= 0 or divisions.size(player_index, 0) == 0 then return n end
+  local promoted = divisions.promote(player_index)
+  local player = game.get_player(player_index)
+  if player then
+    player.print(promoted and {"tank-squads.selection-promoted", promoted} or {"tank-squads.selection-no-free-division"})
+  end
+  return promoted
+end
+
 local function handle_alt_select(player_index, area, surface)
   storage.patrol_mode = storage.patrol_mode or {}
-  local n = divisions.selected(player_index)
   if storage.patrol_mode[player_index] then
+    local n = job_division(player_index)
+    if not n then return nil end
     if not patrol.add_waypoint(player_index, n, commands.centre(area), surface) then return nil end
     patrol.start(player_index, n)
     return "patrol"
@@ -285,10 +300,15 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
   end
   if event.prototype_name ~= "tank-squad-scout-mode" then return end
   local player_index = event.player_index
-  local n = divisions.selected(player_index)
+  local player = game.get_player(player_index)
+  local n = job_division(player_index)
+  if not n then
+    if player then player.set_shortcut_toggled("tank-squad-scout-mode", false) end
+    panel.update(player_index)
+    return
+  end
   local record = divisions.record(player_index, n)
   local value = scout.set(player_index, n, record.mode ~= "scout")
-  local player = game.get_player(player_index)
   if player then
     if value == nil then
       player.print({"tank-squads.scout-empty"})

@@ -4,6 +4,7 @@ return function(ctx)
   local patrol = require('scripts.patrol')
   local barracks = require('scripts.barracks')
   local commands = require('scripts.commands')
+  local scout = require('scripts.scout')
 
   local function route(n, members)
     divisions.assign(1, n, members)
@@ -64,5 +65,48 @@ return function(ctx)
     assert(patrolling.mode == 'patrol' and patrolling.patrol.posts[p2.unit_number], 'the patrol stopped')
     assert(p1.command.destination.x == 55 and m1.command.destination.x == 55, 'selection not ordered')
     assert(divisions.size(1, 0) == 2, 'ordered soldiers left the selection')
+  end)
+
+  local function control()
+    dofile('control.lua')
+    ctx.players()[1].print = function(message) ctx.players()[1].printed = message end
+    return ctx.handlers()
+  end
+
+  test('selection: patrols and scouting never start on the selection itself', function()
+    divisions.select_area(1, {soldier()})
+    assert(patrol.add_waypoint(1, 0, {x = 10, y = 0}, game.surfaces[1]) == nil, 'waypoint added to slot 0')
+    assert(patrol.start(1, 0) == nil)
+    assert(scout.set(1, 0, true) == nil, 'slot 0 scouted')
+    assert(divisions.record(1, 0).mode == 'idle')
+  end)
+
+  test('selection: a patrol waypoint on the selection promotes it to the lowest empty division', function()
+    local handlers = control()
+    local a, b, c = soldier(), soldier(), soldier()
+    divisions.assign(1, 1, {c})
+    divisions.select_area(1, {a, b})
+    handlers.on_lua_shortcut{prototype_name = 'tank-squad-patrol-mode', player_index = 1}
+    handlers.on_player_alt_selected_area{item = 'tank-squad-command-tool', player_index = 1,
+      area = {left_top = {x = 10, y = 0}, right_bottom = {x = 12, y = 2}}, surface = game.surfaces[1]}
+    assert(divisions.selected(1) == 2, 'selection not promoted to division 2')
+    local record = divisions.record(1, 2)
+    assert(divisions.size(1, 2) == 2 and record.patrol and #record.patrol.waypoints == 1, 'route not on the new division')
+    assert(divisions.size(1, 0) == 0, 'promoted soldiers stayed selected')
+    local printed = ctx.players()[1].printed
+    assert(printed and printed[1] == 'tank-squads.selection-promoted' and printed[2] == 2, 'player not told')
+  end)
+
+  test('selection: the scout shortcut promotes the selection; with nine divisions taken it is refused', function()
+    local handlers = control()
+    divisions.select_area(1, {soldier()})
+    handlers.on_lua_shortcut{prototype_name = 'tank-squad-scout-mode', player_index = 1}
+    assert(divisions.selected(1) == 1 and divisions.record(1, 1).mode == 'scout', 'scouting not started on division 1')
+    for n = 2, 9 do divisions.assign(1, n, {soldier()}) end
+    divisions.select_area(1, {soldier()})
+    handlers.on_lua_shortcut{prototype_name = 'tank-squad-scout-mode', player_index = 1}
+    assert(divisions.selected(1) == 0 and divisions.size(1, 0) == 1, 'selection moved with no free division')
+    local printed = ctx.players()[1].printed
+    assert(printed and printed[1] == 'tank-squads.selection-no-free-division', 'player not told')
   end)
 end

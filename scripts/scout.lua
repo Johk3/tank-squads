@@ -79,6 +79,9 @@ local function next_target(force, surface, state, team, from, budget)
 end
 
 function M.set(player_index, n, enabled)
+  -- The drag selection owns nobody, so it never scouts; control.lua moves
+  -- it into a division first.
+  if enabled and n == 0 then return nil end
   local record = divisions.record(player_index, n)
   if enabled and divisions.size(player_index, n) == 0 then return nil end
   if enabled then

@@ -33,7 +33,10 @@ function M.draw(player_index, n)
   render.route(player_index, n, record, surface)
 end
 
+-- The drag selection owns nobody, so it never patrols; control.lua moves
+-- it into a division first.
 function M.add_waypoint(player_index, n, position, surface)
+  if n == 0 then return nil end
   local player = game.get_player(player_index)
   surface = surface or (player and player.surface)
   if not surface then return nil end
@@ -176,6 +179,7 @@ function M.join(record, soldier)
 end
 
 function M.start(player_index, n)
+  if n == 0 then return nil end
   local record, r = route(player_index, n)
   if not r or #r.waypoints == 0 then return nil end
   divisions.end_escort(record)
