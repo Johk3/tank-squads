@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.20.1
+Date: 2026-09-25
+  Bugfixes:
+    - Fixed patrol soldiers staying next to the barracks after healing instead of returning to their posts. This happened to soldiers that had answered an alarm shortly before they were hurt, or that were fighting at the barracks when they finished healing.
+---------------------------------------------------------------------------------------------------
 Version: 0.20.0
 Date: 2026-09-25
   Changes:
