@@ -59,6 +59,16 @@ local function resumable(command)
   return true
 end
 
+-- The command to run after an interruption. An attack whose target died
+-- would have completed. A plain stop never completes, so the owner of the
+-- interrupted command (an assault mission, an escort leg) would never hear
+-- back; a short stop completes instead. An idle soldier stays stopped.
+local function resumption(command)
+  if resumable(command) then return command end
+  return {type = defines.command.stop, distraction = defines.distraction.by_enemy,
+    ticks_to_wait = command and 1 or nil}
+end
+
 -- Keep damage and firing in the engine. Interrupt building attacks for mobile
 -- threats, then let a native compound command resume the original target.
 local function defend(entity, enemy, building_shot)
@@ -71,14 +81,7 @@ local function defend(entity, enemy, building_shot)
   local active = entity.commandable.distraction_command or entity.commandable.command
   if active and active.type == defines.command.attack and active.target and active.target.valid and active.target.type == 'unit' then return end
   storage.combat = storage.combat or {}
-  local resume = current and current.resume or entity.commandable.command
-  if not resumable(resume) then
-    -- An attack whose target died would have completed. A plain stop never
-    -- completes, so its owner (an assault mission, an escort leg) would never
-    -- hear back; a short stop completes the defense instead.
-    resume = {type = defines.command.stop, distraction = defines.distraction.by_enemy,
-      ticks_to_wait = resume and 1 or nil}
-  end
+  local resume = resumption(current and current.resume or entity.commandable.command)
   storage.combat[entity.unit_number] = {target = enemy, resume = resume}
   entity.commandable.set_command{
     type = defines.command.compound,
@@ -90,9 +93,109 @@ local function defend(entity, enemy, building_shot)
   }
 end
 
+-- Spitters and worms leave acid pools: point-sized fire entities that slow
+-- and burn whatever stands on them. A soldier that fights or waits in one
+-- keeps standing there and dies. When a soldier has taken acid damage while
+-- barely moving for a second, it steps a few tiles to the clearest nearby
+-- ground and then resumes its order. A walking soldier leaves the pool on
+-- its own and is left alone, so a path through acid does not loop.
+M.ACID_CHECK_TICKS = 60
+-- A soldier under the heaviest acid slow still walks about 1.2 tiles a second.
+M.ACID_STUCK_DISTANCE = 0.75
+M.ACID_SEARCH_RADIUS = 8
+-- A pool burns soldiers within about 2 tiles of its centre, and a unit
+-- stops about a tile short of its destination.
+M.ACID_STEP = 5
+M.ACID_DIRECTIONS = 12
+-- Ground this far from every pool counts as clear.
+M.ACID_CLEAR = 3
+-- Long enough for the slowest tank to walk ACID_STEP tiles under the acid slow.
+M.ACID_EVADE_TICKS = 240
+
+-- The point a command works around: its target or its destination.
+local function focus(command)
+  if not command then return nil end
+  if command.type == defines.command.attack then return command.target and command.target.valid and command.target.position end
+  return command.destination
+end
+
+-- The candidate step with the most distance to the nearest pool. Among
+-- equally clear steps, a soldier with a focus circles it, so an attacker
+-- stays in range; any other soldier moves farthest from the pools overall.
+local function acid_exit(surface, position, around)
+  local pools = {}
+  for i, fire in pairs(surface.find_entities_filtered{position = position, radius = M.ACID_SEARCH_RADIUS, type = 'fire'}) do
+    pools[i] = fire.position
+  end
+  if #pools == 0 then return nil end
+  local range = around and math.sqrt((around.x - position.x) ^ 2 + (around.y - position.y) ^ 2)
+  local cap = M.ACID_CLEAR * M.ACID_CLEAR
+  local best, best_clear, best_rank
+  for i = 0, M.ACID_DIRECTIONS - 1 do
+    local angle = 2 * math.pi * i / M.ACID_DIRECTIONS
+    local x, y = position.x + M.ACID_STEP * math.cos(angle), position.y + M.ACID_STEP * math.sin(angle)
+    local clear, rank = cap, 0
+    for _, p in ipairs(pools) do
+      local dx, dy = p.x - x, p.y - y
+      local d = dx * dx + dy * dy
+      if d < clear then clear = d end
+      if not around then rank = rank + d end
+    end
+    if around then rank = -math.abs(math.sqrt((around.x - x) ^ 2 + (around.y - y) ^ 2) - range) end
+    if not best or clear > best_clear or (clear == best_clear and rank > best_rank) then
+      best, best_clear, best_rank = {x = x, y = y}, clear, rank
+    end
+  end
+  return best
+end
+
+local function evade_acid(entity, position)
+  local surface, command = entity.surface, entity.commandable.command
+  local exit = acid_exit(surface, position, focus(command))
+  exit = exit and surface.find_non_colliding_position(entity.name, exit, 2, 0.5)
+  if not exit then return false end
+  entity.commandable.set_command{
+    type = defines.command.compound,
+    structure_type = defines.compound_command.return_last,
+    commands = {
+      {type = defines.command.go_to_location, destination = exit, radius = 0.5, distraction = defines.distraction.none},
+      resumption(command),
+    },
+  }
+  return true
+end
+
+-- Runs on every hit, so a throttled soldier costs one table lookup. Returns
+-- true while the soldier walks out of acid, which a defense must not undo.
+local function avoid_acid(entity, event)
+  local id, tick = entity.unit_number, game.tick
+  local acid = storage.acid and storage.acid[id]
+  if acid then
+    if tick < acid.evading then return true end
+    if tick < acid.next then return false end
+  end
+  local kind = event.damage_type
+  if not (kind and kind.name == 'acid') then return false end
+  local p = entity.position
+  -- A soldier that left acid a while ago starts a fresh measurement.
+  if not acid or tick - acid.tick > 2 * M.ACID_CHECK_TICKS then
+    storage.acid = storage.acid or {}
+    storage.acid[id] = {tick = tick, x = p.x, y = p.y, next = tick + M.ACID_CHECK_TICKS, evading = 0}
+    return false
+  end
+  local dx, dy = p.x - acid.x, p.y - acid.y
+  acid.tick, acid.x, acid.y, acid.next = tick, p.x, p.y, tick + M.ACID_CHECK_TICKS
+  if dx * dx + dy * dy >= M.ACID_STUCK_DISTANCE * M.ACID_STUCK_DISTANCE then return false end
+  if not evade_acid(entity, p) then return false end
+  acid.evading, acid.next = tick + M.ACID_EVADE_TICKS, tick + M.ACID_EVADE_TICKS
+  return true
+end
+
 function M.on_damaged(event)
   local entity = event.entity
-  if entity and entity.valid and names.soldier_set[entity.name] then defend(entity, event.cause) end
+  if not (entity and entity.valid and names.soldier_set[entity.name]) then return end
+  if avoid_acid(entity, event) then return end
+  defend(entity, event.cause)
 end
 
 function M.on_shot(event)
@@ -127,6 +230,7 @@ function M.forget(unit_number)
   if storage.combat then storage.combat[unit_number] = nil end
   if storage.combat_checks then storage.combat_checks[unit_number] = nil end
   if storage.assaults then storage.assaults[unit_number] = nil end
+  if storage.acid then storage.acid[unit_number] = nil end
 end
 
 function M.on_command_completed(unit_number, result)

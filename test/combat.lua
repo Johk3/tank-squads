@@ -125,4 +125,90 @@ return function(ctx)
     assert(a.command.commands[1].target == incoming, 'stale living target blocked new defense')
     assert(a.command.commands[2].type == defines.command.attack_area, 'nested obsolete defense instead of original order')
   end)
+
+  -- An acid pool at the soldier's feet, as the engine reports it.
+  local function acid_setup(pools)
+    local a, b = prepare()
+    defines.command.go_to_location = 1
+    a.surface.find_entities_filtered = function(query)
+      assert(query.type == 'fire', 'searched beyond fire entities')
+      local found = {}
+      for i, p in ipairs(pools) do found[i] = {position = p} end
+      return found
+    end
+    a.surface.find_non_colliding_position = function(_, p) return p end
+    return a, b
+  end
+  local function burn(a, tick)
+    game.tick = tick
+    combat.on_damaged{entity = a, damage_type = {name = 'acid'}}
+  end
+
+  ctx.test('a soldier fighting in acid steps out along its range and resumes the attack', function()
+    local a = acid_setup({{x = 0, y = 0}})
+    local worm = ctx.soldier('enemy')
+    worm.type, worm.position = 'turret', {x = 20, y = 0}
+    local order = {type = defines.command.attack, target = worm, distraction = defines.distraction.by_enemy}
+    a.commandable.command = order
+    burn(a, 0)
+    assert(a.command == nil, 'moved on the first hit')
+    burn(a, 30)
+    assert(a.command == nil, 'checked again inside the throttle window')
+    burn(a, 60)
+    local escape = a.command
+    assert(escape and escape.type == defines.command.compound, 'stuck soldier stayed in the acid')
+    assert(escape.commands[1].type == defines.command.go_to_location)
+    assert(escape.commands[2] == order, 'escape did not resume the attack')
+    local exit = escape.commands[1].destination
+    assert(exit.x * exit.x + exit.y * exit.y >= 9, 'exit still inside the pool')
+    local range = math.sqrt((exit.x - 20) ^ 2 + exit.y ^ 2)
+    assert(math.abs(range - 20) < 1, 'exit left the attack range')
+  end)
+
+  ctx.test('a soldier walking through acid keeps walking', function()
+    local a = acid_setup({{x = 0, y = 0}})
+    local order = {type = defines.command.go_to_location, destination = {x = 40, y = 0}}
+    a.commandable.command = order
+    burn(a, 0)
+    a.position = {x = 1.2, y = 0}
+    burn(a, 60)
+    assert(a.command == nil, 'interrupted a soldier that was leaving on its own')
+  end)
+
+  ctx.test('an escape is not undone by a defense and new orders replace it', function()
+    local a, b = acid_setup({{x = 0, y = 0}, {x = 1, y = 1}})
+    a.commandable.command = {type = defines.command.go_to_location, destination = {x = 40, y = 0}}
+    burn(a, 0)
+    burn(a, 60)
+    local escape = a.command
+    game.tick = 90
+    combat.on_damaged{entity = a, cause = b}
+    assert(a.command == escape, 'defense cancelled the escape')
+    local order = {type = defines.command.go_to_location, destination = {x = -40, y = 0}}
+    combat.set_command(a, order)
+    assert(storage.acid[a.unit_number] == nil, 'new order kept the escape state')
+    game.tick = 120
+    combat.on_damaged{entity = a, cause = b}
+    assert(a.command.commands[1].target == b, 'soldier stopped defending itself after an order')
+  end)
+
+  ctx.test('an idle soldier in acid moves out and stays stopped', function()
+    local a = acid_setup({{x = 0, y = 0}})
+    burn(a, 0)
+    burn(a, 60)
+    local resume = a.command.commands[2]
+    assert(resume.type == defines.command.stop and resume.ticks_to_wait == nil)
+  end)
+
+  ctx.test('acid checks are throttled and ignore other damage', function()
+    local a = acid_setup({{x = 0, y = 0}})
+    burn(a, 0)
+    local reads = ctx.count_reads(a, 'position')
+    for tick = 10, 50, 10 do burn(a, tick) end
+    assert(reads.n == 0, 'each acid tick read the position')
+    storage.acid = nil
+    game.tick = 200
+    combat.on_damaged{entity = a, damage_type = {name = 'physical'}}
+    assert(reads.n == 0 and storage.acid == nil, 'physical damage started an acid check')
+  end)
 end
