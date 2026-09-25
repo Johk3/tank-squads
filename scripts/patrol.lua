@@ -186,10 +186,12 @@ function M.start(player_index, n)
   local record, r = route(player_index, n)
   if not r or #r.waypoints == 0 then return nil end
   divisions.end_escort(record)
+  -- A new waypoint restarts a running patrol; its convoys carry on.
+  if record.mode ~= "patrol" then r.retreat = nil end
   record.mode = "patrol"
   record.order = nil
   record.scout = nil
-  r.retry, r.responders, r.alarm_tick, r.retreat = nil, nil, nil, nil
+  r.retry, r.responders, r.alarm_tick = nil, nil, nil
   assign(player_index, n, r, true)
   return #r.waypoints
 end
@@ -293,19 +295,18 @@ end
 local function rejoined() end
 
 -- Injured soldiers leave for a depot as in escort mode (scripts/retreat.lua).
--- Anyone leaving or rejoining deals the posts again on the next sweep, once,
+-- Anyone leaving or rejoining deals the posts again in the same sweep, once,
 -- through the same path as a casualty. The settings are read once per call,
 -- and only when a patrol division in this phase has soldiers.
 function M.tick(phase)
   local cfg
   each_route(function(player_index, n, r, record)
     if record.mode ~= "patrol" or not divisions.in_phase(player_index, n, phase) then return end
-    if r.dirty or not r.posts then
-      if #r.waypoints > 0 then assign(player_index, n, r, not r.posts) end
-      return
-    end
-    local members = retreat_members(player_index, n, r)
-    if members[1] then
+    -- Before the posts are dealt, so a patrol that loses soldiers every
+    -- second still sends its injured away, and a leave or rejoin is dealt
+    -- in the same sweep.
+    local members = r.posts and retreat_members(player_index, n, r)
+    if members and members[1] then
       cfg = cfg or config.escort()
       local _, changed = retreat.sweep(r, members, {
         force = members[1].force, surface_index = r.surface_index,
@@ -313,6 +314,10 @@ function M.tick(phase)
         responders = r.responders, on_rejoin = rejoined,
       })
       if changed then r.dirty = true end
+    end
+    if r.dirty or not r.posts then
+      if #r.waypoints > 0 then assign(player_index, n, r, not r.posts) end
+      return
     end
     if not r.retry then return end
     local tick = game.tick

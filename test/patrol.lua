@@ -377,8 +377,7 @@ return function(ctx)
     patrol.tick()
     assert(retreat.is_away(r, hurt.unit_number), 'the injured soldier stayed')
     assert(hurt.command.destination.x == -250, 'not sent to the barracks')
-    assert(r.dirty, 'posts not marked for a new deal')
-    patrol.tick()
+    assert(not r.dirty, 'posts not dealt again in the same sweep')
     assert(not r.posts[hurt.unit_number], 'the away soldier kept a post')
     assert(r.posts[members[2].unit_number] and r.posts[members[3].unit_number], 'the others lost their posts')
     assert(hurt.command.destination.x == -250, 'the new deal sent the injured soldier back to the route')
@@ -418,13 +417,11 @@ return function(ctx)
     local hurt = members[1]
     hurt.health = 60
     patrol.tick()
-    patrol.tick()
     assert(not r.posts[hurt.unit_number])
     hurt.position = {x = -250, y = -248}
     hurt.health = 400
     patrol.tick()
-    assert(not retreat.is_away(r, hurt.unit_number) and r.dirty, 'the healed soldier did not rejoin')
-    patrol.tick()
+    assert(not retreat.is_away(r, hurt.unit_number), 'the healed soldier did not rejoin')
     local post = r.posts[hurt.unit_number]
     assert(post and hurt.command.destination == post.anchor, 'the healed soldier got no post')
   end)
@@ -474,6 +471,8 @@ return function(ctx)
     patrol.tick()
     assert(retreat.is_away(r, hurt.unit_number), 'the injured soldier stayed')
     assert(hurt.command.destination.x == -250, 'the retry sent the away soldier back to the route')
+    patrol.tick()
+    assert(hurt.command.destination.x == -250, 'a later sweep sent the away soldier back to the route')
     assert(not (r.retry and r.retry[hurt.unit_number]), 'the retry was kept for an away soldier')
   end)
 
@@ -543,5 +542,32 @@ return function(ctx)
     patrol.on_damaged{entity = members[2], cause = biter}
     assert(sent == 2, 'expected the two soldiers on patrol to help, got ' .. sent)
     assert(members[1].command == convoy, 'the alarm called an away soldier')
+  end)
+
+  test('patrol retreat: injured soldiers still leave while casualties keep the posts dirty', function()
+    depot(-250, -250)
+    local members, r = patrol_of(1, 3)
+    local hurt = members[1]
+    hurt.health = 60
+    for _ = 1, 2 do
+      r.dirty = true
+      patrol.tick()
+    end
+    assert(retreat.is_away(r, hurt.unit_number), 'a dirty route never ran the retreat sweep')
+    assert(not r.posts[hurt.unit_number], 'the away soldier kept its post')
+  end)
+
+  test('patrol retreat: adding a waypoint to a running patrol keeps its convoys', function()
+    depot(-250, -250)
+    local members, r = patrol_of(1, 3)
+    local hurt = members[1]
+    hurt.health = 60
+    patrol.tick()
+    assert(retreat.is_away(r, hurt.unit_number), 'the injured soldier stayed')
+    local convoy = hurt.command
+    patrol.add_waypoint(1, 1, {x = 0, y = 250}, game.surfaces[1])
+    patrol.start(1, 1)
+    assert(retreat.is_away(r, hurt.unit_number), 'a new waypoint called the injured soldier back')
+    assert(hurt.command == convoy and not r.posts[hurt.unit_number], 'the injured soldier was sent to a post')
   end)
 end
