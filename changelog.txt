@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.17.0
+Date: 2026-09-25
+  Features:
+    - Divisions 1-9 each carry their own insignia. It flies over the division, shows on the map and heads its row in the division window, and your whole team can see it. Division colours now match their insignias.
+    - Every unit has its own name. Point at a unit to see its name, rank, experience and kills.
+    - Soldiers earn experience from their kills and rise through four ranks: Recruit, Trained, Seasoned and Veteran. Each rank makes a soldier faster, hit harder and take less damage, up to +30% speed, +75% damage and half damage taken.
+---------------------------------------------------------------------------------------------------
 Version: 0.16.4
 Date: 2026-09-25
   Changes:

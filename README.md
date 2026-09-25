@@ -18,6 +18,8 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 - **Nest assaults.** Offensive divisions gather on an arc outside a biter nest before they attack. Siege tanks shell the worms from out of range, flame tanks push in, and carriers follow. A division of carriers alone gathers, then attacks together.
 - **Healing retreat.** Badly damaged escort and scout soldiers drive back to the nearest barracks or mobile headquarters in guarded convoys, heal, and return to their post. A scout team that takes too much damage pulls back together.
 - **Automatic reinforcements.** Link a barracks to a division and set a target strength. It replaces losses automatically and pauses when the division is full.
+- **Division insignias.** Divisions 1–9 each carry their own insignia: Iron Vanguard, Ashguard, Stormbreakers, Pathfinders, Siege Hammers, Night Watch, Dust Wolves, Steel Serpents and Last Bastion. It flies over the division, shows on the map and heads its row in the division window. Your whole team sees it.
+- **Veterans.** Every unit has its own name. Soldiers earn experience from their kills, weighted by how tough the enemy was, and rise from Recruit to Trained, Seasoned and Veteran. Each rank makes a soldier faster, hit harder and shrug off more damage. Point at a unit to see its name, rank, experience and kills.
 - **Map vision.** Soldiers keep the map live around themselves, so you can watch fights from the map view without radars.
 - **Multiplayer ready.** Selections, divisions, route overlays and labels are private to each player. Everything is per force.
 
@@ -57,6 +59,17 @@ Research **Mobile headquarters** (automation to utility science), then choose **
 - **Power:** a camp within 12 tiles of one of your electric poles wires itself to that pole, so the grid shares its solar power and battery. It never links two grids.
 - **Robots:** open the headquarters to put construction and logistic robots and repair packs into its roboport. Robots build from your logistic network like any roboport's. If the headquarters is destroyed, its docked robots and repair packs drop on the ground.
 - **Orders:** select it with the command tool and move it or give it a patrol route like any soldier. An attack order moves it to the area. Scouting and escort formations leave it where it is.
+
+### Veteran ranks
+
+| Rank | Experience | Speed | Damage | Damage taken |
+|---|---|---|---|---|
+| Recruit | 0 | — | — | — |
+| Trained | 50 | +10% | +20% | −20% |
+| Seasoned | 250 | +20% | +40% | −40% |
+| Veteran | 1000 | +30% | +75% | −50% |
+
+A kill is worth a tenth of the enemy's maximum health in experience: a small biter gives 1.5, a behemoth 300. A siege tank's extra damage lands with its shell. A killing blow is never reduced, and a soldier's record ends with it. The mobile headquarters has a name but no rank. Point at a unit to see its card.
 
 ---
 
@@ -115,6 +128,8 @@ All of these are map settings and can be changed during a game (*Settings → Mo
 Tank Squads soldiers are native `unit` entities, the same type as biters. Movement, pathfinding, targeting and damage run in the engine's C++. The mod's scripts only react to events and run one light sweep per second, spread across ten slices. There is no `on_tick` handler.
 
 In testing, 200 carriers in constant combat cost about **0.01 ms per tick** of script time.
+
+Veteran ranks add no per-tick work. Kills are counted from enemy deaths only, a Recruit's shots cost no extra engine calls, and names and ranks are shown on a card while you point at a unit rather than drawn over every tank.
 
 A mobile headquarters' camp moves only when it parks, because the engine takes a few milliseconds to move a roboport with such a large reach. Its once-a-second sweep is otherwise light.
 
