@@ -119,4 +119,31 @@ return function(ctx)
     assert(inner and inner.valid and outer and outer.valid, 'both rings expected')
     assert(outer.args.radius == inner.args.radius + 0.5, 'selection ring radius ' .. outer.args.radius)
   end)
+
+  test('selection: upgrading moves a slot-0 patrol to a free division and unindexes slot 0', function()
+    local handlers = control()
+    local a, b = soldier(), soldier()
+    -- Slot 0 as older versions stored it: an owning division with a route.
+    storage.divisions = {[1] = {selected = 0, slots = {[0] = {members = {a.unit_number, b.unit_number}, mode = 'patrol',
+      patrol = {waypoints = {{x = 10, y = 0}, {x = 20, y = 0}}, surface_index = 1}, render = {rings = {}, route = {}}}}}}
+    storage.unit_divisions = {[a.unit_number] = {player_index = 1, division = 0}, [b.unit_number] = {player_index = 1, division = 0}}
+    handlers.configuration_changed()
+    local record = divisions.record(1, 1)
+    assert(record.mode == 'patrol' and #record.patrol.waypoints == 2 and divisions.size(1, 1) == 2, 'route not moved')
+    assert(divisions.record(1, 0).mode == 'idle' and not divisions.record(1, 0).patrol, 'slot 0 kept its job')
+    for _, owner in pairs(storage.unit_divisions) do assert(owner.division ~= 0, 'slot 0 still indexed') end
+  end)
+
+  test('selection: upgrading ends a slot-0 scout when no division is free', function()
+    local handlers = control()
+    for n = 1, 9 do divisions.assign(1, n, {soldier()}) end
+    local a = soldier()
+    storage.divisions[1].slots[0] = {members = {a.unit_number}, mode = 'scout', scout = {}, render = {rings = {}, route = {}}}
+    storage.divisions[1].selected = 0
+    storage.unit_divisions[a.unit_number] = {player_index = 1, division = 0}
+    handlers.configuration_changed()
+    assert(divisions.record(1, 0).mode == 'idle' and not divisions.record(1, 0).scout, 'scout kept on slot 0')
+    assert(divisions.size(1, 0) == 1, 'soldier left the selection')
+    assert(storage.unit_divisions[a.unit_number] == nil, 'slot 0 still indexed')
+  end)
 end

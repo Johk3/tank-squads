@@ -87,7 +87,7 @@ A kill is worth a tenth of the enemy's maximum health in experience: a small bit
 | Escort | Select a numbered division, press the escort shortcut, then pick a player and a formation |
 | Reinforce | Open a barracks and use the **Automatic reinforcements** panel |
 
-All keys can be rebound in the controls menu. Each soldier belongs to one division at a time.
+All keys can be rebound in the controls menu. Each soldier belongs to one division at a time. Drag-selecting soldiers never takes them out of their division; an order to the selection does, but only from a patrolling, scouting or escorting division. Starting a patrol or scouting on a drag selection turns it into the lowest free division.
 
 ---
 

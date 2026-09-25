@@ -104,6 +104,27 @@ end
 script.on_event(defines.events.on_player_removed, clear_player)
 script.on_event(defines.events.on_player_changed_force, clear_player)
 
+-- Older saves could run a patrol or scout on the drag selection, which now
+-- owns nobody. The job moves to the lowest empty division; with none free
+-- it ends and the soldiers stay selected.
+local function upgrade_selections()
+  for player_index, state in pairs(storage.divisions or {}) do
+    local record = state.slots[0]
+    if record and (record.mode == "patrol" or record.mode == "scout") then
+      local mode, route = record.mode, record.patrol
+      record.mode, record.patrol, record.scout = "idle", nil, nil
+      render.clear_route(record)
+      local n = divisions.promote(player_index)
+      if n and mode == "patrol" and route then
+        divisions.record(player_index, n).patrol = route
+        patrol.start(player_index, n)
+      elseif n then
+        scout.set(player_index, n, true)
+      end
+    end
+  end
+end
+
 script.on_configuration_changed(function()
   -- New unlock effects are not applied retroactively to researched technology.
   -- Enable only our added recipes, preserving unrelated recipe overrides.
@@ -126,6 +147,7 @@ script.on_configuration_changed(function()
   end
   headquarters.reconcile()
   veterans.reapply()
+  upgrade_selections()
   divisions.reconcile_ownership()
   reinforcements.upgrade()
   -- Headquarters rings from older versions are too small to show, and rings
