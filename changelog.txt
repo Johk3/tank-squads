@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.18.0
+Date: 2026-09-25
+  Features:
+    - Each barracks now has its own reinforcement quota. A linked barracks keeps its own number of the soldiers it trained in its division, replaces only its own losses and pauses when its quota is full. Barracks with different recipes can feed one division, and changing one barracks no longer changes the others.
+  Changes:
+    - Soldiers you assign to a division yourself no longer count towards a barracks' quota. The division window shows the soldiers its barracks trained against their summed quotas.
+    - Saves with a shared division target split it between the linked barracks and hand out the current members, so no barracks trains extra soldiers.
+  Bugfixes:
+    - Flame tanks now get their full rank damage bonus, and armour no longer takes a larger share of it than of the native damage.
+---------------------------------------------------------------------------------------------------
 Version: 0.17.0
 Date: 2026-09-25
   Features:
