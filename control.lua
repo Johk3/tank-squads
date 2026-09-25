@@ -53,6 +53,7 @@ script.on_event(defines.events.script_raised_revive, on_built, filters)
 script.on_event(defines.events.on_script_trigger_effect, function(event)
   weapons.on_shot(event)
   combat.on_shot(event)
+  veterans.on_shot(event)
 end)
 local barracks_filters = {{filter = "name", name = names.barracks}}
 local function on_pre_mined(event)
@@ -63,6 +64,7 @@ script.on_event(defines.events.on_pre_player_mined_item, on_pre_mined, barracks_
 script.on_event(defines.events.on_robot_pre_mined, on_pre_mined, barracks_filters)
 -- The headquarters is unarmed, but a patrol still comes to its help.
 script.on_event(defines.events.on_entity_damaged, function(event)
+  veterans.on_damaged(event)
   combat.on_damaged(event)
   patrol.on_damaged(event)
 end, unit_filters)

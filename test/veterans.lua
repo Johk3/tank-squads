@@ -193,4 +193,68 @@ return function(ctx)
     ctx.handlers().on_entity_died{entity = e}
     assert(veterans.get(e.unit_number) == nil, 'dead soldier kept its record')
   end)
+  local function ranked(name, rank)
+    local e = ctx.soldier()
+    e.name = name or names.soldier_names[1]
+    local record = veterans.register(e)
+    record.rank = rank
+    return e, record
+  end
+
+  test('bonuses: a ranked soldier heals back its share of every survivable hit', function()
+    local e = ranked(nil, 2)
+    e.health = 300
+    veterans.on_damaged{entity = e, final_damage_amount = 100, final_health = 300}
+    assert(math.abs(e.health - 340) < 1e-9, 'healed to ' .. e.health)
+    local recruit = ranked(nil, 0)
+    recruit.health = 300
+    veterans.on_damaged{entity = recruit, final_damage_amount = 100, final_health = 300}
+    assert(recruit.health == 300, 'recruit took less damage')
+    e.health = 0
+    veterans.on_damaged{entity = e, final_damage_amount = 100, final_health = 0}
+    assert(e.health == 0, 'a killing blow was reduced')
+  end)
+
+  test('bonuses: a ranked carrier adds research-scaled damage to every shot', function()
+    local e = ranked(names.soldier_names[1], 1)
+    local target = ctx.soldier('enemy')
+    e.force.get_ammo_damage_modifier = function(category) return category == 'bullet' and 0.5 or 0 end
+    veterans.on_shot{effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}
+    local hit = target.damaged[1]
+    assert(hit and math.abs(hit.amount - 6 * 0.2 * 1.5) < 1e-9, 'bonus ' .. tostring(hit and hit.amount))
+    assert(hit.type == 'physical' and hit.force == e.force and hit.source == e and hit.cause == e)
+    local recruit = ranked(names.soldier_names[1], 0)
+    veterans.on_shot{effect_id = 'tank-squad-shot', source_entity = recruit, target_entity = target}
+    veterans.on_shot{effect_id = 'another-mod', source_entity = e, target_entity = target}
+    local gone = ctx.soldier('enemy')
+    gone.valid = false
+    veterans.on_shot{effect_id = 'tank-squad-shot', source_entity = e, target_entity = gone}
+    assert(#target.damaged == 1 and #gone.damaged == 0, 'bonus from a recruit, another mod or a dead target')
+  end)
+
+  test('bonuses: a siege tank adds its bonus when the shell lands, not when it fires', function()
+    local siege = ranked('tank-squad-siege', 3)
+    local target = ctx.soldier('enemy')
+    veterans.on_shot{effect_id = 'tank-squad-shot', source_entity = siege, target_entity = target}
+    assert(#target.damaged == 0, 'siege bonus landed on firing')
+    veterans.on_shot{effect_id = 'tank-squad-shell-hit', cause_entity = siege, target_entity = target}
+    assert(#target.damaged == 1 and math.abs(target.damaged[1].amount - 750) < 1e-9)
+    siege.valid = false
+    veterans.on_shot{effect_id = 'tank-squad-shell-hit', cause_entity = siege, target_entity = target}
+    veterans.on_shot{effect_id = 'tank-squad-shell-hit', target_entity = target}
+    assert(#target.damaged == 1, 'shell of a dead siege tank dealt a bonus')
+  end)
+
+  test('bonuses: control routes damage and shot events to the service records', function()
+    dofile('control.lua')
+    local e = ranked(nil, 1)
+    local target = ctx.soldier('enemy')
+    -- A unit target keeps combat.on_shot from searching for nearby enemies.
+    target.type = 'unit'
+    e.health = 300
+    ctx.handlers().on_entity_damaged{entity = e, final_damage_amount = 50, final_health = 300}
+    assert(math.abs(e.health - 310) < 1e-9, 'control did not route damage')
+    ctx.handlers().on_script_trigger_effect{effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}
+    assert(#target.damaged == 1, 'control did not route shots')
+  end)
 end

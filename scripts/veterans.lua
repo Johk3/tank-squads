@@ -19,6 +19,20 @@ local M = {}
 -- buildings never call Lua.
 M.KILL_FILTERS = {{filter = "force", force = "enemy"}}
 
+M.SHOT, M.SHELL_HIT = "tank-squad-shot", "tank-squad-shell-hit"
+
+-- A rank's extra damage per shot is a share of the native attack's own
+-- damage, of the same type, scaled by the force's research for that ammo.
+-- The siege shell copies the base cannon projectile (1000 physical) and adds
+-- its bonus when it lands; the flame stream deals 7 fire per shot.
+M.BASE = {
+  ["tank-squad-soldier-1"] = {amount = 6, type = "physical", ammo = "bullet"},
+  ["tank-squad-soldier-2"] = {amount = 10, type = "physical", ammo = "bullet"},
+  ["tank-squad-soldier-3"] = {amount = 16, type = "physical", ammo = "bullet"},
+  ["tank-squad-siege"] = {amount = 1000, type = "physical", ammo = "cannon-shell", on_hit = true},
+  ["tank-squad-flame"] = {amount = 7, type = "fire", ammo = "flamethrower"},
+}
+
 function M.get(unit_number)
   return storage.veterans and storage.veterans[unit_number]
 end
@@ -84,6 +98,37 @@ function M.reapply()
       if entity and entity.valid then apply_speed(entity, record) end
     end
   end
+end
+
+-- Runs for every hit on our units (the event is filtered to them). Max
+-- health is fixed per prototype, so a rank heals back its share of each hit
+-- instead. A killing blow is not reduced.
+function M.on_damaged(event)
+  local entity = event.entity
+  if not (entity and entity.valid) then return end
+  local record = storage.veterans and storage.veterans[entity.unit_number]
+  local rank = record and record.rank
+  if not (rank and rank > 0) or event.final_health <= 0 then return end
+  entity.health = entity.health + event.final_damage_amount * ranks.bonus(rank).reduction
+end
+
+-- Runs for every shot and every siege shell impact. Recruits cost one lookup.
+function M.on_shot(event)
+  local id, source = event.effect_id, nil
+  if id == M.SHOT then source = event.source_entity
+  elseif id == M.SHELL_HIT then source = event.cause_entity
+  else return end
+  if not (source and source.valid) then return end
+  local record = storage.veterans and storage.veterans[source.unit_number]
+  local rank = record and record.rank
+  if not (rank and rank > 0) then return end
+  local base = M.BASE[source.name]
+  if not base or (base.on_hit == true) ~= (id == M.SHELL_HIT) then return end
+  local target = event.target_entity
+  if not (target and target.valid) then return end
+  local force = source.force
+  local amount = base.amount * ranks.bonus(rank).damage * (1 + force.get_ammo_damage_modifier(base.ammo))
+  target.damage(amount, force, base.type, source, source)
 end
 
 return M

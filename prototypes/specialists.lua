@@ -53,6 +53,10 @@ shell.direction_only, shell.piercing_damage = false, nil
 shell.collision_box = {{0, 0}, {0, 0}}
 shell.hit_collision_mask = {layers = {}}
 shell.final_action = nil
+-- Reports the impact, so a ranked siege tank's bonus damage lands with the
+-- shell. The event's cause_entity is the siege tank that fired.
+local impact = shell.action[1] or shell.action
+table.insert(impact.action_delivery.target_effects, 1, {type = 'script', effect_id = 'tank-squad-shell-hit'})
 
 local flame, flame_idle = specialist('flame', 2400, 0.07,
   '__tank-squads__/graphics/flame-chassis.png', 0.46)
