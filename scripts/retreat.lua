@@ -19,6 +19,9 @@ M.ARRIVAL_RADIUS = 6
 M.HEAL_RADIUS = 12
 -- A second failed path to the barracks ends the convoy.
 M.FAILURE_LIMIT = 2
+-- Guards come only from soldiers this close to an injured soldier, so they
+-- set out together instead of crossing the map on their own.
+M.GUARD_REACH = 64
 -- A headquarters heals in a wider radius. Arriving halfway into it keeps the
 -- convoy clear of the headquarters' large body.
 M.HQ_ARRIVAL_RADIUS = 12
@@ -235,6 +238,8 @@ local function without_away(r, members)
   return out
 end
 
+-- Soldiers fit to guard, with their health and position. Read only in a
+-- sweep that sends someone away.
 local function guard_candidates(present, context)
   local out = {}
   for _, soldier in ipairs(present) do
@@ -242,14 +247,43 @@ local function guard_candidates(present, context)
     local health = ratio(soldier)
     if health >= context.retreat and unit ~= context.leader
         and not (context.responders and context.responders[unit] ~= nil) then
-      out[#out + 1] = {unit = unit, soldier = soldier, health = health}
+      out[#out + 1] = {unit = unit, soldier = soldier, health = health, position = soldier.position}
     end
   end
-  table.sort(out, function(a, b)
-    if a.health ~= b.health then return a.health > b.health end
-    return a.unit < b.unit
-  end)
   return out
+end
+
+-- Up to `count` free candidates within GUARD_REACH of any of the injured,
+-- nearest first, then healthiest, then by unit number.
+local function pick_guards(candidates, taken, injured, count)
+  local reach, near = M.GUARD_REACH * M.GUARD_REACH, {}
+  for _, entry in ipairs(candidates) do
+    if not taken[entry.unit] then
+      local best = math.huge
+      for _, spot in ipairs(injured) do
+        local d = distance_squared(entry.position, spot.position)
+        if d < best then best = d end
+      end
+      if best <= reach then near[#near + 1] = {entry = entry, d = best} end
+    end
+  end
+  table.sort(near, function(a, b)
+    if a.d ~= b.d then return a.d < b.d end
+    if a.entry.health ~= b.entry.health then return a.entry.health > b.entry.health end
+    return a.entry.unit < b.entry.unit
+  end)
+  local out = {}
+  for i = 1, math.min(count, #near) do
+    out[i] = near[i].entry
+    taken[out[i].unit] = true
+  end
+  return out
+end
+
+local function size(set)
+  local count = 0
+  for _ in pairs(set) do count = count + 1 end
+  return count
 end
 
 -- Returns the present members and whether anyone left or rejoined, which
@@ -274,44 +308,60 @@ function M.sweep(state, members, context)
       local unit = soldier.unit_number
       if not r.cooldown[unit] then
         list = list or barracks_in_reach(context)
-        local key, distance = nearest_barracks(list, soldier.position, context.range)
+        local position = soldier.position
+        local key, distance = nearest_barracks(list, position, context.range)
         if key then
           if not groups[key] then
-            groups[key] = {barracks = list[key], injured = {}, best = distance}
+            groups[key] = {barracks = list[key], injured = {}, best = distance, farthest = distance}
             order[#order + 1] = key
           end
           local group = groups[key]
-          group.injured[#group.injured + 1] = soldier
+          group.injured[#group.injured + 1] = {soldier = soldier, position = position}
           group.best = math.min(group.best, distance)
+          group.farthest = math.max(group.farthest, distance)
         end
       end
     end
   end
   if #order == 0 then return present, changed, health, max_health end
   table.sort(order)
-  local candidates = guard_candidates(present, context)
-  local per_convoy, next_guard = guard_count(#members), 1
+  -- An injury joins the open convoy to its depot, so a division hurt over
+  -- several sweeps keeps one set of guards per depot. Depots are matched
+  -- with ==, since two references to one entity need not be the same table
+  -- key. A closer newcomer counts as progress on the next sweep, through the
+  -- usual rule in advance().
+  local per_convoy = guard_count(#members)
+  local candidates, taken = nil, {}
   for _, key in ipairs(order) do
     local group = groups[key]
-    local id = r.next_id
-    r.next_id = id + 1
-    local convoy = {barracks = group.barracks.entity, destination = group.barracks.position,
-      mobile = group.barracks.mobile, progress = game.tick,
-      best = group.best, injured = {}, guards = {}, resend = {}, failures = 0}
-    r.convoys[id] = convoy
-    for _, soldier in ipairs(group.injured) do
+    local id, convoy
+    for open_id, open in pairs(r.convoys) do
+      if open.barracks == group.barracks.entity then id, convoy = open_id, open; break end
+    end
+    if not convoy then
+      id = r.next_id
+      r.next_id = id + 1
+      convoy = {barracks = group.barracks.entity, destination = group.barracks.position,
+        mobile = group.barracks.mobile, progress = game.tick,
+        best = group.best, injured = {}, guards = {}, resend = {}, failures = 0}
+      r.convoys[id] = convoy
+    end
+    for _, spot in ipairs(group.injured) do
+      local soldier = spot.soldier
       local unit = soldier.unit_number
       convoy.injured[unit], r.away[unit] = true, id
       health, max_health = health - soldier.health, max_health - soldier.max_health
       send(soldier, convoy)
     end
-    for _ = 1, per_convoy do
-      local entry = candidates[next_guard]
-      if not entry then break end
-      next_guard = next_guard + 1
-      convoy.guards[entry.unit], r.away[entry.unit] = true, id
-      health, max_health = health - entry.soldier.health, max_health - entry.soldier.max_health
-      send(entry.soldier, convoy)
+    -- Injured soldiers already healing at the depot need no guard.
+    local wanted = per_convoy - size(convoy.guards)
+    if wanted > 0 and group.farthest > M.heal_radius(convoy) then
+      candidates = candidates or guard_candidates(present, context)
+      for _, entry in ipairs(pick_guards(candidates, taken, group.injured, wanted)) do
+        convoy.guards[entry.unit], r.away[entry.unit] = true, id
+        health, max_health = health - entry.soldier.health, max_health - entry.soldier.max_health
+        send(entry.soldier, convoy)
+      end
     end
   end
   return without_away(r, members), true, health, max_health

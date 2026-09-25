@@ -91,23 +91,102 @@ return function(ctx)
     end
   end)
 
-  test('retreat: guards are the healthiest candidates, never a responder or the leg leader', function()
+  test('retreat: guards are the nearest free soldiers, never a responder or the leg leader', function()
+    depot(100, 0)
+    local members = {}
+    for i = 1, 12 do members[i] = soldier(nil, nil, 0, i * 3) end
+    members[1].health = 60
+    members[2].health = 390 -- active responder, nearest
+    members[3].health = 390 -- offensive leg leader, next nearest
+    members[4].health = 100 -- 25 %: injured too, so no guard
+    local state = {}
+    retreat.sweep(state, members, context({responders = {[members[2].unit_number] = false},
+      leader = members[3].unit_number}))
+    local away = state.retreat.away
+    assert(away[members[5].unit_number], 'nearest free soldier not chosen as guard')
+    assert(not away[members[2].unit_number] and not away[members[3].unit_number], 'responder or leader sent as guard')
+    assert(not away[members[6].unit_number], 'a farther soldier guarded as well')
+    assert(members[5].command.destination.x == 100, 'guard not sent to the barracks')
+  end)
+
+  test('retreat: equally near guards go by health, then by unit number', function()
     depot(100, 0)
     local members = squad(12)
-    for i = 2, 12 do members[i].health = 300 end
     members[1].health = 60
-    members[3].health = 395
-    members[4].health = 399 -- active responder
-    members[5].health = 398 -- offensive leg leader
-    members[6].health = 395 -- ties with 3; 3 has the lower unit number
+    members[1].position = {x = 0, y = 50}
+    -- 49 and 51 are one tile from the injured soldier.
+    members[2].position, members[2].health = {x = 0, y = 49}, 300
+    members[3].position, members[3].health = {x = 0, y = 51}, 390
     local state = {}
-    retreat.sweep(state, members, context({responders = {[members[4].unit_number] = false},
-      leader = members[5].unit_number}))
+    retreat.sweep(state, members, context())
     local away = state.retreat.away
-    assert(away[members[3].unit_number], 'healthiest free soldier not chosen as guard')
-    assert(not away[members[4].unit_number] and not away[members[5].unit_number], 'responder or leader sent as guard')
-    assert(not away[members[6].unit_number], 'tie not broken by unit number')
-    assert(members[3].command.destination.x == 100, 'guard not sent to the barracks')
+    assert(away[members[3].unit_number] and not away[members[2].unit_number], 'healthier soldier not preferred')
+  end)
+
+  test('retreat: soldiers beyond the guard reach never guard', function()
+    depot(0, 0)
+    local function spread(gap)
+      local members = {}
+      -- members[2] is the nearest, `gap` tiles from the injured soldier.
+      for i = 1, 12 do members[i] = soldier(nil, nil, 100 + gap + i - 2, 0) end
+      members[1].position = {x = 100, y = 0}
+      members[1].health = 60
+      return members
+    end
+    local members = spread(retreat.GUARD_REACH + 1)
+    local present = retreat.sweep({}, members, context())
+    assert(#present == 11, 'a soldier beyond ' .. retreat.GUARD_REACH .. ' tiles was sent as guard')
+    members = spread(retreat.GUARD_REACH)
+    present = retreat.sweep({}, members, context())
+    assert(#present == 10 and members[2].command, 'a soldier at the guard reach was not sent')
+  end)
+
+  test('retreat: an injured soldier already in healing range gets no guard', function()
+    depot(100, 0)
+    local members = squad(12)
+    members[1].position = {x = 100 - retreat.HEAL_RADIUS, y = 0}
+    members[1].health = 60
+    for i = 2, 12 do members[i].position = {x = 95, y = i} end
+    local state = {}
+    local present = retreat.sweep(state, members, context())
+    assert(#present == 11, 'a guard was sent to a soldier already healing')
+  end)
+
+  test('retreat: a later injury joins the open convoy to the same depot without new guards', function()
+    depot(100, 0)
+    local members = squad(25)
+    members[1].health = 60
+    local c, state = context(), {}
+    local present = retreat.sweep(state, members, c)
+    assert(#present == 22, 'expected 1 injured and 2 guards away')
+    members[4].health = 60
+    present = retreat.sweep(state, members, c)
+    local count = 0
+    for _ in pairs(state.retreat.convoys) do count = count + 1 end
+    assert(count == 1, 'second injury opened a convoy of its own')
+    assert(#present == 21, 'second injury took new guards: ' .. (24 - #present) .. ' away')
+    assert(members[4].command.destination.x == 100, 'second injured not sent to the barracks')
+    members[1].health = 400
+    present = retreat.sweep(state, members, c)
+    assert(#present == 22, 'convoy ended while the second injured was still away')
+  end)
+
+  test('retreat: a joining injury tops up guards the convoy lost', function()
+    depot(100, 0)
+    local members = squad(25)
+    members[1].health = 60
+    local c, state = context(), {}
+    retreat.sweep(state, members, c)
+    local _, convoy = next(state.retreat.convoys)
+    local lost = next(convoy.guards)
+    local remaining = {}
+    for _, m in ipairs(members) do if m.unit_number ~= lost then remaining[#remaining + 1] = m end end
+    remaining[5].health = 60
+    local present = retreat.sweep(state, remaining, c)
+    local count = 0
+    for _ in pairs(convoy.guards) do count = count + 1 end
+    assert(count == 2, 'lost guard not replaced, ' .. count .. ' guards')
+    assert(#present == 20)
   end)
 
   test('retreat: a healed soldier rejoins and guards return with the last injured', function()

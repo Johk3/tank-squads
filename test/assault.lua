@@ -524,7 +524,8 @@ return function(ctx)
     local away = state.retreat.away
     assert(away[injured.unit_number], 'test setup: no retreat')
     assert(not away[members[1].unit_number] and not away[members[2].unit_number], 'screen carrier taken as a convoy guard')
-    assert(away[members[3].unit_number], 'test setup: no convoy guard')
+    -- The guard is the free soldier nearest the injured one.
+    assert(away[members[8].unit_number], 'test setup: no convoy guard')
     assert(a.roles[injured.unit_number] == nil, 'away soldier kept its role')
     injured.health = 400
     escort.tick()
