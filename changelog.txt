@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.21.1
+Date: 2026-09-25
+  Bugfixes:
+    - Fixed soldiers far from an injured soldier being sent as its guard, sometimes arriving at the barracks or headquarters on their own. Guards now come only from soldiers close to the injured one.
+    - Fixed large divisions sending new guards with every soldier hurt in a long fight, which could take many unhurt soldiers out of the formation. Soldiers heading for the same barracks or headquarters now share one convoy and its guards.
+    - Injured soldiers that are already within healing range no longer get a guard.
+---------------------------------------------------------------------------------------------------
 Version: 0.21.0
 Date: 2026-09-25
   Changes:
