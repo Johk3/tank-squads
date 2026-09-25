@@ -28,6 +28,7 @@ function M.order(player_index, area, surface)
     if soldier.surface_index == surface_index then table.insert(on_surface, soldier) end
   end
   if #on_surface == 0 then return nil end
+  if n == 0 then divisions.release_for_order(player_index, on_surface) end
   patrol.clear(player_index, n)
   local record = divisions.record(player_index, n)
   divisions.end_escort(record)

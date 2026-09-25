@@ -3,6 +3,7 @@ return function(ctx)
   local divisions = require('scripts.divisions')
   local patrol = require('scripts.patrol')
   local barracks = require('scripts.barracks')
+  local commands = require('scripts.commands')
 
   local function route(n, members)
     divisions.assign(1, n, members)
@@ -50,5 +51,18 @@ return function(ctx)
     divisions.select_area(1, {a, b})
     a.valid = false
     assert(divisions.size(1, 1) == 1 and divisions.size(1, 0) == 1)
+  end)
+
+  test('selection: an order pulls soldiers out of automated divisions only', function()
+    local p1, p2, m1, m2 = soldier(), soldier(), soldier(), soldier()
+    local patrolling = route(1, {p1, p2})
+    divisions.assign(1, 2, {m1, m2})
+    divisions.select_area(1, {p1, m1})
+    local area = {left_top = {x = 50, y = 50}, right_bottom = {x = 60, y = 60}}
+    assert(commands.order(1, area, game.surfaces[1]) == 'move')
+    assert(divisions.size(1, 1) == 1 and divisions.size(1, 2) == 2, 'wrong soldiers left their divisions')
+    assert(patrolling.mode == 'patrol' and patrolling.patrol.posts[p2.unit_number], 'the patrol stopped')
+    assert(p1.command.destination.x == 55 and m1.command.destination.x == 55, 'selection not ordered')
+    assert(divisions.size(1, 0) == 2, 'ordered soldiers left the selection')
   end)
 end

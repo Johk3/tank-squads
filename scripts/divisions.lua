@@ -277,6 +277,21 @@ local function fill(player_index, n, entities)
   return #M.get(player_index, n)
 end
 
+local AUTOMATED = {patrol = true, scout = true, escort = true}
+
+-- Before the drag selection is ordered, its soldiers leave the player's
+-- patrolling, scouting and escorting divisions, whose next leg would undo
+-- the order. A manual division keeps its soldiers.
+function M.release_for_order(player_index, members)
+  local owners, state, ids = ownership(), storage.divisions and storage.divisions[player_index], {}
+  for _, e in ipairs(members) do
+    local owner = owners[e.unit_number]
+    local record = owner and owner.player_index == player_index and state and state.slots[owner.division]
+    if record and AUTOMATED[record.mode] then ids[e.unit_number] = true end
+  end
+  if next(ids) then detach(player_index, ids, 0) end
+end
+
 -- The drag selection lists soldiers without owning them: selecting never
 -- changes a division, its job or a barracks' quota. It takes the player's
 -- own soldiers and those in nobody's division, never a teammate's.
