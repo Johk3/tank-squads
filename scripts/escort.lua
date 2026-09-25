@@ -301,6 +301,11 @@ end
 -- Worms are "turret"; spawners are "unit-spawner". Characters cover PvP.
 M.TARGET_TYPES = {"unit", "unit-spawner", "turret", "ammo-turret", "electric-turret",
   "fluid-turret", "artillery-turret", "character"}
+local TARGET_SET = {}
+for _, kind in ipairs(M.TARGET_TYPES) do TARGET_SET[kind] = true end
+-- Points on the band's middle circle that a pick probes when the enemy
+-- nearest the division is not a target.
+M.PROBES = 8
 
 local function chunk_key(position)
   return math.floor(position.x / 32) .. ":" .. math.floor(position.y / 32)
@@ -331,22 +336,40 @@ local function enemy_forces(force)
   return out
 end
 
--- Runs once per leg, not per sweep. Legs last tens of seconds, so even a band
--- full of nests costs one bounded scan every leg. Each candidate's position
--- is read once, and the failure list is only consulted for a candidate that
--- would become the new best, so most results build no chunk key.
-local function pick_target(state, surface, forces, from, band_min, band_max)
-  if #forces == 0 then return nil end
-  local min2 = band_min * band_min
+-- The distance from `from` to e when e is a target in the band that has not
+-- failed, else nil.
+local function candidate(state, e, from, min2, max2)
+  if not (e and TARGET_SET[e.type]) then return nil end
+  local position = e.position
+  local d = geometry.distance_squared(position, state.anchor)
+  if d < min2 or d > max2 or blocked(state, position) then return nil end
+  return geometry.distance_squared(position, from)
+end
+
+-- The target in the band nearest the division. Scanning every entity within
+-- the band took 11 ms in the wild and 23 ms over a dense base, so this asks
+-- the engine's index of military targets instead: the enemy nearest the
+-- division is the answer whenever it is a target in the band. Otherwise a
+-- few probes around the band pick the nearest target they find, at most
+-- 1 + PROBES cheap queries per leg.
+local function pick_target(state, surface, force, from, band_min, band_max)
+  local min2, max2 = band_min * band_min, band_max * band_max
+  local reach = geometry.distance(from, state.anchor) + band_max
+  local nearest = surface.find_nearest_enemy{position = from, max_distance = reach, force = force}
+  -- Nothing hostile within reach of any point of the band.
+  if not nearest then return nil end
+  if candidate(state, nearest, from, min2, max2) then return nearest end
+  local middle, half = (band_min + band_max) / 2, (band_max - band_min) / 2
+  -- Each probe covers the band's width and the arc to its neighbours.
+  local arc = math.pi * band_max / M.PROBES
+  local radius = math.sqrt(half * half + arc * arc)
   local best, best_d = nil, math.huge
-  local found = surface.find_entities_filtered{position = state.anchor, radius = band_max,
-    type = M.TARGET_TYPES, force = forces}
-  for _, e in pairs(found) do
-    local position = e.position
-    if geometry.distance_squared(position, state.anchor) >= min2 then
-      local d = geometry.distance_squared(position, from)
-      if d < best_d and not blocked(state, position) then best, best_d = e, d end
-    end
+  for i = 1, M.PROBES do
+    local angle = (i - 1) * 2 * math.pi / M.PROBES
+    local e = surface.find_nearest_enemy{position = geometry.slot_position(state.anchor, middle, angle),
+      max_distance = radius, force = force}
+    local d = e and e ~= nearest and candidate(state, e, from, min2, max2)
+    if d and d < best_d then best, best_d = e, d end
   end
   return best
 end
@@ -377,9 +400,8 @@ function formations.offensive(state, members, character, moved, characters, cfg)
     return
   end
   if state.leg and state.leg.expires > game.tick then return end
-  local forces = enemy_forces(force)
-  local target = pick_target(state, surface, forces, origin, cfg.band_min, cfg.band_max)
-  if target and assault.try_start(state, members, target, forces) then return end
+  local target = pick_target(state, surface, force, origin, cfg.band_min, cfg.band_max)
+  if target and assault.try_start(state, members, target, enemy_forces(force)) then return end
   local command
   if target then
     command = {type = defines.command.attack_area, destination = {x = target.position.x, y = target.position.y},

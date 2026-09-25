@@ -408,6 +408,15 @@ return function(ctx)
     game.forces = {player = game.players[1].force, enemy = 'enemy'}
     game.players[1].force.is_enemy = function(other) return other == 'enemy' end
     game.surfaces[1].find_units = function() return {} end
+    -- Every structure is hostile: the valid one closest to the position.
+    game.surfaces[1].find_nearest_enemy = function(q)
+      local best, best_d = nil, q.max_distance * q.max_distance
+      for _, e in ipairs(structures) do
+        local d = geometry.distance_squared(e.position, q.position)
+        if e.valid and d <= best_d then best, best_d = e, d end
+      end
+      return best
+    end
     return structures
   end
 
@@ -465,7 +474,12 @@ return function(ctx)
     divisions.set_selected(1, 3)
     local area = {left_top = {x = 285, y = -5}, right_bottom = {x = 305, y = 5}}
     assert(commands.order(1, area, game.surfaces[1]) == 'attack')
-    for _, e in ipairs(members) do assert(e.command.type == defines.command.attack_area, 'manual attack staged') end
+    for _, e in ipairs(members) do
+      -- A plain area attack: native, or one ranged target at a time.
+      local mission = storage.assaults and storage.assaults[e.unit_number]
+      assert(e.command.type == defines.command.attack_area or (mission and e.command.type == defines.command.attack),
+        'manual attack staged')
+    end
     assert(divisions.record(1, 3).escort == nil)
   end)
 

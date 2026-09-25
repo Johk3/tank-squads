@@ -646,7 +646,10 @@ return function(ctx)
     return false
   end
 
+  -- Every stand-in target is hostile, so find_nearest_enemy returns the
+  -- valid one closest to the position within max_distance.
   local function band_surface(surface, targets)
+    for _, e in ipairs(targets) do e.type = e.type or 'unit' end
     surface.find_entities_filtered = function(q)
       local out = {}
       for _, e in ipairs(targets) do
@@ -654,6 +657,14 @@ return function(ctx)
         if e.valid and dx * dx + dy * dy <= q.radius * q.radius and typed(q, e) then out[#out + 1] = e end
       end
       return out
+    end
+    surface.find_nearest_enemy = function(q)
+      local best, best_d = nil, q.max_distance * q.max_distance
+      for _, e in ipairs(targets) do
+        local d = geometry.distance_squared(e.position, q.position)
+        if e.valid and d <= best_d then best, best_d = e, d end
+      end
+      return best
     end
   end
 
@@ -674,36 +685,43 @@ return function(ctx)
     assert(leg.leader == a.unit_number)
   end)
 
-  test('escort offensive: a leg pick reads each candidate position once and scans forces once', function()
+  test('escort offensive: a leg pick never scans the whole band', function()
     local surface = setup()
     ward_player(2, 0, 0)
     local a = soldier(nil, nil, 5, 0)
     divisions.assign(1, 3, {a})
-    local nearest = soldier('enemy', nil, 300, 0)
-    local others = {soldier('enemy', nil, 0, 400), soldier('enemy', nil, -350, 0), soldier('enemy', nil, 0, -300)}
-    local all = {nearest, others[1], others[2], others[3]}
+    band_surface(surface, {soldier('enemy', nil, 300, 0)})
+    local widest, scan = 0, surface.find_entities_filtered
     surface.find_entities_filtered = function(q)
-      local out = {}
-      for _, e in ipairs(all) do if typed(q, e) then out[#out + 1] = e end end
-      return out
+      widest = math.max(widest, q.radius or math.huge)
+      return scan(q)
     end
+    escort.start(1, 3, 2, 'offensive')
+    settle()
+    assert(divisions.record(1, 3).escort.leg.destination.x == 300, 'no leg to the enemy')
+    assert(widest <= require('scripts.assault').NEST_SEARCH, 'a leg pick scanned ' .. widest .. ' tiles')
+  end)
+
+  test('escort offensive: a pick after a failure skips the blocked target and scans forces once', function()
+    local surface = setup()
+    ward_player(2, 0, 0)
+    local a = soldier(nil, nil, 5, 0)
+    divisions.assign(1, 3, {a})
+    band_surface(surface, {soldier('enemy', nil, 300, 0), soldier('enemy', nil, 0, 400),
+      soldier('enemy', nil, -350, 0), soldier('enemy', nil, 0, -300)})
     escort.start(1, 3, 2, 'offensive')
     settle()
     local state = divisions.record(1, 3).escort
     -- A failed leg leaves the failure list populated for the next pick.
     escort.on_command_completed(a.unit_number, defines.behavior_result.fail)
     assert(state.leg == nil and next(state.failed), 'test setup: no failed chunk recorded')
-    local reads = {}
-    for i, e in ipairs(others) do reads[i] = ctx.count_reads(e, 'position') end
     local forces, scans = game.forces, 0
     game.forces = setmetatable({}, {__pairs = function() scans = scans + 1; return next, forces, nil end})
     escort.tick()
     game.forces = forces
     assert(state.leg, 'no next leg')
-    -- The blocked nearest nest leaves (0, -300) as the pick; building the
-    -- leg reads the winner again, so only the losing candidates are counted.
+    -- (300, 0) is blocked, so the nearest of the rest to the division wins.
     assert(state.leg.destination.x == 0 and state.leg.destination.y == -300, 'wrong pick after the failure')
-    for i = 1, 2 do assert(reads[i].n == 1, 'candidate ' .. i .. ' position read ' .. reads[i].n .. ' times') end
     assert(scans == 1, 'enemy forces scanned ' .. scans .. ' times for one leg')
   end)
 
