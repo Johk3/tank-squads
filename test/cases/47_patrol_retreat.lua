@@ -32,6 +32,7 @@ local ok, result = pcall(function()
   if not remote.call('tank-squads', 'patrol_start', owner, 6) then error('patrol did not start') end
   local r = storage.divisions[owner].slots[6].patrol
   local hurt = soldiers[1]
+  r.responders = {[hurt.unit_number] = game.tick}
   hurt.health = 100
   remote.call('tank-squads', 'patrol_tick')
   local away = r.retreat and r.retreat.away or {}
@@ -53,7 +54,9 @@ local ok, result = pcall(function()
   local post = r.posts[hurt.unit_number]
   if not post then error('healed soldier got no post') end
   c = hurt.commandable.command
-  if not (c and c.type == defines.command.go_to_location) then error('healed soldier not sent to its post') end
+  if not (c and c.type == defines.command.go_to_location and post.i == 0) then error('healed soldier not sent to its post') end
+  dx, dy = c.destination.x - post.anchor.x, c.destination.y - post.anchor.y
+  if dx * dx + dy * dy > 1 then error('healed soldier stayed at the barracks') end
 end)
 for _, e in ipairs(created) do if e.valid then e.destroy() end end
 game, rendering = engine_game, engine_rendering

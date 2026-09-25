@@ -426,6 +426,54 @@ return function(ctx)
     assert(post and hurt.command.destination == post.anchor, 'the healed soldier got no post')
   end)
 
+  -- A rejoining soldier has already arrived at the depot, so no completion
+  -- is on its way to send it to its post later.
+  test('patrol retreat: a healed responder takes up its post at once', function()
+    depot(-250, -250)
+    local members, r = patrol_of(1, 3)
+    local hurt = members[1]
+    r.responders = {[hurt.unit_number] = game.tick}
+    hurt.health = 60
+    patrol.tick()
+    assert(retreat.is_away(r, hurt.unit_number), 'the injured responder stayed')
+    hurt.position = {x = -250, y = -248}
+    hurt.health = 400
+    patrol.tick()
+    local post = r.posts[hurt.unit_number]
+    assert(post and post.i == 0 and hurt.command.destination == post.anchor, 'the healed responder stayed at the depot')
+    assert(not r.responders[hurt.unit_number], 'the healed soldier is still a responder')
+  end)
+
+  test('patrol retreat: a healed soldier fighting at the depot takes up its post', function()
+    depot(-250, -250)
+    local members, r = patrol_of(1, 3)
+    local hurt = members[1]
+    hurt.health = 60
+    patrol.tick()
+    hurt.position = {x = -250, y = -248}
+    hurt.health = 400
+    storage.combat = {[hurt.unit_number] = {target = {valid = true}}}
+    patrol.tick()
+    local post = r.posts[hurt.unit_number]
+    assert(post and post.i == 0 and hurt.command.destination == post.anchor, 'the healed soldier stayed at the depot')
+  end)
+
+  test('patrol retreat: a rejoin leaves a fighting soldier on the route to its fight', function()
+    depot(-250, -250)
+    local members, r = patrol_of(1, 3)
+    local hurt, fighter = members[1], members[2]
+    hurt.health = 60
+    patrol.tick()
+    local fight = {type = defines.command.attack_area}
+    fighter.command = fight
+    storage.combat = {[fighter.unit_number] = {target = {valid = true}}}
+    hurt.position = {x = -250, y = -248}
+    hurt.health = 400
+    patrol.tick()
+    assert(r.posts[hurt.unit_number], 'the healed soldier did not rejoin')
+    assert(fighter.command == fight and r.posts[fighter.unit_number].i == nil, 'the rejoin interrupted a fight')
+  end)
+
   test('patrol retreat: restarting a patrol forgets an interrupted retreat', function()
     depot(-250, -250)
     local members, r = patrol_of(1, 3)

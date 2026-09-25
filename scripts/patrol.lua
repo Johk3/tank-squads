@@ -130,6 +130,8 @@ local function assign(player_index, n, r, all)
     return a.id < b.id
   end)
   local old, posts, first = r.posts or {}, {}, 0
+  local back = r.rejoined
+  r.rejoined = nil
   for _, count in ipairs(layout.counts) do
     local points, anchors = {}, {}
     for i = 1, count do
@@ -141,7 +143,11 @@ local function assign(player_index, n, r, all)
       local k, post = keyed[first + i], layout.posts[first + match[i]]
       local id, before = k.id, old[k.id]
       posts[id] = post
-      if busy(r, id) then
+      if back and back[id] then
+        -- Back from a depot: its last command has completed, so it takes
+        -- up its post now even while fighting.
+        take_up(k.entity, post)
+      elseif busy(r, id) then
         post.i = nil
       elseif not all and before and before.idle and #post.points == 1
         and geometry.distance_squared(post.points[1], before.points[1]) < 1 then
@@ -291,8 +297,16 @@ local function retreat_members(player_index, n, r)
   return out
 end
 
--- A rejoin always reports a change, which deals the posts again.
-local function rejoined() end
+-- A rejoin always reports a change, which deals the posts again in the
+-- same sweep. No completion will send a soldier back from the depot, so the
+-- deal sends it to its post at once. An alarm it answered before it left
+-- is over.
+local function rejoined(r, soldier)
+  local unit = soldier.unit_number
+  r.rejoined = r.rejoined or {}
+  r.rejoined[unit] = true
+  if r.responders then r.responders[unit] = nil end
+end
 
 -- Injured soldiers leave for a depot as in escort mode (scripts/retreat.lua).
 -- Anyone leaving or rejoining deals the posts again in the same sweep, once,
@@ -311,7 +325,7 @@ function M.tick(phase)
       local _, changed = retreat.sweep(r, members, {
         force = members[1].force, surface_index = r.surface_index,
         retreat = cfg.retreat, rejoin = cfg.rejoin, range = cfg.range,
-        responders = r.responders, on_rejoin = rejoined,
+        responders = r.responders, on_rejoin = function(soldier) rejoined(r, soldier) end,
       })
       if changed then r.dirty = true end
     end
