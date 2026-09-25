@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.21.0
+Date: 2026-09-25
+  Changes:
+    - Ctrl + Shift + 1–9 adds the selected soldiers to a division. The division keeps its other soldiers, their orders and its patrol, scouting or escort. The new soldiers join the way barracks recruits do. The division window's tooltips show the new keys.
+  Bugfixes:
+    - Fixed soldiers that joined a patrol while fighting off an attack standing still instead of taking up a post.
+---------------------------------------------------------------------------------------------------
 Version: 0.20.1
 Date: 2026-09-25
   Bugfixes:
