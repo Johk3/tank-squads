@@ -7,7 +7,8 @@ return function(ctx)
   local function badges(target)
     local world, map = {}, {}
     for _, d in ipairs(ctx.draws()) do
-      if d.valid and d.args.sprite and d.args.sprite:find('tank%-squad%-insignia') then
+      local image = d.args.sprite or d.args.use_rich_text and d.args.text:match('^%[img=(.-)%]$')
+      if d.valid and image and image:find('tank%-squad%-insignia') then
         local on = d.args.target.entity or d.args.target
         if on == target then
           if d.args.render_mode == 'chart' then map[#map + 1] = d else world[#world + 1] = d end
@@ -23,13 +24,15 @@ return function(ctx)
     divisions.refresh()
     local world, map = badges(a)
     assert(#world == 1 and #map == 1, 'badges: ' .. #world .. ' world, ' .. #map .. ' map')
-    assert(world[1].args.sprite == 'tank-squad-insignia-3' and map[1].args.sprite == 'tank-squad-insignia-3')
+    assert(world[1].args.sprite == 'tank-squad-insignia-3' and map[1].args.text == '[img=tank-squad-insignia-3]')
     for _, d in ipairs({world[1], map[1]}) do
       assert(d.args.forces[1] == a.force and not d.args.players, 'insignia not force-wide')
     end
     assert(world[1].args.target.offset[2] < 0, 'world badge not above the leader')
     assert(world[1].args.x_scale * insignia.SPRITE_TILES > 2, 'world badge too small to read')
-    assert(map[1].args.x_scale * insignia.SPRITE_TILES >= 12, 'map badge too small to read')
+    assert(map[1].args.scale_with_zoom and map[1].args.scale >= 2, 'map badge shrinks when the map zooms out')
+    assert(map[1].args.vertical_alignment == 'bottom' and map[1].args.target == a,
+      'map badge not above the leader at every zoom')
     local count = #ctx.draws()
     divisions.refresh()
     assert(#ctx.draws() == count, 'unchanged badges redrawn')
@@ -61,6 +64,24 @@ return function(ctx)
     divisions.refresh()
     assert(number.valid and marker.object == number, 'number redrawn')
     assert(marker.badge and marker.badge.valid and marker.map_badge.valid, 'old marker gained no badges')
+  end)
+
+  test('insignia: a map badge from an older version is redrawn to keep its screen size', function()
+    local a = soldier()
+    divisions.assign(1, 4, {a})
+    divisions.refresh()
+    local marker = divisions.record(1, 4).render.markers[a.surface_index]
+    local old_badge, old_map = marker.badge, marker.map_badge
+    -- Older versions drew a world-sized sprite and kept no badge version.
+    marker.badges = nil
+    local number = marker.object
+    divisions.refresh()
+    assert(not old_badge.valid and not old_map.valid, 'old badges kept')
+    assert(marker.map_badge.valid and marker.map_badge.args.scale_with_zoom, 'map badge not redrawn')
+    assert(marker.object == number and number.valid, 'number redrawn')
+    local count = #ctx.draws()
+    divisions.refresh()
+    assert(#ctx.draws() == count, 'current badges redrawn')
   end)
 
   test('insignia: ring colours are the shields\' accents', function()

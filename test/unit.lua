@@ -656,7 +656,8 @@ test("map markers follow one member per surface without redraws", function()
   divisions.refresh()
   local labels = {}
   for _, draw in ipairs(draws) do
-    if draw.valid and draw.args.render_mode == "chart" and draw.args.target == a and draw.args.text then
+    if draw.valid and draw.args.render_mode == "chart" and draw.args.target == a and draw.args.text
+        and not draw.args.use_rich_text then
       labels[#labels + 1] = draw
       assert(draw.args.text == "3", "map marker lacks division number")
       assert(draw.args.scale_with_zoom == true, "map marker shrinks when zooming out")

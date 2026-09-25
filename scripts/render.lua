@@ -10,10 +10,15 @@ for n, slot in pairs(insignia.SLOTS) do M.COLORS[n] = slot.color end
 -- escort shapes of records drawn with another palette.
 M.PALETTE = 2
 
--- Insignia sizes in tiles. The world badge floats over the leader; the map
--- badge sits above the slot number, which keeps its screen size.
+-- The world badge floats over the leader, sized in tiles. The map badge is
+-- rich text, because only text can keep a fixed screen size at every map
+-- zoom; it sits on top of the slot number, which hangs below the leader.
 local BADGE_TILES, BADGE_HEIGHT = 2.5, 3
-local MAP_BADGE_TILES, MAP_BADGE_HEIGHT = 14, 9
+local MAP_BADGE_SCALE = 3
+-- Bumped whenever the badges are drawn differently; older markers redraw
+-- their badges on the next sweep. Version 2 made the map badge keep its
+-- screen size.
+M.BADGES = 2
 
 local function destroy(objects, key)
   local object = objects[key]
@@ -38,9 +43,10 @@ local function draw_badges(marker, n, leader)
   local forces, scale = {leader.force}, BADGE_TILES / insignia.SPRITE_TILES
   marker.badge = rendering.draw_sprite{sprite = sprite, target = {entity = leader, offset = {0, -BADGE_HEIGHT}},
     surface = leader.surface, forces = forces, x_scale = scale, y_scale = scale, render_layer = "air-object"}
-  local map_scale = MAP_BADGE_TILES / insignia.SPRITE_TILES
-  marker.map_badge = rendering.draw_sprite{sprite = sprite, target = {entity = leader, offset = {0, -MAP_BADGE_HEIGHT}},
-    surface = leader.surface, forces = forces, x_scale = map_scale, y_scale = map_scale, render_mode = "chart"}
+  marker.map_badge = rendering.draw_text{text = "[img=" .. sprite .. "]", use_rich_text = true,
+    color = {1, 1, 1}, target = leader, surface = leader.surface, forces = forces, render_mode = "chart",
+    alignment = "center", vertical_alignment = "bottom", scale = MAP_BADGE_SCALE, scale_with_zoom = true}
+  marker.badges = M.BADGES
 end
 
 function M.clear_rings(record)
@@ -82,7 +88,8 @@ function M.markers(player_index, n, record, entities)
     if object.scale ~= 2 then object.scale = 2 end
     if not object.scale_with_zoom then object.scale_with_zoom = true end
     local marker = markers[index]
-    if n ~= 0 and not (marker.badge and marker.badge.valid and marker.map_badge and marker.map_badge.valid) then
+    if n ~= 0 and not (marker.badges == M.BADGES and marker.badge and marker.badge.valid
+        and marker.map_badge and marker.map_badge.valid) then
       draw_badges(marker, n, leader)
     end
   end
