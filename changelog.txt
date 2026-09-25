@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.22.0
+Date: 2026-09-25
+  Features:
+    - Soldiers stuck in spitter or worm acid now step out of it and then carry on with their orders. Attacking soldiers keep their distance to the target, so they stay in range. Soldiers that are already walking through acid are left alone.
+---------------------------------------------------------------------------------------------------
 Version: 0.21.2
 Date: 2026-09-25
   Bugfixes:
