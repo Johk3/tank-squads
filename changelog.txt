@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.20.0
+Date: 2026-09-25
+  Changes:
+    - Badly damaged patrol soldiers now drive to the nearest barracks or headquarters to heal, and return to the patrol once healed. Patrols of more than 10 soldiers send one guard with them, more than 20 send two. The rest of the patrol shares out the empty posts while they are away.
+    - The retreat health, rejoin health and healing search range settings now apply to patrols as well as escorts and scouts.
+---------------------------------------------------------------------------------------------------
 Version: 0.19.2
 Date: 2026-09-25
   Changes:
