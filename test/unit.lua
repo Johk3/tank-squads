@@ -1223,5 +1223,7 @@ require('test.unit_card'){test = test, soldier = soldier, handlers = function() 
   players = function() return players end}
 require('test.veterans'){test = test, soldier = soldier, handlers = function() return handlers end,
   draws = function() return draws end, players = function() return players end, count_reads = count_reads}
+require('test.selection'){test = test, soldier = soldier, building = building,
+  handlers = function() return handlers end, players = function() return players end}
 print(string.format("%d passed, %d failed", passed, failed))
 assert(failed == 0, "regression tests failed")

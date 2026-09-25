@@ -5,13 +5,17 @@ local M = {}
 
 -- Persisted with the rosters so loading a save never changes event routing.
 -- Older saves build it once; configuration reconciliation repairs duplicates.
+-- Only divisions 1-9 own soldiers. The drag selection (slot 0) lists them
+-- without owning them, so it is never indexed.
 local function ownership()
   if not storage.unit_divisions then
     storage.unit_divisions = {}
     for player_index, state in pairs(storage.divisions or {}) do
       for n, record in pairs(state.slots) do
-        for _, id in ipairs(record.members) do
-          storage.unit_divisions[id] = {player_index = player_index, division = n}
+        if n ~= 0 then
+          for _, id in ipairs(record.members) do
+            storage.unit_divisions[id] = {player_index = player_index, division = n}
+          end
         end
       end
     end
@@ -20,6 +24,7 @@ local function ownership()
 end
 
 local function index_member(owners, id, player_index, n)
+  if n == 0 then return end
   local owner = owners[id]
   if not owner or owner.player_index ~= player_index or owner.division ~= n then
     owners[id] = {player_index = player_index, division = n}
@@ -27,6 +32,7 @@ local function index_member(owners, id, player_index, n)
 end
 
 local function unindex_member(owners, id, player_index, n)
+  if n == 0 then return end
   local owner = owners[id]
   if owner and owner.player_index == player_index and owner.division == n then owners[id] = nil end
 end
@@ -109,7 +115,9 @@ function M.get(player_index, n)
   local force_index = player.force.index
   for _, id in pairs(record.members) do
     local e = game.get_entity_by_unit_number(id)
-    if e and e.valid and e.force_index == force_index then
+    -- The drag selection lets go of a soldier another player now owns.
+    local other = n == 0 and owners[id]
+    if e and e.valid and e.force_index == force_index and not (other and other.player_index ~= player_index) then
       table.insert(out, e)
       table.insert(kept, id)
       index_member(owners, id, player_index, n)
@@ -269,11 +277,32 @@ local function fill(player_index, n, entities)
   return #M.get(player_index, n)
 end
 
+-- The drag selection lists soldiers without owning them: selecting never
+-- changes a division, its job or a barracks' quota. It takes the player's
+-- own soldiers and those in nobody's division, never a teammate's.
 function M.select_area(player_index, entities)
-  return fill(player_index, 0, entities)
+  local player = game.get_player(player_index)
+  if not player then return 0 end
+  local record = M.record(player_index, 0)
+  render.clear_rings(record)
+  local owners, ids, seen = ownership(), {}, {}
+  for _, e in pairs(entities) do
+    if e.valid and names.unit_set[e.name] and e.force == player.force and not seen[e.unit_number] then
+      local owner = owners[e.unit_number]
+      if not (owner and owner.player_index ~= player_index) then
+        ids[#ids + 1], seen[e.unit_number] = e.unit_number, true
+      end
+    end
+  end
+  record.members = ids
+  invalidate_live(player_index, 0)
+  M.members_changed(player_index, 0)
+  M.set_selected(player_index, 0)
+  return #M.get(player_index, 0)
 end
 
 function M.assign(player_index, n, entities)
+  if n == 0 then return M.select_area(player_index, entities) end
   local count = fill(player_index, n, entities)
   if count == 0 then M.clear(player_index, n) end
   return count
@@ -362,14 +391,17 @@ function M.reconcile_ownership()
     table.sort(numbers)
     for _, n in ipairs(numbers) do
       M.get(owner, n) -- Discard invalid entities and obsolete force ownership first.
-      local record, kept = slots[n], {}
-      for _, id in ipairs(record.members) do
-        if not seen[id] then seen[id] = true; kept[#kept + 1] = id
-        else render.forget_ring(record, id) end
+      -- A selected soldier may also be in a division, so slot 0 keeps its list.
+      if n ~= 0 then
+        local record, kept = slots[n], {}
+        for _, id in ipairs(record.members) do
+          if not seen[id] then seen[id] = true; kept[#kept + 1] = id
+          else render.forget_ring(record, id) end
+        end
+        replace_members(owner, n, record, kept)
+        invalidate_live(owner, n)
+        M.members_changed(owner, n)
       end
-      replace_members(owner, n, record, kept)
-      invalidate_live(owner, n)
-      M.members_changed(owner, n)
     end
   end
   storage.unit_divisions = nil
