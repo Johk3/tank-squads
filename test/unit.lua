@@ -750,7 +750,7 @@ end)
 test("a selected headquarters gets a ring wide enough to show round its body", function()
   local tank, hq = soldier(), soldier()
   hq.name = names.headquarters
-  divisions.select_area(1, {tank, hq})
+  divisions.assign(1, 1, {tank, hq})
   local radius = {}
   for _, draw in ipairs(draws) do
     if draw.valid and draw.args.radius then radius[draw.args.target] = draw.args.radius end
@@ -760,10 +760,10 @@ test("a selected headquarters gets a ring wide enough to show round its body", f
   -- Rings drawn by an older version are redrawn on upgrade.
   dofile("control.lua")
   storage.headquarters = {[hq.unit_number] = {entity = hq, force_index = hq.force_index, helpers = {}}}
-  local ring = divisions.record(1, 0).render.rings[hq.unit_number]
-  local kept = divisions.record(1, 0).render.rings[tank.unit_number]
+  local ring = divisions.record(1, 1).render.rings[hq.unit_number]
+  local kept = divisions.record(1, 1).render.rings[tank.unit_number]
   handlers.configuration_changed()
-  assert(not ring.valid and divisions.record(1, 0).render.rings[hq.unit_number].valid, "the old ring stayed")
+  assert(not ring.valid and divisions.record(1, 1).render.rings[hq.unit_number].valid, "the old ring stayed")
   assert(kept.valid, "a tank ring was redrawn")
 end)
 

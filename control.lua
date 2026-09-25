@@ -132,8 +132,10 @@ script.on_configuration_changed(function()
   -- from an older palette have the wrong colour; the refresh below redraws
   -- them. Escort shapes redraw on their next sweep.
   for _, state in pairs(storage.divisions or {}) do
-    for _, record in pairs(state.slots) do
+    for n, record in pairs(state.slots) do
       for id in pairs(storage.headquarters or {}) do render.forget_ring(record, id) end
+      -- Selection rings sit outside division rings; redraw older ones.
+      if n == 0 then render.clear_rings(record) end
       record.render = record.render or {rings = {}, route = {}}
       if record.render.palette ~= render.PALETTE then
         render.clear_rings(record)

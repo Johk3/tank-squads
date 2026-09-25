@@ -98,19 +98,22 @@ end
 -- centre; a ring the size of a tank's would stay hidden under it.
 M.RING_RADIUS = {["tank-squad-headquarters"] = 8.2}
 local RING_RADIUS = 1.7
+-- A selected soldier also carries its division ring, so the selection ring
+-- is drawn this much further out.
+M.SELECTION_GAP = 0.5
 
 -- Creates any missing ring and leaves existing ones alone, so this is safe to
 -- call on every sweep. The renderer follows the entity itself, so no position
 -- polling is needed. The name is read only when a ring is drawn.
 function M.rings(player_index, n, record, entities)
   record.render = record.render or {rings = {}, route = {}}
-  local rings = record.render.rings
+  local rings, gap = record.render.rings, n == 0 and M.SELECTION_GAP or 0
   for _, entity in pairs(entities) do
     local ring = rings[entity.unit_number]
     if not (ring and ring.valid) then
       rings[entity.unit_number] = rendering.draw_circle{
         color = M.COLORS[n] or M.COLORS[0],
-        radius = M.RING_RADIUS[entity.name] or RING_RADIUS, width = 2, filled = false,
+        radius = (M.RING_RADIUS[entity.name] or RING_RADIUS) + gap, width = 2, filled = false,
         target = entity, surface = entity.surface,
         players = {player_index}, draw_on_ground = true,
       }

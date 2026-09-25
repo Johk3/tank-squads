@@ -109,4 +109,14 @@ return function(ctx)
     local printed = ctx.players()[1].printed
     assert(printed and printed[1] == 'tank-squads.selection-no-free-division', 'player not told')
   end)
+
+  test('selection: the selection ring sits outside the division ring', function()
+    local a = soldier()
+    divisions.assign(1, 4, {a})
+    divisions.select_area(1, {a})
+    local inner = divisions.record(1, 4).render.rings[a.unit_number]
+    local outer = divisions.record(1, 0).render.rings[a.unit_number]
+    assert(inner and inner.valid and outer and outer.valid, 'both rings expected')
+    assert(outer.args.radius == inner.args.radius + 0.5, 'selection ring radius ' .. outer.args.radius)
+  end)
 end
