@@ -57,4 +57,56 @@ return function(ctx)
     for i = 1, unit_names.ADJECTIVES do assert(text:find('\nname%-adjective%-' .. i .. '='), 'missing adjective ' .. i) end
     for i = 1, unit_names.NOUNS do assert(text:find('\nname%-noun%-' .. i .. '='), 'missing noun ' .. i) end
   end)
+  local labels = require('scripts.unit_labels')
+
+  local function alt_draws()
+    local out = {}
+    for _, d in ipairs(ctx.draws()) do if d.valid and d.args.only_in_alt_mode then out[#out + 1] = d end end
+    return out
+  end
+
+  test('labels: a recruit shows only its name, to its force, in alt mode', function()
+    local e = ctx.soldier()
+    local record = {adjective = 1, noun = 2, xp = 0, rank = 0, kills = 0}
+    labels.draw(e, record)
+    local drawn = alt_draws()
+    assert(#drawn == 1 and drawn[1].args.text[2][1] == 'tank-squads.name-adjective-1', 'recruit label wrong')
+    assert(drawn[1].args.forces[1] == e.force and drawn[1].args.target.entity == e)
+    assert(drawn[1].args.target.offset[2] < 0, 'name not above the unit')
+  end)
+
+  test('labels: promotion adds a rank badge and later promotions swap it in place', function()
+    local e = ctx.soldier()
+    local record = {adjective = 1, noun = 2, xp = 60, rank = 1, kills = 0}
+    labels.set_rank(e, record)
+    assert(#alt_draws() == 0, 'set_rank drew labels before the sweep')
+    labels.draw(e, record)
+    local badge = record.labels.rank
+    assert(badge and badge.args.sprite == 'tank-squad-rank-1')
+    record.rank = 2
+    labels.set_rank(e, record)
+    assert(record.labels.rank == badge and badge.sprite == 'tank-squad-rank-2', 'promotion recreated the badge')
+  end)
+
+  test('labels: repair redraws missing labels and follows a force change', function()
+    local e = ctx.soldier()
+    local record = {adjective = 1, noun = 2}
+    labels.repair(e, record)
+    local name = record.labels.name
+    local count = #ctx.draws()
+    labels.repair(e, record)
+    assert(#ctx.draws() == count, 'intact labels redrawn')
+    e.force = {index = 2}
+    labels.repair(e, record)
+    assert(not name.valid and record.labels.name.args.forces[1] == e.force, 'labels kept the old force')
+    labels.clear(record)
+    assert(record.labels == nil and #alt_draws() == 0)
+  end)
+
+  test('labels: the headquarters name sits above its large body', function()
+    local hq = ctx.soldier()
+    hq.name = require('scripts.names').headquarters
+    labels.draw(hq, {adjective = 1, noun = 1})
+    assert(alt_draws()[1].args.target.offset[2] < -7.9)
+  end)
 end
