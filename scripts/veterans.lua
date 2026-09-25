@@ -21,16 +21,20 @@ M.KILL_FILTERS = {{filter = "force", force = "enemy"}}
 
 M.SHOT, M.SHELL_HIT = "tank-squad-shot", "tank-squad-shell-hit"
 
--- A rank's extra damage per shot is a share of the native attack's own
+-- A rank's extra damage per attack is a share of the native attack's own
 -- damage, of the same type, scaled by the force's research for that ammo.
+-- `hit` is the size of one native hit. The bonus is banked on the gun record
+-- and dealt in hits of exactly that size, so flat armour takes the same share
+-- of it as of the native damage.
 -- The siege shell copies the base cannon projectile (1000 physical) and adds
--- its bonus when it lands; the flame stream deals 7 fire per shot.
+-- its bonus when it lands. A flame attack lands three stream particles of 7
+-- fire (measured against a rocket silo: 21 raw per 12-tick attack).
 M.BASE = {
-  ["tank-squad-soldier-1"] = {amount = 6, type = "physical", ammo = "bullet"},
-  ["tank-squad-soldier-2"] = {amount = 10, type = "physical", ammo = "bullet"},
-  ["tank-squad-soldier-3"] = {amount = 16, type = "physical", ammo = "bullet"},
-  ["tank-squad-siege"] = {amount = 1000, type = "physical", ammo = "cannon-shell", on_hit = true},
-  ["tank-squad-flame"] = {amount = 7, type = "fire", ammo = "flamethrower"},
+  ["tank-squad-soldier-1"] = {amount = 6, hit = 6, type = "physical", ammo = "bullet"},
+  ["tank-squad-soldier-2"] = {amount = 10, hit = 10, type = "physical", ammo = "bullet"},
+  ["tank-squad-soldier-3"] = {amount = 16, hit = 16, type = "physical", ammo = "bullet"},
+  ["tank-squad-siege"] = {amount = 1000, hit = 1000, type = "physical", ammo = "cannon-shell", on_hit = true},
+  ["tank-squad-flame"] = {amount = 21, hit = 7, type = "fire", ammo = "flamethrower"},
 }
 
 function M.get(unit_number)
@@ -129,8 +133,22 @@ function M.on_shot(event, shooter)
   local target = event.target_entity
   if not (target and target.valid) then return end
   local force = source.force
-  local amount = base.amount * ranks.bonus(rank).damage * (1 + force.get_ammo_damage_modifier(base.ammo))
-  target.damage(amount, force, base.type, source, source)
+  local research = 1 + force.get_ammo_damage_modifier(base.ammo)
+  local amount = base.amount * ranks.bonus(rank).damage * research
+  -- A shell impact has no gun record to bank on; its bonus is large anyway.
+  if id == M.SHELL_HIT then
+    target.damage(amount, force, base.type, source, source)
+    return
+  end
+  local hit = base.hit * research
+  amount = amount + (shooter.bonus or 0)
+  -- A bonus is at most three quarters of an attack's damage, so this deals
+  -- at most one hit for a carrier and three for a flame tank.
+  while amount >= hit and target.valid do
+    target.damage(hit, force, base.type, source, source)
+    amount = amount - hit
+  end
+  shooter.bonus = amount
 end
 
 return M

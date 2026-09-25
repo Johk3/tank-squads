@@ -167,22 +167,40 @@ return function(ctx)
     assert(e.health == 0, 'a killing blow was reduced')
   end)
 
-  test('bonuses: a ranked carrier adds research-scaled damage to every shot', function()
-    local e = ranked(names.soldier_names[1], 1)
+  test('bonuses: a ranked shooter banks its bonus and deals it in native-sized hits', function()
+    local e = ranked(names.soldier_names[1], 3)
     local target = ctx.soldier('enemy')
     e.force.get_ammo_damage_modifier = function(category) return category == 'bullet' and 0.5 or 0 end
-    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}, {rank = 1})
+    local gun = {rank = 3}
+    -- A native Mk1 hit is 6 * 1.5 = 9; a Veteran's bonus per shot is 6 * 0.75 * 1.5 = 6.75.
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}, gun)
+    assert(#target.damaged == 0 and math.abs(gun.bonus - 6.75) < 1e-9, 'a bonus smaller than a native hit was dealt alone')
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}, gun)
     local hit = target.damaged[1]
-    assert(hit and math.abs(hit.amount - 6 * 0.2 * 1.5) < 1e-9, 'bonus ' .. tostring(hit and hit.amount))
+    -- Armour treats a native-sized hit like the native one, so the bonus keeps its share.
+    assert(hit and math.abs(hit.amount - 9) < 1e-9, 'banked bonus hit ' .. tostring(hit and hit.amount))
     assert(hit.type == 'physical' and hit.force == e.force and hit.source == e and hit.cause == e)
+    assert(math.abs(gun.bonus - 4.5) < 1e-9, 'remainder not kept: ' .. tostring(gun.bonus))
     local recruit = ranked(names.soldier_names[1], 0)
     veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = recruit, target_entity = target}, {rank = 0})
-    veterans.on_shot({effect_id = 'another-mod', source_entity = e, target_entity = target}, {rank = 1})
+    veterans.on_shot({effect_id = 'another-mod', source_entity = e, target_entity = target}, gun)
     veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = target})
     local gone = ctx.soldier('enemy')
     gone.valid = false
-    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = gone}, {rank = 1})
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = gone}, gun)
     assert(#target.damaged == 1 and #gone.damaged == 0, 'bonus from a recruit, another mod or a dead target')
+  end)
+
+  test('bonuses: a flame tank\'s bonus scales with its whole stream, not one particle', function()
+    local flame = ranked('tank-squad-flame', 3)
+    local target = ctx.soldier('enemy')
+    local gun = {rank = 3}
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = flame, target_entity = target}, gun)
+    -- Three particles of 7 fire land per attack: 21 * 0.75 = 15.75, dealt as
+    -- two particle-sized hits with 1.75 kept.
+    assert(#target.damaged == 2, 'flame bonus hits: ' .. #target.damaged)
+    for _, hit in ipairs(target.damaged) do assert(hit.amount == 7 and hit.type == 'fire') end
+    assert(math.abs(gun.bonus - 1.75) < 1e-9)
   end)
 
   test('bonuses: a siege tank adds its bonus when the shell lands, not when it fires', function()
@@ -228,7 +246,12 @@ return function(ctx)
     e.health = 300
     ctx.handlers().on_entity_damaged{entity = e, final_damage_amount = 50, final_health = 300}
     assert(math.abs(e.health - 310) < 1e-9, 'control did not route damage')
-    ctx.handlers().on_script_trigger_effect{effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}
+    -- Bonuses are banked until they reach a native hit: a Veteran Mk1 banks
+    -- 4.5 per shot, so its second shot deals them.
+    storage.veterans[e.unit_number].rank = 3
+    for _ = 1, 2 do
+      ctx.handlers().on_script_trigger_effect{effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}
+    end
     assert(#target.damaged == 1, 'control did not route shots')
   end)
 end
