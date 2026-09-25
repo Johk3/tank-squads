@@ -26,7 +26,7 @@ local function reset()
   storage = {}
   entities, players, draws, handlers = {}, {}, {}, {}
   defines = {behavior_result = {success = 0, fail = 1}, inventory = {chest = 1}, command = {go_to_location = 1, attack_area = 2}, distraction = {by_enemy = 1}, events = {}}
-  local events = {"on_built_entity", "on_robot_built_entity", "script_raised_built", "script_raised_revive", "on_entity_cloned", "on_entity_died", "on_ai_command_completed", "on_player_selected_area", "on_player_alt_selected_area", "on_lua_shortcut", "on_player_removed", "on_player_changed_force", "on_gui_click", "on_script_trigger_effect", "script_raised_destroy", "on_entity_spawned", "on_entity_damaged", "on_gui_opened", "on_gui_closed", "on_runtime_mod_setting_changed", "on_pre_player_mined_item", "on_robot_pre_mined"}
+  local events = {"on_built_entity", "on_robot_built_entity", "script_raised_built", "script_raised_revive", "on_entity_cloned", "on_entity_died", "on_ai_command_completed", "on_player_selected_area", "on_player_alt_selected_area", "on_lua_shortcut", "on_player_removed", "on_player_changed_force", "on_gui_click", "on_script_trigger_effect", "script_raised_destroy", "on_entity_spawned", "on_entity_damaged", "on_gui_opened", "on_gui_closed", "on_runtime_mod_setting_changed", "on_pre_player_mined_item", "on_robot_pre_mined", "on_selected_entity_changed"}
   for _, event in ipairs(events) do defines.events[event] = event end
   surface = {index = 1}
   surface.find_nearest_enemy = function() return nil end
@@ -72,6 +72,11 @@ local function reset()
   }
   players[1] = {index = 1, force = force, surface = surface, gui = {left = gui_element(), relative = gui_element(), screen = gui_element()}}
   players[1].set_shortcut_toggled = function(_, value) players[1].shortcut_toggled = value end
+  players[1].force_index = 1
+  players[1].flying = {}
+  players[1].create_local_flying_text = function(args) players[1].flying[#players[1].flying + 1] = args end
+  force.connected_players = {players[1]}
+  force.get_ammo_damage_modifier = function() return 0 end
   charted_lookup = charted
   -- A single connected player, like a real solo test session.
   game = {tick = 0, surfaces = {surface}, forces = {force}, players = players, connected_players = {players[1]},
@@ -102,7 +107,8 @@ local function soldier(force, other_surface, x, y)
     -- LuaEntity.surface_index mirrors e.surface.index (real Factorio exposes
     -- both); escort.lua's hot paths read the cheaper direct field.
     surface_index = e_surface.index,
-    position = {x = x or 0, y = y or 0}, health = 400, max_health = 400, commandable = {}}
+    position = {x = x or 0, y = y or 0}, health = 400, max_health = 400, commandable = {},
+    speed = 0.12, prototype = {speed = 0.12}}
   setmetatable(e, {__index = function(t, key)
     if key == "force_object" then error("LuaEntity does not contain key force_object") end
     -- LuaEntity.force_index follows the entity's current force, so tests
@@ -113,6 +119,10 @@ local function soldier(force, other_surface, x, y)
     end
   end})
   e.commandable.set_command = function(command) e.command = command end
+  e.damaged = {}
+  e.damage = function(amount, force, kind, source, cause)
+    e.damaged[#e.damaged + 1] = {amount = amount, force = force, type = kind, source = source, cause = cause}
+  end
   entities[e.unit_number] = e
   return e
 end
@@ -1195,5 +1205,7 @@ require('test.assault'){test = test, soldier = soldier, building = building, gui
 require('test.scout_geometry'){test = test}
 require('test.scout_teams'){test = test, soldier = soldier, building = building}
 require('test.headquarters'){test = test, soldier = soldier}
+require('test.veterans'){test = test, soldier = soldier, handlers = function() return handlers end,
+  draws = function() return draws end, players = function() return players end}
 print(string.format("%d passed, %d failed", passed, failed))
 assert(failed == 0, "regression tests failed")
