@@ -82,4 +82,27 @@ return function(ctx)
     assert(not ring.valid and record.render.rings[a.unit_number].valid, 'old-colour ring kept')
     assert(record.render.palette == render.PALETTE)
   end)
+  test('insignia: the division window shows each division\'s insignia and name', function()
+    local panel = require('scripts.panel')
+    divisions.assign(1, 6, {soldier()})
+    panel.update(1)
+    local list = ctx.players()[1].gui.screen.tank_squads_divisions.body.divisions
+    local row = list.row_6
+    assert(row and row.insignia and row.insignia.sprite == 'tank-squad-insignia-6', 'row lacks its insignia')
+    assert(row.insignia.style.width == 28 and row.insignia.style.stretch_image_to_widget_size)
+    assert(row.insignia.tags.tank_squads_division == 6, 'clicking the insignia does not select the division')
+    assert(row.division_6.caption[1] == 'tank-squads.division-row-named' and row.division_6.caption[6][1] == 'tank-squads.division-name-6')
+    assert(list.row_0.insignia == nil, 'the drag selection has an insignia')
+  end)
+
+  test('insignia: a division window from an older version is rebuilt with rows', function()
+    local panel = require('scripts.panel')
+    local screen = ctx.players()[1].gui.screen
+    local old = screen.add{type = 'frame', name = 'tank_squads_divisions'}
+    local body = old.add{type = 'flow', name = 'body'}
+    body.add{type = 'flow', name = 'divisions'}
+    divisions.assign(1, 2, {soldier()})
+    panel.update(1)
+    assert(not old.valid, 'old window kept')
+  end)
 end

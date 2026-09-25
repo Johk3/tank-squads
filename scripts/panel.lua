@@ -1,5 +1,6 @@
 local colors = require("scripts.render").COLORS
 local divisions = require("scripts.divisions")
+local insignia = require("scripts.insignia")
 local M = {}
 
 local NAME = "tank_squads_divisions"
@@ -49,7 +50,15 @@ local function build(player)
   body.add{type = "label", name = "help", caption = {"tank-squads.divisions-help"}}
   local list = body.add{type = "flow", name = "divisions", direction = "vertical"}
   for n = 0, 9 do
-    local button = list.add{type = "button", name = "division_" .. n,
+    local row = list.add{type = "flow", name = "row_" .. n, direction = "horizontal"}
+    row.style.vertical_align = "center"
+    local sprite = insignia.sprite(n)
+    if sprite then
+      local icon = row.add{type = "sprite", name = "insignia", sprite = sprite, tags = {tank_squads_division = n}}
+      icon.style.width, icon.style.height = 28, 28
+      icon.style.stretch_image_to_widget_size = true
+    end
+    local button = row.add{type = "button", name = "division_" .. n,
       tags = {tank_squads_division = n}, auto_toggle = false}
     button.style.font_color = colors[n]
     button.tooltip = n == 0 and {"tank-squads.selection-help"}
@@ -69,7 +78,7 @@ local function arrange(frame, choice)
   bar.compact.tooltip = choice.compact and {"tank-squads.divisions-full"} or {"tank-squads.divisions-compact"}
   body.help.visible = not choice.compact
   local width = choice.compact and WIDTH.compact or WIDTH.full
-  for n = 0, 9 do body.divisions["division_" .. n].style.minimal_width = width end
+  for n = 0, 9 do body.divisions["row_" .. n]["division_" .. n].style.minimal_width = width end
 end
 
 function M.update(player_index)
@@ -92,6 +101,8 @@ function M.update(player_index)
     return
   end
   local choice = layout(player_index)
+  -- A window from before the rows held insignias is rebuilt.
+  if frame and not frame.body.divisions.row_0 then frame.destroy(); frame = nil end
   if not frame then
     frame = build(player)
     arrange(frame, choice)
@@ -104,8 +115,9 @@ function M.update(player_index)
     local record = slots[n]
     local count = record and #record.members or 0
     local mode = record and record.mode or "idle"
-    local button = frame.body.divisions["division_" .. n]
-    button.visible = n ~= 0 or count > 0
+    local row = frame.body.divisions["row_" .. n]
+    local button = row["division_" .. n]
+    row.visible = n ~= 0 or count > 0
     button.enabled = count > 0 or (record ~= nil and record.reinforcement_target ~= nil)
     button.toggled = n == selected
     -- Avoid assigning captions each sweep when nothing changed. Localised control
@@ -128,9 +140,12 @@ function M.update(player_index)
       if compact then
         button.caption = {"tank-squads.division-row-compact", n, size, mode_caption}
       else
-        button.caption = {"tank-squads.division-row", n, size,
-          n == 0 and {"tank-squads.drag-selection"} or {"tank-squads.select-key-" .. n},
-          mode_caption}
+        if n == 0 then
+          button.caption = {"tank-squads.division-row", n, size, {"tank-squads.drag-selection"}, mode_caption}
+        else
+          button.caption = {"tank-squads.division-row-named", n, size, {"tank-squads.select-key-" .. n},
+            mode_caption, {"tank-squads.division-name-" .. n}}
+        end
       end
       button.tags = {tank_squads_division = n, status = signature}
     end
