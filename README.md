@@ -11,7 +11,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 - **Three kinds of tanks.** Fast chaingun carriers in three ammunition tiers, a long-range siege tank with an oversized cannon, and a heavily armored flame tank.
 - **Mobile headquarters.** A huge, slow, unarmed command vehicle. It heals nearby soldiers, and wherever it parks it sets up camp with a far-reaching roboport and solar decks that power a nearby grid. It keeps the map live around itself like any tank.
 - **Barracks.** A 3x3 military bunker that trains soldiers like an assembler trains items. It needs no power, heals nearby soldiers, and plays a door animation when a new tank rolls out.
-- **RTS controls.** Drag-select with the command tool, alt-drag to move or attack, and use **Ctrl + 1–9** / **Alt + 1–9** to assign and recall up to nine divisions.
+- **RTS controls.** Drag-select with the command tool, alt-drag to move or attack, and use **Ctrl + 1–9** / **Alt + 1–9** to assign and recall up to nine divisions. **Ctrl + Shift + 1–9** adds the selection to a division without touching its other soldiers.
 - **Patrol routes.** Draw a waypoint loop for a division. Each tank takes its own stretch of the route, and a large division also fills the inside on inner rings, so the whole area stays covered. When one tank comes under attack, the rest come to help, then return to their posts.
 - **Scout mode.** A division splits into up to four teams that each explore their own direction. Flame tanks lead, carriers follow and siege tanks cover them from 30 tiles back. Teams keep pushing outward until water or cliffs stop them.
 - **Escorts.** Assign a division to any player on your team, as a **defensive** ring around them or an **offensive** roaming band that clears everything it finds.
@@ -81,6 +81,7 @@ A kill is worth a tenth of the enemy's maximum health in experience: a small bit
 | Move | Alt-drag over empty ground |
 | Attack an area | Alt-drag over enemies |
 | Assign selection to a division | Ctrl + 1–9 |
+| Add selection to a division | Ctrl + Shift + 1–9. The division keeps its members, their orders and its job |
 | Select a division | Alt + 1–9, or click its row in the division window. Drag the window by its title bar; its buttons fold it away or switch to short rows |
 | Patrol | Toggle patrol mode on the shortcut bar, then alt-drag to place waypoints |
 | Scout | Select a division and toggle scout mode on the shortcut bar |

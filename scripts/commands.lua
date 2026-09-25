@@ -12,6 +12,20 @@ local function centre(area)
 end
 M.centre = centre
 
+-- Adds the selected soldiers to division n. A manual division that was
+-- given an order sends the newcomers after it, as it does recruits.
+function M.add(player_index, n)
+  local added = divisions.add(player_index, n, divisions.get(player_index, divisions.selected(player_index)))
+  local record = divisions.record(player_index, n)
+  local order = record.mode == "idle" and record.order
+  if order then
+    for _, soldier in ipairs(added) do
+      if soldier.surface_index == order.surface_index then combat.set_command(soldier, order.command) end
+    end
+  end
+  return #added
+end
+
 function M.order(player_index, area, surface)
   local n = divisions.selected(player_index)
   local members = divisions.get(player_index, n)

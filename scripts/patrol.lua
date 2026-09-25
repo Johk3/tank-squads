@@ -129,6 +129,9 @@ local function assign(player_index, n, r, all)
     if a.d ~= b.d then return a.d > b.d end
     return a.id < b.id
   end)
+  -- Joining a running patrol, a soldier may have no command left to
+  -- complete, so it takes up its post now even while fighting.
+  local running = r.posts ~= nil
   local old, posts, first = r.posts or {}, {}, 0
   local back = r.rejoined
   r.rejoined = nil
@@ -143,9 +146,9 @@ local function assign(player_index, n, r, all)
       local k, post = keyed[first + i], layout.posts[first + match[i]]
       local id, before = k.id, old[k.id]
       posts[id] = post
-      if back and back[id] then
-        -- Back from a depot: its last command has completed, so it takes
-        -- up its post now even while fighting.
+      if (back and back[id]) or (running and not before) then
+        -- A newcomer, or back from a depot: its last command may have
+        -- completed, so it takes up its post now even while fighting.
         take_up(k.entity, post)
       elseif busy(r, id) then
         post.i = nil

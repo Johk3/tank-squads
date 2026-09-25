@@ -323,6 +323,35 @@ function M.assign(player_index, n, entities)
   return count
 end
 
+-- Appends soldiers to division n. Its members keep their job, orders and
+-- posts, and the division deals the newcomers in as it does recruits.
+-- Newcomers leave the drag selection and any division they were in.
+-- Returns the newcomers.
+function M.add(player_index, n, entities)
+  local player = game.get_player(player_index)
+  if n == 0 or not player then return {} end
+  local owners, added, ids = ownership(), {}, {}
+  for _, e in pairs(entities) do
+    if e.valid and names.unit_set[e.name] and e.force == player.force and not ids[e.unit_number] then
+      local owner = owners[e.unit_number]
+      if not (owner and owner.player_index == player_index and owner.division == n) then
+        added[#added + 1], ids[e.unit_number] = e, true
+      end
+    end
+  end
+  if #added == 0 then return added end
+  detach(player_index, ids, n)
+  local record = M.record(player_index, n)
+  for _, e in ipairs(added) do
+    record.members[#record.members + 1] = e.unit_number
+    index_member(owners, e.unit_number, player_index, n)
+  end
+  invalidate_live(player_index, n)
+  M.members_changed(player_index, n)
+  M.set_selected(player_index, n)
+  return added
+end
+
 -- Moves the drag selection into the lowest empty division 1-9 and selects
 -- it, so a job can run on soldiers it owns. Returns the division, or nil
 -- when the selection is empty or every division is in use. A leftover job

@@ -13,6 +13,13 @@ for n = 1, 9 do
   })
   table.insert(inputs, {
     type = "custom-input",
+    name = "tank-squad-add-to-division-" .. n,
+    key_sequence = "CONTROL + SHIFT + " .. n,
+    consuming = "game-only",
+    action = "lua",
+  })
+  table.insert(inputs, {
+    type = "custom-input",
     name = "tank-squad-select-division-" .. n,
     key_sequence = "ALT + " .. n,
     consuming = "game-only",

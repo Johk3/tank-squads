@@ -62,7 +62,7 @@ local function build(player)
       tags = {tank_squads_division = n}, auto_toggle = false}
     button.style.font_color = colors[n]
     button.tooltip = n == 0 and {"tank-squads.selection-help"}
-      or {"tank-squads.division-help", {"tank-squads.assign-key-" .. n}}
+      or {"tank-squads.division-help", {"tank-squads.assign-key-" .. n}, {"tank-squads.add-key-" .. n}}
   end
   return frame
 end

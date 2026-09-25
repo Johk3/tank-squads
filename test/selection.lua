@@ -146,4 +146,75 @@ return function(ctx)
     assert(divisions.size(1, 0) == 1, 'soldier left the selection')
     assert(storage.unit_divisions[a.unit_number] == nil, 'slot 0 still indexed')
   end)
+
+  test('add: a selection joins a patrol and every member keeps its orders', function()
+    local handlers = control()
+    local a, b, c = soldier(), soldier(), soldier()
+    local record = route(1, {a, b})
+    local walking_a, walking_b = a.command, b.command
+    divisions.select_area(1, {c})
+    assert(handlers['tank-squad-add-to-division-1'], 'add keybinding not wired')
+    handlers['tank-squad-add-to-division-1']{player_index = 1}
+    assert(divisions.size(1, 1) == 3, 'the newcomer did not join')
+    assert(a.command == walking_a and b.command == walking_b, 'members were sent new orders')
+    assert(record.mode == 'patrol' and #record.patrol.waypoints == 2, 'the route changed')
+    local post = record.patrol.posts[c.unit_number]
+    assert(post and c.command.destination == post.anchor, 'the newcomer got no post')
+    assert(divisions.selected(1) == 1 and divisions.size(1, 0) == 0, 'the division was not selected')
+  end)
+
+  test('add: a newcomer fighting with no orders still takes up its post', function()
+    local handlers = control()
+    local a, c = soldier(), soldier()
+    local record = route(1, {a})
+    storage.combat = {[c.unit_number] = {target = {valid = true}}}
+    divisions.select_area(1, {c})
+    handlers['tank-squad-add-to-division-1']{player_index = 1}
+    local post = record.patrol.posts[c.unit_number]
+    assert(post and post.i == 0 and c.command.destination == post.anchor, 'the newcomer waits for a completion that never comes')
+  end)
+
+  test('add: starting a patrol still lets a fighting soldier finish its fight', function()
+    local a, b = soldier(), soldier()
+    local fight = {type = defines.command.attack_area}
+    b.command = fight
+    storage.combat = {[b.unit_number] = {target = {valid = true}}}
+    local record = route(1, {a, b})
+    assert(b.command == fight and record.patrol.posts[b.unit_number].i == nil, 'the start interrupted a fight')
+  end)
+
+  test('add: a soldier from another division moves over and the rest stay', function()
+    local handlers = control()
+    local a, b, c = soldier(), soldier(), soldier()
+    divisions.assign(1, 1, {a})
+    divisions.assign(1, 2, {b, c})
+    divisions.select_area(1, {b})
+    handlers['tank-squad-add-to-division-1']{player_index = 1}
+    assert(divisions.size(1, 1) == 2 and divisions.size(1, 2) == 1, 'wrong rosters after the move')
+    assert(select(2, divisions.owner(b.unit_number)) == 1, 'ownership not moved')
+    assert(select(2, divisions.owner(c.unit_number)) == 2, 'the old division lost a soldier it kept')
+  end)
+
+  test('add: adding a division to itself changes nothing', function()
+    local handlers = control()
+    local a, b = soldier(), soldier()
+    local record = route(1, {a, b})
+    local walking, posts = a.command, record.patrol.posts
+    divisions.recall(1, 1)
+    handlers['tank-squad-add-to-division-1']{player_index = 1}
+    assert(divisions.size(1, 1) == 2 and a.command == walking and record.patrol.posts == posts, 'the division was dealt again')
+  end)
+
+  test('add: a newcomer to a manual division follows its current order', function()
+    local handlers = control()
+    local a, c = soldier(), soldier()
+    divisions.assign(1, 1, {a})
+    local area = {left_top = {x = 50, y = 50}, right_bottom = {x = 60, y = 60}}
+    assert(commands.order(1, area, game.surfaces[1]) == 'move')
+    local moving = a.command
+    divisions.select_area(1, {c})
+    handlers['tank-squad-add-to-division-1']{player_index = 1}
+    assert(a.command == moving, 'the member was sent again')
+    assert(c.command and c.command.destination.x == 55, 'the newcomer did not follow the order')
+  end)
 end
