@@ -1219,6 +1219,8 @@ require('test.scout_teams'){test = test, soldier = soldier, building = building}
 require('test.headquarters'){test = test, soldier = soldier}
 require('test.insignia'){test = test, soldier = soldier, handlers = function() return handlers end,
   draws = function() return draws end, players = function() return players end}
+require('test.unit_card'){test = test, soldier = soldier, handlers = function() return handlers end,
+  players = function() return players end}
 require('test.veterans'){test = test, soldier = soldier, handlers = function() return handlers end,
   draws = function() return draws end, players = function() return players end}
 print(string.format("%d passed, %d failed", passed, failed))

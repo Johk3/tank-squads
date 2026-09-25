@@ -15,6 +15,7 @@ local vision = require("scripts.vision")
 local headquarters = require("scripts.headquarters")
 local render = require("scripts.render")
 local veterans = require("scripts.veterans")
+local unit_card = require("scripts.unit_card")
 
 local function on_built(event)
   local entity = event.entity
@@ -92,6 +93,7 @@ local function clear_player(event)
   divisions.clear_player(event.player_index)
   escort.forget_ward(event.player_index)
   escort_gui.close(event.player_index)
+  unit_card.clear(event.player_index)
   if event.name == defines.events.on_player_removed then panel.clear_player(event.player_index) end
   if storage.patrol_mode then storage.patrol_mode[event.player_index] = nil end
   local player = game.get_player(event.player_index)
@@ -223,6 +225,7 @@ script.on_event(defines.events.on_gui_click, function(event)
 end)
 
 script.on_event(defines.events.on_gui_opened, barracks_gui.open)
+script.on_event(defines.events.on_selected_entity_changed, unit_card.on_selected)
 
 -- A unit has no window of its own. Opening the headquarters opens its
 -- roboport, which holds its robots and repair packs.
@@ -312,6 +315,7 @@ script.on_nth_tick(PHASE_TICKS, function(event)
   headquarters.tick(phase, divisions.PHASES)
   if phase ~= 0 then return end
   escort_gui.update_wards(escort.wards())
+  unit_card.refresh()
   for player_index in pairs(storage.divisions or {}) do
     panel.update(player_index)
     barracks_gui.refresh(player_index)
