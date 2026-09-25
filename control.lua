@@ -407,6 +407,7 @@ remote.add_interface("tank-squads", {
   patrol_index = function(player_index, n, unit_number) return patrol.index(player_index, n, unit_number) end,
   patrol_target = function(player_index, n, unit_number) return patrol.target(player_index, n, unit_number) end,
   patrol_advance = function(unit_number) return patrol.advance(unit_number) end,
+  patrol_tick = function() patrol.tick() end,
   scout_set = function(player_index, n, value) return scout.set(player_index, n, value) end,
   scout_tick = function() return scout.tick() end,
   scout_target = function(player_index, n)
