@@ -1,4 +1,18 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.19.0
+Date: 2026-09-25
+  Changes:
+    - Drag-selecting soldiers no longer takes them out of their division. Selecting part or all of a division keeps its patrol route, escort, scouting and barracks quota, so a barracks no longer trains replacements for soldiers you only selected.
+    - A move or attack order to a drag selection takes its soldiers out of a patrolling, scouting or escorting division, whose next leg would undo the order. Soldiers of a manual division stay in it.
+    - Starting a patrol or scouting on a drag selection turns it into the lowest free division and tells you which. With all nine divisions in use the order is refused.
+    - A drag selection no longer picks up soldiers in a teammate's divisions.
+    - A selected soldier keeps its division ring, and the selection ring is drawn just outside it.
+    - Saves whose drag selection was patrolling or scouting move that job to the lowest free division.
+  Optimizations:
+    - Offensive escorts pick their next target without scanning every entity in their band. Each new leg cost 11 ms in biter country and 23 ms over a dense base; it now costs under 0.4 ms.
+  Graphics:
+    - The mod now has a thumbnail on the mod portal and in the in-game mod list.
+---------------------------------------------------------------------------------------------------
 Version: 0.18.0
 Date: 2026-09-25
   Features:
