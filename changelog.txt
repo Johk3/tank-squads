@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.25.0
+Date: 2026-09-26
+  Features:
+    - Scout teams now help each other. A team that is losing a fight, by losing a large part of its health quickly or losing a tank, falls back one hop and holds. The nearest healthy team of the same division within 192 tiles comes to help, while the other teams keep exploring. Once the fight has been quiet for 15 seconds, the team goes around that spot instead of heading back into it.
+---------------------------------------------------------------------------------------------------
 Version: 0.24.0
 Date: 2026-09-26
   Features:
