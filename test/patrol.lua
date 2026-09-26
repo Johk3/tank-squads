@@ -299,7 +299,7 @@ return function(ctx)
   local function alarm_setup()
     defines.command.attack = 3
     local members = {}
-    for i = 1, 4 do members[i] = soldier(nil, nil, -200 + 100 * i, -200) end
+    for i = 1, 4 do members[i] = soldier(nil, nil, -30 + 10 * i, -20) end
     members[1].force.is_enemy = function(other) return other == 'enemy' end
     local hq = soldier(nil, nil, 0, 0)
     hq.name = 'tank-squad-headquarters'
@@ -307,7 +307,9 @@ return function(ctx)
     divisions.assign(1, 1, members)
     local r = route(1, square)
     patrol.start(1, 1)
-    return members, hq, r, soldier('enemy', nil, -100, -190)
+    local biter = soldier('enemy', nil, -20, -10)
+    game.surfaces[1].find_units = function() return {biter} end
+    return members, hq, r, biter
   end
 
   test('patrol alarm: the rest of the division comes to help a soldier under attack', function()
@@ -352,6 +354,57 @@ return function(ctx)
     patrol.on_damaged{entity = members[2], cause = biter}
     assert(sent == 5, 'a division off patrol answered the alarm')
     assert(r)
+  end)
+
+  -- A victim at (0, -20) and soldiers east of it at `distances`; the enemy
+  -- count near the victim is `enemies`.
+  local function line(distances, enemies)
+    defines.command.attack = 3
+    local members = {soldier(nil, nil, 0, -20)}
+    for i, d in ipairs(distances) do members[i + 1] = soldier(nil, nil, d, -20) end
+    members[1].force.is_enemy = function(other) return other == 'enemy' end
+    divisions.assign(1, 1, members)
+    local r = route(1, square)
+    patrol.start(1, 1)
+    local biter = soldier('enemy', nil, 0, -10)
+    local near = {}
+    for i = 1, enemies do near[i] = biter end
+    game.surfaces[1].find_units = function() return near end
+    return members, r, biter
+  end
+  -- Which soldiers, by their place in `distances`, answered.
+  local function answered(r, members)
+    local out = {}
+    for i = 2, #members do
+      if r.responders and r.responders[members[i].unit_number] then out[#out + 1] = i - 1 end
+    end
+    return table.concat(out, ',')
+  end
+
+  test('patrol alarm: a lone biter calls the three nearest soldiers and the rest keep their posts', function()
+    local members, r, biter = line({10, 20, 30, 40, 200}, 1)
+    patrol.on_damaged{entity = members[1], cause = biter}
+    assert(answered(r, members) == '1,2,3', 'answered: ' .. answered(r, members))
+  end)
+
+  test('patrol alarm: a wave calls one soldier per two enemies', function()
+    local members, r, biter = line({10, 20, 30, 40, 50, 60, 70}, 10)
+    patrol.on_damaged{entity = members[1], cause = biter}
+    assert(answered(r, members) == '1,2,3,4,5', 'answered: ' .. answered(r, members))
+  end)
+
+  test('patrol alarm: only soldiers within reach answer, however big the wave', function()
+    local members, r, biter = line({10, 20, patrol.HELP_REACH + 1, 200}, 20)
+    patrol.on_damaged{entity = members[1], cause = biter}
+    assert(answered(r, members) == '1,2', 'answered: ' .. answered(r, members))
+  end)
+
+  test('patrol alarm: a fight that goes on calls the next nearest soldiers', function()
+    local members, r, biter = line({10, 20, 30, 40, 50}, 1)
+    patrol.on_damaged{entity = members[1], cause = biter}
+    game.tick = patrol.ALARM_TICKS
+    patrol.on_damaged{entity = members[1], cause = biter}
+    assert(answered(r, members) == '1,2,3,4,5', 'answered: ' .. answered(r, members))
   end)
 
   local function depot(x, y)

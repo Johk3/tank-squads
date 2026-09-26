@@ -366,12 +366,18 @@ function M.forget(unit_number)
   end)
 end
 
--- A patrol soldier or headquarters under attack calls the rest of its
--- division to help: every armed member not already fighting attacks the
--- enemies around it, then returns to its post. One call per route every
--- ALARM_TICKS, so a long fight costs a table lookup per hit.
+-- A patrol soldier or headquarters under attack calls for help from the
+-- armed soldiers of its division within HELP_REACH tiles, nearest first: one
+-- per ENEMIES_PER_RESPONDER enemy units within HELP_RADIUS of it, at least
+-- MIN_RESPONDERS. Each attacks the enemies around it, then returns to its
+-- post; everyone else keeps its post. One call per route every ALARM_TICKS,
+-- so a long fight costs a table lookup per hit, and each call adds the next
+-- nearest while the fight goes on.
 M.ALARM_TICKS = 2 * 60
 M.HELP_RADIUS = 24
+M.HELP_REACH = 128
+M.MIN_RESPONDERS = 3
+M.ENEMIES_PER_RESPONDER = 2
 function M.on_damaged(event)
   local entity = event.entity
   if not (entity and entity.valid) then return end
@@ -388,16 +394,31 @@ function M.on_damaged(event)
   if cause.force == force or not force.is_enemy(cause.force) then return end
   r.alarm_tick = tick
   local victim, surface_index, position = entity.unit_number, entity.surface_index, entity.position
+  local reach, candidates = M.HELP_REACH * M.HELP_REACH, {}
   for _, soldier in ipairs(divisions.cached(player_index, n)) do
     local id = soldier.unit_number
     if id ~= victim and r.posts[id] and soldier.surface_index == surface_index
       and soldier.name ~= names.headquarters and not busy(r, id) and not retreat.is_away(r, id) then
-      r.responders = r.responders or {}
-      r.responders[id] = tick
-      if r.retry then r.retry[id] = nil end
-      combat.set_command(soldier, {type = defines.command.attack_area, destination = position,
-        radius = M.HELP_RADIUS, distraction = defines.distraction.by_enemy})
+      local d = geometry.distance_squared(soldier.position, position)
+      if d <= reach then candidates[#candidates + 1] = {soldier = soldier, id = id, d = d} end
     end
+  end
+  if not candidates[1] then return end
+  local x, y, radius = position.x, position.y, M.HELP_RADIUS
+  local enemies = #entity.surface.find_units{area = {{x - radius, y - radius}, {x + radius, y + radius}},
+    force = force, condition = "enemy"}
+  local wanted = math.max(M.MIN_RESPONDERS, math.ceil(enemies / M.ENEMIES_PER_RESPONDER))
+  table.sort(candidates, function(a, b)
+    if a.d ~= b.d then return a.d < b.d end
+    return a.id < b.id
+  end)
+  r.responders = r.responders or {}
+  for i = 1, math.min(wanted, #candidates) do
+    local c = candidates[i]
+    r.responders[c.id] = tick
+    if r.retry then r.retry[c.id] = nil end
+    combat.set_command(c.soldier, {type = defines.command.attack_area, destination = position,
+      radius = M.HELP_RADIUS, distraction = defines.distraction.by_enemy})
   end
 end
 
