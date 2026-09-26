@@ -10,8 +10,9 @@ return function(ctx)
   end)
 
   test('ranks: bonuses grow with rank and unknown ranks give none', function()
-    assert(ranks.bonus(1).speed == 0.10 and ranks.bonus(1).damage == 0.20 and ranks.bonus(1).reduction == 0.20)
-    assert(ranks.bonus(3).speed == 0.30 and ranks.bonus(3).damage == 0.75 and ranks.bonus(3).reduction == 0.50)
+    assert(ranks.bonus(1).speed == 0.30 and ranks.bonus(1).damage == 1.00 and ranks.bonus(1).reduction == 0.65)
+    assert(ranks.bonus(3).speed == 1.00 and ranks.bonus(3).damage == 4.00 and ranks.bonus(3).reduction == 0.85)
+    for rank = 0, ranks.TOP do assert(ranks.bonus(rank).reduction < 1, 'rank ' .. rank .. ' heals more than a hit') end
     assert(ranks.bonus(99) == ranks.LIST[0], 'unknown rank has a bonus')
     for rank = 1, ranks.TOP do
       local low, high = ranks.bonus(rank - 1), ranks.bonus(rank)
@@ -111,14 +112,14 @@ return function(ctx)
     assert(record.rank == 0 and e.speed == 0.12)
     veterans.add_xp(e, record, 1)
     assert(record.rank == 1, 'no promotion at 50 XP')
-    assert(math.abs(e.speed - 0.12 * 1.1) < 1e-9, 'speed ' .. e.speed)
+    assert(math.abs(e.speed - 0.12 * 1.3) < 1e-9, 'speed ' .. e.speed)
     local flying = ctx.players()[1].flying
     assert(#flying == 1 and flying[1].text[1] == 'tank-squads.promoted' and flying[1].text[3][1] == 'tank-squads.rank-1')
     veterans.add_xp(e, record, 2000)
-    assert(record.rank == 3 and math.abs(e.speed - 0.12 * 1.3) < 1e-9, 'skipped ranks not applied')
+    assert(record.rank == 3 and math.abs(e.speed - 0.12 * 2) < 1e-9, 'skipped ranks not applied')
     e.speed = 0.12
     veterans.reapply()
-    assert(math.abs(e.speed - 0.12 * 1.3) < 1e-9, 'configuration change lost the speed bonus')
+    assert(math.abs(e.speed - 0.12 * 2) < 1e-9, 'configuration change lost the speed bonus')
   end)
 
   test('records: weapons and the sweep keep service records in step', function()
@@ -157,7 +158,7 @@ return function(ctx)
     local e = ranked(nil, 2)
     e.health = 300
     veterans.on_damaged{entity = e, final_damage_amount = 100, final_health = 300}
-    assert(math.abs(e.health - 340) < 1e-9, 'healed to ' .. e.health)
+    assert(math.abs(e.health - 375) < 1e-9, 'healed to ' .. e.health)
     local recruit = ranked(nil, 0)
     recruit.health = 300
     veterans.on_damaged{entity = recruit, final_damage_amount = 100, final_health = 300}
@@ -168,19 +169,29 @@ return function(ctx)
   end)
 
   test('bonuses: a ranked shooter banks its bonus and deals it in native-sized hits', function()
-    local e = ranked(names.soldier_names[1], 3)
+    local e = ranked(names.soldier_names[1], 1)
     local target = ctx.soldier('enemy')
     e.force.get_ammo_damage_modifier = function(category) return category == 'bullet' and 0.5 or 0 end
-    local gun = {rank = 3}
-    -- A native Mk1 hit is 6 * 1.5 = 9; a Veteran's bonus per shot is 6 * 0.75 * 1.5 = 6.75.
+    local gun = {rank = 1}
+    -- Every rank's bonus is a whole number of hits, so a half-hit bonus
+    -- stands in to check the banking.
+    local trained = ranks.LIST[1].damage
+    ranks.LIST[1].damage = 0.5
+    -- A native Mk1 hit is 6 * 1.5 = 9; a half-hit bonus per shot is 6 * 0.5 * 1.5 = 4.5.
     veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}, gun)
-    assert(#target.damaged == 0 and math.abs(gun.bonus - 6.75) < 1e-9, 'a bonus smaller than a native hit was dealt alone')
+    assert(#target.damaged == 0 and math.abs(gun.bonus - 4.5) < 1e-9, 'a bonus smaller than a native hit was dealt alone')
     veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}, gun)
     local hit = target.damaged[1]
     -- Armour treats a native-sized hit like the native one, so the bonus keeps its share.
     assert(hit and math.abs(hit.amount - 9) < 1e-9, 'banked bonus hit ' .. tostring(hit and hit.amount))
     assert(hit.type == 'physical' and hit.force == e.force and hit.source == e and hit.cause == e)
-    assert(math.abs(gun.bonus - 4.5) < 1e-9, 'remainder not kept: ' .. tostring(gun.bonus))
+    assert(#target.damaged == 1 and math.abs(gun.bonus) < 1e-9, 'remainder not kept: ' .. tostring(gun.bonus))
+    ranks.LIST[1].damage = trained
+    -- A Veteran's bonus per shot is 6 * 4 * 1.5 = 36: four native-sized hits at once.
+    gun.rank = 3
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}, gun)
+    assert(#target.damaged == 5 and target.damaged[5].amount == 9 and math.abs(gun.bonus) < 1e-9,
+      'veteran bonus hits: ' .. #target.damaged)
     local recruit = ranked(names.soldier_names[1], 0)
     veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = recruit, target_entity = target}, {rank = 0})
     veterans.on_shot({effect_id = 'another-mod', source_entity = e, target_entity = target}, gun)
@@ -188,19 +199,26 @@ return function(ctx)
     local gone = ctx.soldier('enemy')
     gone.valid = false
     veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = gone}, gun)
-    assert(#target.damaged == 1 and #gone.damaged == 0, 'bonus from a recruit, another mod or a dead target')
+    assert(#target.damaged == 5 and #gone.damaged == 0, 'bonus from a recruit, another mod or a dead target')
   end)
 
   test('bonuses: a flame tank\'s bonus scales with its whole stream, not one particle', function()
-    local flame = ranked('tank-squad-flame', 3)
+    local flame = ranked('tank-squad-flame', 1)
     local target = ctx.soldier('enemy')
-    local gun = {rank = 3}
+    local gun = {rank = 1}
+    local trained = ranks.LIST[1].damage
+    ranks.LIST[1].damage = 0.5
     veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = flame, target_entity = target}, gun)
-    -- Three particles of 7 fire land per attack: 21 * 0.75 = 15.75, dealt as
-    -- two particle-sized hits with 1.75 kept.
-    assert(#target.damaged == 2, 'flame bonus hits: ' .. #target.damaged)
+    ranks.LIST[1].damage = trained
+    -- Three particles of 7 fire land per attack: 21 * 0.5 = 10.5, dealt as
+    -- one particle-sized hit with 3.5 kept.
+    assert(#target.damaged == 1, 'flame bonus hits: ' .. #target.damaged)
     for _, hit in ipairs(target.damaged) do assert(hit.amount == 7 and hit.type == 'fire') end
-    assert(math.abs(gun.bonus - 1.75) < 1e-9)
+    assert(math.abs(gun.bonus - 3.5) < 1e-9)
+    -- A Veteran's 21 * 4 = 84 is twelve particle-sized hits.
+    gun.rank, gun.bonus = 3, 0
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = flame, target_entity = target}, gun)
+    assert(#target.damaged == 13 and math.abs(gun.bonus) < 1e-9, 'veteran flame hits: ' .. #target.damaged)
   end)
 
   test('bonuses: a siege tank adds its bonus when the shell lands, not when it fires', function()
@@ -209,7 +227,7 @@ return function(ctx)
     veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = siege, target_entity = target}, {rank = 3})
     assert(#target.damaged == 0, 'siege bonus landed on firing')
     veterans.on_shot{effect_id = 'tank-squad-shell-hit', cause_entity = siege, target_entity = target}
-    assert(#target.damaged == 1 and math.abs(target.damaged[1].amount - 750) < 1e-9)
+    assert(#target.damaged == 1 and math.abs(target.damaged[1].amount - 4000) < 1e-9)
     siege.valid = false
     veterans.on_shot{effect_id = 'tank-squad-shell-hit', cause_entity = siege, target_entity = target}
     veterans.on_shot{effect_id = 'tank-squad-shell-hit', target_entity = target}
@@ -245,13 +263,11 @@ return function(ctx)
     target.type = 'unit'
     e.health = 300
     ctx.handlers().on_entity_damaged{entity = e, final_damage_amount = 50, final_health = 300}
-    assert(math.abs(e.health - 310) < 1e-9, 'control did not route damage')
-    -- Bonuses are banked until they reach a native hit: a Veteran Mk1 banks
-    -- 4.5 per shot, so its second shot deals them.
-    storage.veterans[e.unit_number].rank = 3
+    assert(math.abs(e.health - 332.5) < 1e-9, 'control did not route damage')
+    -- A Trained Mk1's bonus is one native hit per shot.
     for _ = 1, 2 do
       ctx.handlers().on_script_trigger_effect{effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}
     end
-    assert(#target.damaged == 1, 'control did not route shots')
+    assert(#target.damaged == 2, 'control did not route shots')
   end)
 end

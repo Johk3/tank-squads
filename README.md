@@ -65,9 +65,9 @@ Research **Mobile headquarters** (automation to utility science), then choose **
 | Rank | Experience | Speed | Damage | Damage taken |
 |---|---|---|---|---|
 | Recruit | 0 | — | — | — |
-| Trained | 50 | +10% | +20% | −20% |
-| Seasoned | 250 | +20% | +40% | −40% |
-| Veteran | 1000 | +30% | +75% | −50% |
+| Trained | 50 | +30% | +100% | −65% |
+| Seasoned | 250 | +60% | +200% | −75% |
+| Veteran | 1000 | +100% | +400% | −85% |
 
 A kill is worth a tenth of the enemy's maximum health in experience: a small biter gives 1.5, a behemoth 300. A siege tank's extra damage lands with its shell. A killing blow is never reduced, and a soldier's record ends with it. The mobile headquarters has a name but no rank. Point at a unit to see its card.
 

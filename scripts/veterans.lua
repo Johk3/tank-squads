@@ -142,8 +142,8 @@ function M.on_shot(event, shooter)
   end
   local hit = base.hit * research
   amount = amount + (shooter.bonus or 0)
-  -- A bonus is at most three quarters of an attack's damage, so this deals
-  -- at most one hit for a carrier and three for a flame tank.
+  -- A bonus is at most four times an attack's damage, so this deals at most
+  -- four hits for a carrier and twelve for a flame tank.
   while amount >= hit and target.valid do
     target.damage(hit, force, base.type, source, source)
     amount = amount - hit

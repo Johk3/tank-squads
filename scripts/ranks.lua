@@ -1,13 +1,14 @@
 -- Veteran ranks. Shared by prototypes (sprite files) and runtime; contains no
 -- runtime API access. Bonuses are fractions: speed and damage are added to
--- the base, reduction is the share of each hit that is healed back.
+-- the base, reduction is the share of each hit that is healed back and must
+-- stay below 1.
 local M = {}
 
 M.LIST = {
   [0] = {xp = 0, speed = 0, damage = 0, reduction = 0, file = "veteran-00-recruit"},
-  [1] = {xp = 50, speed = 0.10, damage = 0.20, reduction = 0.20, file = "veteran-01-trained"},
-  [2] = {xp = 250, speed = 0.20, damage = 0.40, reduction = 0.40, file = "veteran-02-seasoned"},
-  [3] = {xp = 1000, speed = 0.30, damage = 0.75, reduction = 0.50, file = "veteran-03-veteran"},
+  [1] = {xp = 50, speed = 0.30, damage = 1.00, reduction = 0.65, file = "veteran-01-trained"},
+  [2] = {xp = 250, speed = 0.60, damage = 2.00, reduction = 0.75, file = "veteran-02-seasoned"},
+  [3] = {xp = 1000, speed = 1.00, damage = 4.00, reduction = 0.85, file = "veteran-03-veteran"},
 }
 M.TOP = 3
 
