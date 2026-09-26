@@ -1,6 +1,7 @@
 local colors = require("scripts.render").COLORS
 local divisions = require("scripts.divisions")
 local insignia = require("scripts.insignia")
+local veterans_gui = require("scripts.veterans_gui")
 local M = {}
 
 local NAME = "tank_squads_divisions"
@@ -26,6 +27,11 @@ local function title_button(bar, action, sprite, tooltip)
     tooltip = tooltip, tags = {tank_squads_panel = action}}
 end
 
+local function row_help(n)
+  return n == 0 and {"tank-squads.selection-help"}
+    or {"tank-squads.division-help", {"tank-squads.assign-key-" .. n}, {"tank-squads.add-key-" .. n}}
+end
+
 -- A draggable window in player.gui.screen. The title bar moves it; its
 -- buttons fold it to the title bar and switch between full and compact rows.
 local function build(player)
@@ -44,6 +50,7 @@ local function build(player)
   filler.style.horizontally_stretchable = true
   filler.style.height = 24
   filler.style.minimal_width = 24
+  title_button(bar, "veterans", "tank-squad-rank-3", {"tank-squads.veterans-open"})
   title_button(bar, "compact", "utility/list_view", {"tank-squads.divisions-compact"})
   title_button(bar, "collapse", "utility/collapse", {"tank-squads.divisions-collapse"})
   local body = frame.add{type = "flow", name = "body", direction = "vertical"}
@@ -61,8 +68,7 @@ local function build(player)
     local button = row.add{type = "button", name = "division_" .. n,
       tags = {tank_squads_division = n}, auto_toggle = false}
     button.style.font_color = colors[n]
-    button.tooltip = n == 0 and {"tank-squads.selection-help"}
-      or {"tank-squads.division-help", {"tank-squads.assign-key-" .. n}, {"tank-squads.add-key-" .. n}}
+    button.tooltip = row_help(n)
   end
   return frame
 end
@@ -104,8 +110,9 @@ function M.update(player_index)
     return
   end
   local choice = layout(player_index)
-  -- A window from before the rows held insignias is rebuilt.
-  if frame and not frame.body.divisions.row_0 then frame.destroy(); frame = nil end
+  -- A window from before the rows held insignias or before the veterans
+  -- button is rebuilt.
+  if frame and not (frame.body.divisions.row_0 and frame.titlebar.veterans) then frame.destroy(); frame = nil end
   if not frame then
     frame = build(player)
     arrange(frame, choice)
@@ -129,12 +136,15 @@ function M.update(player_index)
     local target, recruits = divisions.reinforcement(player_index, n, record)
     local state = record and record.escort
     local mode_caption = {"tank-squads.mode-" .. mode}
-    local mode_key = mode
+    local mode_key, escort_caption = mode, nil
     if mode == "escort" and state then
       local ward = game.get_player(state.ward)
       local detail = state.available and {"tank-squads.formation-" .. state.formation} or {"tank-squads.formation-waiting"}
-      mode_caption = {"tank-squads.mode-escort", ward and ward.name or "?", detail}
+      escort_caption = {"tank-squads.mode-escort", ward and ward.name or "?", detail}
       mode_key = mode .. ":" .. state.ward .. ":" .. state.formation .. ":" .. tostring(state.available)
+      -- A player's name can be long, and the widest row sets the width of
+      -- every row. Short rows name the ward only in the tooltip.
+      mode_caption = compact and {"tank-squads.mode-escort-short"} or escort_caption
     end
     local signature = count .. ":" .. mode_key .. ':' .. tostring(target) .. ':' .. tostring(recruits) .. ':' .. tostring(compact)
     if button.tags.status ~= signature then
@@ -149,6 +159,8 @@ function M.update(player_index)
             mode_caption, {"tank-squads.division-name-" .. n}}
         end
       end
+      local help = row_help(n)
+      button.tooltip = compact and escort_caption and {"", escort_caption, "\n", help} or help
       button.tags = {tank_squads_division = n, status = signature}
     end
   end
@@ -167,6 +179,7 @@ function M.click(event)
   local element = event.element
   if not (element and element.valid) then return false end
   local action = element.tags.tank_squads_panel
+  if action == "veterans" then veterans_gui.toggle(event.player_index); return true end
   if action ~= "collapse" and action ~= "compact" then return false end
   local choice = layout(event.player_index)
   if action == "collapse" then choice.collapsed = not choice.collapsed or nil

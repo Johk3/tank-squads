@@ -1125,4 +1125,24 @@ return function(ctx)
     caption = game.players[1].gui.screen.tank_squads_divisions.body.divisions.row_3.division_3.caption
     assert(caption[5][3][1] == 'tank-squads.formation-waiting', 'waiting state not shown')
   end)
+
+  test('escort gui: short rows leave the ward name out of the caption', function()
+    gui_setup()
+    local ward = ward_player(2, 0, 0)
+    divisions.assign(1, 3, {soldier()})
+    escort.start(1, 3, 2, 'defensive')
+    escort.tick()
+    local panel = require('scripts.panel')
+    panel.update(1)
+    local frame = game.players[1].gui.screen.tank_squads_divisions
+    panel.click{player_index = 1, element = frame.titlebar.compact}
+    panel.update(1)
+    local button = frame.body.divisions.row_3.division_3
+    assert(button.caption[1] == 'tank-squads.division-row-compact', 'not a short row')
+    assert(button.caption[4][1] == 'tank-squads.mode-escort-short', 'short row names the ward')
+    assert(button.tooltip[2][2] == ward.name, 'tooltip lost the ward')
+    panel.click{player_index = 1, element = frame.titlebar.compact}
+    panel.update(1)
+    assert(button.caption[5][2] == ward.name and button.tooltip[1] == 'tank-squads.division-help', 'full row')
+  end)
 end

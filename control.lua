@@ -16,6 +16,7 @@ local headquarters = require("scripts.headquarters")
 local render = require("scripts.render")
 local veterans = require("scripts.veterans")
 local unit_card = require("scripts.unit_card")
+local veterans_gui = require("scripts.veterans_gui")
 local reinforcements = require("scripts.reinforcements")
 
 local function on_built(event)
@@ -95,6 +96,7 @@ local function clear_player(event)
   escort.forget_ward(event.player_index)
   escort_gui.close(event.player_index)
   unit_card.clear(event.player_index)
+  veterans_gui.close(event.player_index)
   if event.name == defines.events.on_player_removed then panel.clear_player(event.player_index) end
   if storage.patrol_mode then storage.patrol_mode[event.player_index] = nil end
   local player = game.get_player(event.player_index)
@@ -247,6 +249,7 @@ end
 script.on_event(defines.events.on_gui_click, function(event)
   if barracks_gui.click(event) then panel.update(event.player_index); return end
   if escort_gui.click(event) then panel.update(event.player_index); return end
+  if veterans_gui.click(event) then panel.update(event.player_index); return end
   if panel.click(event) then panel.update(event.player_index); return end
   local element = event.element
   if not (element and element.valid) then return end
