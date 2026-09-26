@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.23.0
+Date: 2026-09-26
+  Features:
+    - Each scouting team now shows on the map with the division's number, a team letter (such as 3A and 3B) and its insignia. The labels follow merges and turn back into the division label when scouting ends.
+  Bugfixes:
+    - Fixed scouting teams crawling forward because they waited up to a minute on every hop for one tank that was stuck or far behind, such as a tank from a merged team. Far tanks now drive after their team, and once the front or half the team has arrived the rest get 10 seconds.
+    - Fixed scouting teams giving up at lakes and coasts. Teams no longer drive into water: they head for the far bank and let the pathfinder lead them around, or follow the shore. Open-sea chunks are skipped by every team.
+    - Fixed scouting teams wandering without charting anything while chasing fog they could not reach. A target is given up after 20 hops, and a team that charts nothing for 48 hops joins another team.
+---------------------------------------------------------------------------------------------------
 Version: 0.22.0
 Date: 2026-09-25
   Features:
