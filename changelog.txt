@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.24.0
+Date: 2026-09-26
+  Features:
+    - A new button on the Divisions window lists every soldier of each division from strongest to weakest, with rank, XP and kills. Tick soldiers from any divisions to select them or to form a new division from them, such as a veteran division.
+  Bugfixes:
+    - Fixed short rows in the Divisions window growing wide for an escorting division. The row now reads "Escort"; the ward's name and formation are in its tooltip.
+---------------------------------------------------------------------------------------------------
 Version: 0.23.0
 Date: 2026-09-26
   Features:
