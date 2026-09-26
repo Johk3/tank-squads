@@ -58,25 +58,46 @@ function M.clear_rings(record)
   end
 end
 
+-- The map label of scout team `id`: the division number and a team letter.
+function M.team_label(n, id)
+  return n .. string.char(64 + id)
+end
+
+-- Marker keys of scout teams, built once instead of per soldier per sweep.
+local team_keys = setmetatable({}, {__index = function(keys, id)
+  local key = "team" .. id
+  keys[id] = key
+  return key
+end})
+
 -- One engine-followed label per division per surface, not per soldier.
+-- While a division scouts, each team gets its own label under the key
+-- "team" .. id, and the surface label stays only for soldiers outside every
+-- team, such as the headquarters. A team that merges or ends loses its key,
+-- so its label goes with it on the next call.
 function M.markers(player_index, n, record, entities)
   record.render.markers = record.render.markers or {}
   local markers, leaders = record.render.markers, {}
+  local scout = record.mode == "scout" and record.scout
+  local teams = scout and scout.teams
+  local team_of = teams and scout.team_of
   for _, entity in ipairs(entities) do
-    local index = entity.surface_index
-    if not leaders[index] then leaders[index] = entity end
+    local id = team_of and team_of[entity.unit_number]
+    local key = id and teams[id] and team_keys[id] or entity.surface_index
+    if not leaders[key] then leaders[key] = entity end
   end
-  for index, marker in pairs(markers) do
-    local leader = leaders[index]
+  for key, marker in pairs(markers) do
+    local leader = leaders[key]
     if not leader or not marker.object.valid or marker.unit_number ~= leader.unit_number then
       destroy_marker(marker)
-      markers[index] = nil
+      markers[key] = nil
     end
   end
-  for index, leader in pairs(leaders) do
-    if not markers[index] then
-      markers[index] = {unit_number = leader.unit_number, object = rendering.draw_text{
-        text = tostring(n), color = M.COLORS[n] or M.COLORS[0],
+  for key, leader in pairs(leaders) do
+    if not markers[key] then
+      local id = type(key) == "string" and tonumber(key:sub(5))
+      markers[key] = {unit_number = leader.unit_number, object = rendering.draw_text{
+        text = id and M.team_label(n, id) or tostring(n), color = M.COLORS[n] or M.COLORS[0],
         target = leader, surface = leader.surface, players = {player_index},
         render_mode = "chart", alignment = "center", scale = 2,
         scale_with_zoom = true,
@@ -84,10 +105,10 @@ function M.markers(player_index, n, record, entities)
     end
     -- Keep a fixed screen size at distant map zooms. Update saved objects in
     -- place as well, so existing divisions benefit without being reassigned.
-    local object = markers[index].object
+    local object = markers[key].object
     if object.scale ~= 2 then object.scale = 2 end
     if not object.scale_with_zoom then object.scale_with_zoom = true end
-    local marker = markers[index]
+    local marker = markers[key]
     if n ~= 0 and not (marker.badges == M.BADGES and marker.badge and marker.badge.valid
         and marker.map_badge and marker.map_badge.valid) then
       draw_badges(marker, n, leader)

@@ -10,7 +10,7 @@ local ok, result = pcall(function()
     return engine_game.get_player(index)
   end}, {__index = function(_, key) return engine_game[key] end})
   rendering = {}
-  for _, name in ipairs({"draw_circle", "draw_text", "draw_line"}) do
+  for _, name in ipairs({"draw_circle", "draw_text", "draw_line", "draw_sprite", "draw_animation"}) do
     rendering[name] = function(args) args.players = nil; return engine_rendering[name](args) end
   end
   storage.divisions, storage.unit_divisions = {}, {}

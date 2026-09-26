@@ -59,6 +59,9 @@ local function roster(state, team, by_id)
     for unit in pairs(hop.pending) do if not by_id[unit] then hop.pending[unit] = nil end end
     for unit in pairs(hop.front) do if not by_id[unit] then hop.front[unit] = nil end end
   end
+  if team.chase then
+    for unit in pairs(team.chase) do if not by_id[unit] then team.chase[unit] = nil end end
+  end
   return out
 end
 
@@ -72,7 +75,10 @@ end
 -- stall the hop.
 local function rejoin(team, soldier)
   local point, radius = anchor(team)
-  if point then go(soldier, point, radius) end
+  if not point then return end
+  go(soldier, point, radius)
+  team.chase = team.chase or {}
+  team.chase[soldier.unit_number] = game.tick + geometry.CHASE_RESEND
 end
 
 function M.join(state, soldier)
@@ -103,7 +109,7 @@ function M.reconcile(state, members)
   end
 end
 
-local function block(team, chunk)
+local function block(team, chunk, ttl)
   team.failed = team.failed or {}
   local count, oldest_key, oldest = 0, nil, math.huge
   for key, expiry in pairs(team.failed) do
@@ -112,7 +118,7 @@ local function block(team, chunk)
   end
   local key = chunk.x .. ":" .. chunk.y
   if not team.failed[key] and count >= geometry.FAILURE_LIMIT then team.failed[oldest_key] = nil end
-  team.failed[key] = game.tick + geometry.FAILURE_TTL
+  team.failed[key] = game.tick + (ttl or geometry.FAILURE_TTL)
 end
 
 local function chart(ctx, centre)
@@ -120,10 +126,134 @@ local function chart(ctx, centre)
   ctx.force.chart(ctx.surface, {{x = centre.x - r, y = centre.y - r}, {x = centre.x + r, y = centre.y + r}})
 end
 
-local function start_hop(team, present)
+-- Water blocks units, and the pathfinder is slow to give up on a
+-- destination in it. Nil on an ungenerated chunk, which is not known.
+local function wet(surface, p)
+  if not surface.is_chunk_generated({x = math.floor(p.x / 32), y = math.floor(p.y / 32)}) then return nil end
+  return surface.get_tile(p.x, p.y).collides_with("water_tile")
+end
+
+-- The hop moved onto dry ground: first across narrow water, then along the
+-- shore, turning to the side the last shore hop took. Returns the point,
+-- heading and reach, and whether the hop follows the shore; nil when every
+-- candidate is wet.
+local function dry_hop(surface, team, from, point, heading, reach)
+  if not wet(surface, point) then return point, heading, reach, false end
+  for _, p in ipairs(geometry.wade(point, heading)) do
+    local w = wet(surface, p)
+    if w == nil then break end
+    if not w then return p, heading, false, false end
+  end
+  for _, d in ipairs(geometry.detours(from, heading, team.side or 1)) do
+    if not wet(surface, d.point) then
+      team.side = d.side
+      return d.point, d.heading, false, true
+    end
+  end
+end
+
+-- The same rule for a hop whose front failed and a hop with no dry point.
+-- Failed hops count in a row, so a success anywhere resets the count.
+local function hop_failed(team, from, ttl)
+  team.last_point = from
+  team.detours = nil
+  team.failures = (team.failures or 0) + 1
+  if team.target then
+    block(team, team.target, ttl)
+    team.target = nil
+    -- Every chunk in reach can lie across water or cliffs, and each stays
+    -- uncharted. After MARCH_ANGLES failed hops in a row, march instead.
+    if team.failures >= geometry.MARCH_ANGLES then team.march, team.failures = team.march or 1, nil end
+  elseif team.failures >= geometry.MARCH_ANGLES then
+    team.blocked = true
+  else
+    team.march = team.march % geometry.MARCH_ANGLES + 1
+  end
+end
+
+-- Soldiers within STRAY tiles of `from`, and the rest.
+local function split(present, from)
+  local near, far, limit = {}, {}, geometry.STRAY * geometry.STRAY
+  for _, e in ipairs(present) do
+    if geometry.distance_squared(e.position, from) <= limit then near[#near + 1] = e else far[#far + 1] = e end
+  end
+  return near, far
+end
+
+-- Where the team stands: its last hop point, and the soldiers near it. When
+-- every soldier is far from that point, the team gathers on the soldier
+-- nearest to it instead.
+local function core(team, present)
   local from = team.last_point or centroid(present)
+  local near, far = split(present, from)
+  if #near == 0 then
+    local best, d
+    for _, e in ipairs(present) do
+      local here = geometry.distance_squared(e.position, from)
+      if not best or here < d then best, d = e, here end
+    end
+    from = {x = best.position.x, y = best.position.y}
+    near, far = split(present, from)
+  end
+  return from, near, far
+end
+
+-- Whether the team's target chunk is open water. An ungenerated target is
+-- generated first, and checked on a later sweep. Each target is checked once.
+local function at_sea(state, team, surface)
+  if team.probe == true then return false end
+  local t = team.target
+  if not surface.is_chunk_generated(t) then
+    if not team.probe then
+      surface.request_to_generate_chunks({x = t.x * 32 + 16, y = t.y * 32 + 16}, 0)
+      team.probe = "asked"
+    end
+    return false
+  end
+  team.probe = true
+  local wet_tiles = 0
+  for _, dx in ipairs(geometry.SEA_SAMPLES) do
+    for _, dy in ipairs(geometry.SEA_SAMPLES) do
+      if surface.get_tile(t.x * 32 + dx, t.y * 32 + dy).collides_with("water_tile") then wet_tiles = wet_tiles + 1 end
+    end
+  end
+  if wet_tiles < geometry.SEA_WET then return false end
+  if not state.sea or (state.sea_count or 0) >= geometry.SEA_LIMIT then state.sea, state.sea_count = {}, 0 end
+  state.sea[geometry.chunk_key(t.x, t.y)] = game.tick + geometry.SEA_TTL
+  state.sea_count = state.sea_count + 1
+  return true
+end
+
+-- A straggler walks to the hop point. Its order is renewed only after it
+-- completed or CHASE_RESEND passed, so a long path is not restarted every
+-- hop.
+local function chase(team, soldier, point)
+  team.chase = team.chase or {}
+  local unit = soldier.unit_number
+  local renew = team.chase[unit]
+  if renew and renew > game.tick then return end
+  go(soldier, point, 8)
+  team.chase[unit] = game.tick + geometry.CHASE_RESEND
+end
+
+local function start_hop(state, team, present, ctx, from, near, far)
+  -- A team that walks without charting its targets gives up.
+  if (team.idle or 0) >= geometry.STALL_HOPS then
+    team.blocked = true
+    return
+  end
+  -- Open water is skipped, not failed: the search then passes over it.
+  if team.target and at_sea(state, team, ctx.surface) then
+    team.target = nil
+    return
+  end
   local destination
   if team.target then
+    if (team.target_hops or 0) >= geometry.TARGET_HOPS then
+      hop_failed(team, from, geometry.WATER_TTL)
+      return
+    end
+    team.target_hops = (team.target_hops or 0) + 1
     destination = {x = team.target.x * 32 + 16, y = team.target.y * 32 + 16}
   else
     local a = geometry.march_angles(team.sectors)[team.march]
@@ -134,20 +264,31 @@ local function start_hop(team, present)
     team.target = nil
     return
   end
+  local shore
+  point, heading, reach, shore = dry_hop(ctx.surface, team, from, point, heading, reach)
+  if shore then team.detours = (team.detours or 0) + 1 elseif point then team.detours = nil end
+  local limit = team.target and geometry.DETOUR_LIMIT or geometry.MARCH_DETOURS
+  if not point or (team.detours or 0) > limit then
+    hop_failed(team, from, geometry.WATER_TTL)
+    return
+  end
   local entries = {}
-  for i, e in ipairs(present) do entries[i] = {id = e.unit_number, kind = assault.kind(e.name), position = e.position} end
+  for i, e in ipairs(near) do entries[i] = {id = e.unit_number, kind = assault.kind(e.name), position = e.position} end
   local slots = geometry.slots(entries, point, heading)
   local pending, front = {}, {}
-  for _, e in ipairs(present) do
+  for _, e in ipairs(near) do
     local unit = e.unit_number
     local slot = slots[unit]
     go(e, slot.position, slot.band == "rear" and 6 or 4)
     pending[unit] = true
     if slot.band == "front" then front[unit] = true end
+    if team.chase then team.chase[unit] = nil end
   end
+  for _, e in ipairs(far) do chase(team, e, point) end
   team.hop = {from = from, point = point, heading = heading, reach = reach, pending = pending, front = front,
-    failed = {}, expires = game.tick + geometry.HOP_TIMEOUT}
+    size = #near, failed = {}, expires = game.tick + geometry.HOP_TIMEOUT}
   team.last_point = point
+  team.idle = (team.idle or 0) + 1
 end
 
 local function all_front_failed(hop)
@@ -158,48 +299,50 @@ local function all_front_failed(hop)
   return true
 end
 
+-- A hop is settled once its whole front, or half its soldiers, stand on
+-- their slots. A soldier that stopped short, such as one caught on trees,
+-- then holds the team for GRACE only, and gets a new slot at the next hop.
+local function settled(hop)
+  local size, left = hop.size or 0, 0
+  for _ in pairs(hop.pending) do left = left + 1 end
+  if (size - left) * 2 >= size then return true end
+  for unit in pairs(hop.front) do
+    if hop.pending[unit] then return false end
+  end
+  return true
+end
+
 -- Targets change only here, never in the middle of a hop.
 local function finish_hop(team, ctx)
   local hop = team.hop
   team.hop = nil
-  -- Failed hops count in a row, so a success anywhere resets the count.
   if all_front_failed(hop) then
-    team.last_point = hop.from
-    team.failures = (team.failures or 0) + 1
-    if team.target then
-      block(team, team.target)
-      team.target = nil
-      -- Every chunk in reach can lie across water or cliffs, and each stays
-      -- uncharted. After MARCH_ANGLES failed hops in a row, march instead.
-      if team.failures >= geometry.MARCH_ANGLES then team.march, team.failures = team.march or 1, nil end
-    elseif team.failures >= geometry.MARCH_ANGLES then
-      team.blocked = true
-    else
-      team.march = team.march % geometry.MARCH_ANGLES + 1
-    end
+    hop_failed(team, hop.from)
     return
   end
   team.failures = nil
   if team.target then
-    if hop.reach or ctx.force.is_chunk_charted(ctx.surface, team.target) then team.target = nil end
+    if hop.reach or ctx.force.is_chunk_charted(ctx.surface, team.target) then
+      team.target, team.idle = nil, nil
+    end
   elseif team.found then
-    team.target, team.found, team.march = team.found, nil, nil
+    team.target, team.found, team.march, team.target_hops, team.probe = team.found, nil, nil, nil, nil
   end
 end
 
 -- Between hops: find a target (or keep marching) and start the next hop.
-local function plan(team, present, ctx)
+local function plan(state, team, present, ctx, from, near, far)
   if not team.target and not team.march then
-    local chunk, empty = ctx.search(team, team.last_point or centroid(present))
+    local chunk, empty = ctx.search(team, from)
     if chunk then
-      team.target = chunk
+      team.target, team.target_hops, team.probe = chunk, nil, nil
     elseif empty then
       team.march, team.failures = 1, nil
     else
       return -- budget spent; the search resumes next sweep
     end
   end
-  start_hop(team, present)
+  start_hop(state, team, present, ctx, from, near, far)
 end
 
 local function has_front(members)
@@ -369,12 +512,16 @@ function M.sweep(state, id, ctx)
       local chunk = ctx.search(team, team.last_point)
       if chunk then team.found = chunk end
     end
+    if hop.expires > game.tick + geometry.GRACE and settled(hop) then
+      hop.expires = game.tick + geometry.GRACE
+    end
     if next(hop.pending) and game.tick < hop.expires then return end
     finish_hop(team, ctx)
     if team.blocked then return end
   end
-  chart(ctx, centroid(present))
-  plan(team, present, ctx)
+  local from, near, far = core(team, present)
+  chart(ctx, centroid(near))
+  plan(state, team, present, ctx, from, near, far)
 end
 
 function M.on_command_completed(state, unit_number, result)
@@ -393,7 +540,18 @@ function M.on_command_completed(state, unit_number, result)
   if hop and hop.pending[unit_number] then
     hop.pending[unit_number] = nil
     if result == defines.behavior_result.fail and hop.front[unit_number] then hop.failed[unit_number] = true end
+  elseif team.chase and team.chase[unit_number] then
+    -- A straggler that arrived or gave up is sent again at the next hop.
+    team.chase[unit_number] = nil
   end
+end
+
+function M.count(state)
+  local count = 0
+  for id = 1, state.team_count do
+    if state.teams[id] then count = count + 1 end
+  end
+  return count
 end
 
 function M.all_blocked(state)

@@ -611,4 +611,298 @@ return function(ctx)
     hop(defines.behavior_result.fail)
     assert(team.blocked or divisions.record(1, 1).mode == 'idle', 'five failed march hops in a row did not block the team')
   end)
+
+  -- Valid map labels (plain chart text) by text, and the insignia map badges.
+  local function labels()
+    local out, badges = {}, 0
+    for _, d in ipairs(ctx.draws()) do
+      if d.valid and d.args.render_mode == 'chart' and d.args.text then
+        if d.args.use_rich_text then badges = badges + 1 else out[d.args.text] = (out[d.args.text] or 0) + 1 end
+      end
+    end
+    return out, badges
+  end
+
+  test('scout labels: each team shows on the map in place of the division label', function()
+    scouting({'carrier', 'carrier', 'carrier', 'carrier', 'carrier', 'carrier'})
+    divisions.refresh()
+    assert(labels()['1'] == 1, 'no division label before the teams form')
+    scout.tick()
+    local found, badges = labels()
+    assert(found['1A'] == 1 and found['1B'] == 1, 'team labels missing')
+    assert(not found['1'], 'division label kept beside the team labels')
+    assert(badges == 2, 'expected one map insignia per team, got ' .. badges)
+    local count = #ctx.draws()
+    divisions.refresh()
+    scout.tick()
+    assert(#ctx.draws() == count, 'unchanged team labels redrawn')
+  end)
+
+  test('scout labels: a merged team loses its label', function()
+    local list = scouting({'carrier', 'carrier', 'carrier', 'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    local state = scout_state()
+    local lone
+    for _, e in ipairs(list) do
+      if in_team(state, 2, e) then
+        if lone then kill(e) else lone = e end
+      end
+    end
+    scout.tick()
+    assert(state.teams[2] == nil, 'team 2 did not merge')
+    local found, badges = labels()
+    assert(found['1A'] == 1 and not found['1B'] and badges == 1, 'merged team kept its label')
+  end)
+
+  test('scout labels: stopping the scout brings back the division label at once', function()
+    scouting({'carrier', 'carrier', 'carrier', 'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    scout.set(1, 1, false)
+    local found, badges = labels()
+    assert(found['1'] == 1 and not found['1A'] and not found['1B'] and badges == 1, 'team labels outlived the scout')
+  end)
+
+  test('scout labels: an order or an exhausted scout drops the team labels', function()
+    game.get_player(1).print = function() end
+    scouting({'carrier', 'carrier', 'carrier', 'carrier', 'carrier', 'carrier'})
+    scout.tick()
+    for id = 1, 2 do scout_state().teams[id].blocked = true end
+    scout.tick()
+    local found = labels()
+    assert(divisions.record(1, 1).mode == 'idle' and found['1'] == 1 and not found['1A'], 'exhausted scout kept team labels')
+    scout.set(1, 1, true)
+    scout.tick()
+    assert(labels()['1A'] == 1, 'teams formed again without labels')
+    divisions.record(1, 1).mode, divisions.record(1, 1).scout = 'idle', nil
+    divisions.refresh()
+    found = labels()
+    assert(found['1'] == 1 and not found['1A'] and not found['1B'], 'a scout ended elsewhere kept team labels')
+    divisions.clear_player(1)
+    for _, d in ipairs(ctx.draws()) do assert(not d.valid, 'cleared division leaked a label') end
+  end)
+
+  -- Soldiers step onto their destinations and report arrival.
+  local function arrive(state, list)
+    for _, e in ipairs(list) do
+      if e.command then
+        e.position = {x = e.command.destination.x, y = e.command.destination.y}
+        teams.on_command_completed(state, e.unit_number, success())
+      end
+    end
+  end
+  local function water(fn) game.surfaces[1].wet = fn end
+
+  test('scout water: a hop point in narrow water moves to the far bank on the same line', function()
+    water(function(x) return x > 30 and x < 50 end)
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    teams.sweep(state, 1, context(list, {x = 20, y = 0}))
+    local team = state.teams[1]
+    assert(team.hop and team.hop.point.x >= 50 and team.hop.point.x <= 36 + geometry.WADE, 'hop not on the far bank')
+    assert(not team.detours and team.target.x == 20, 'wading counted as a shore hop')
+    water(nil)
+  end)
+
+  -- Water between the team and its target chunk 20:0, which is dry land.
+  local function lake(x) return x > 20 and x < 600 end
+
+  test('scout water: open water ahead turns the hop along the shore and keeps the target', function()
+    water(lake)
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    teams.sweep(state, 1, context(list, {x = 20, y = 0}))
+    local team = state.teams[1]
+    assert(team.hop and team.hop.point.x <= 20, 'hop point on water')
+    assert(team.detours == 1 and team.side == 1 and team.target.x == 20, 'shore hop not recorded')
+    for _, e in ipairs(list) do assert(e.command.destination.x <= 20 + geometry.SPACING * 2, 'soldier sent into the water') end
+    water(nil)
+  end)
+
+  test('scout water: with no dry point the target is given up at once, with no orders', function()
+    water(function(x) return x < 600 end)
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    teams.sweep(state, 1, context(list, {x = 20, y = 0}))
+    local team = state.teams[1]
+    assert(not team.hop and not team.target, 'a wet hop started')
+    assert(team.failed['20:0'] == game.tick + geometry.WATER_TTL, 'wet target not blocked for WATER_TTL')
+    for _, e in ipairs(list) do assert(e.command == nil, 'soldier ordered into the water') end
+    water(nil)
+  end)
+
+  test('scout water: a target still across the water after DETOUR_LIMIT shore hops is given up', function()
+    water(lake)
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    local c = context(list, {x = 20, y = 0})
+    local team = state.teams[1]
+    for _ = 1, geometry.DETOUR_LIMIT + 2 do
+      teams.sweep(state, 1, c)
+      if team.failed and team.failed['20:0'] then break end
+      arrive(state, list)
+    end
+    assert(team.failed and team.failed['20:0'], 'target across the water never given up')
+    water(nil)
+  end)
+
+  test('scout stragglers: a soldier far from the team walks after it and never holds a hop', function()
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    local far = tank('carrier', 500, 0)
+    list[4] = far
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    state.teams[1].last_point = {x = 4, y = 0}
+    local c = context(list, {x = 20, y = 0})
+    teams.sweep(state, 1, c)
+    local hop = state.teams[1].hop
+    assert(not hop.pending[far.unit_number], 'straggler holds the hop')
+    assert(far.command.destination.x == hop.point.x and far.command.radius == 8, 'straggler not sent after the team')
+    local order = far.command
+    arrive(state, {list[1], list[2], list[3]})
+    teams.sweep(state, 1, c)
+    assert(state.teams[1].hop ~= hop, 'hop waited for the straggler')
+    assert(far.command == order, 'straggler order renewed before it completed')
+    teams.on_command_completed(state, far.unit_number, success())
+    arrive(state, {list[1], list[2], list[3]})
+    teams.sweep(state, 1, c)
+    assert(far.command ~= order and far.command.destination.x == state.teams[1].hop.point.x, 'straggler not sent again')
+  end)
+
+  test('scout stragglers: a team far from its last hop point gathers on its nearest soldier', function()
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    state.teams[1].last_point = {x = 1000, y = 0}
+    teams.sweep(state, 1, context(list, {x = 20, y = 0}))
+    local hop = state.teams[1].hop
+    assert(hop and hop.from.x == 6 and hop.from.y == 0, 'hop did not start from the nearest soldier')
+    for _, e in ipairs(list) do assert(hop.pending[e.unit_number], 'soldier left out of the hop') end
+  end)
+
+  test('scout grace: once the front arrives, the rest get GRACE ticks', function()
+    local list = squad({'carrier', 'carrier', 'siege'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    local c = context(list, {x = 20, y = 0})
+    teams.sweep(state, 1, c)
+    local hop = state.teams[1].hop
+    arrive(state, {list[1], list[2]})
+    teams.sweep(state, 1, c)
+    assert(state.teams[1].hop == hop and hop.expires == game.tick + geometry.GRACE, 'no grace for the rear')
+    game.tick = game.tick + geometry.GRACE
+    teams.sweep(state, 1, c)
+    assert(state.teams[1].hop ~= hop, 'hop outlived the grace')
+  end)
+
+  test('scout stall: a team that hops STALL_HOPS times without charting a target is blocked', function()
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    local c = context(list, {x = 20, y = 0})
+    teams.sweep(state, 1, c)
+    local team = state.teams[1]
+    assert(team.idle == 1, 'hop not counted')
+    game.players[1].force.chart(nil, {{x = 20 * 32, y = 0}, {x = 20 * 32 + 1, y = 1}})
+    arrive(state, list)
+    teams.sweep(state, 1, c)
+    assert(team.idle == 1, 'charting the target did not reset the count')
+    arrive(state, list)
+    team.target, team.idle = {x = 40, y = 0}, geometry.STALL_HOPS
+    teams.sweep(state, 1, c)
+    assert(team.blocked and not team.hop, 'stalled team kept hopping')
+  end)
+
+  test('scout stall: a target not charted after TARGET_HOPS hops is given up', function()
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    local c = context(list, {x = 60, y = 0})
+    local team = state.teams[1]
+    for _ = 1, geometry.TARGET_HOPS do
+      teams.sweep(state, 1, c)
+      assert(team.hop and not (team.failed and team.failed['60:0']), 'target given up early')
+      arrive(state, list)
+    end
+    teams.sweep(state, 1, c)
+    assert(team.failed and team.failed['60:0'] and not team.hop, 'target kept after TARGET_HOPS hops')
+    c.search = function() return {x = 0, y = 30} end
+    teams.sweep(state, 1, c)
+    assert(team.target.y == 30 and team.target_hops == 1 and team.hop, 'next target did not start a fresh count')
+  end)
+
+  test('scout grace: a front tank stuck short of its slot holds the team only for GRACE', function()
+    local list = squad({'flame', 'carrier', 'carrier', 'carrier'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    local c = context(list, {x = 20, y = 0})
+    teams.sweep(state, 1, c)
+    local hop = state.teams[1].hop
+    assert(hop.front[list[1].unit_number], 'flame tank not leading')
+    arrive(state, {list[2]})
+    teams.sweep(state, 1, c)
+    assert(hop.expires == geometry.HOP_TIMEOUT, 'grace before half the team arrived')
+    arrive(state, {list[3]})
+    teams.sweep(state, 1, c)
+    assert(state.teams[1].hop == hop and hop.expires == game.tick + geometry.GRACE, 'no grace with half the team there')
+  end)
+
+  test('scout sea: an open-water target is skipped by the whole division without a failure', function()
+    water(function(x) return x >= 640 end)
+    local list = scouting({'carrier', 'carrier', 'carrier', 'carrier', 'carrier', 'carrier'})
+    local state = scout_state()
+    scout.tick()
+    local team = state.teams[1]
+    local sea_target = {x = 20, y = 0}
+    team.target, team.probe, team.hop = sea_target, nil, nil
+    scout.tick()
+    assert(team.target ~= sea_target and not team.failures, 'sea target kept or counted as a failure')
+    assert(state.sea[geometry.chunk_key(20, 0)] == game.tick + geometry.SEA_TTL, 'sea chunk not remembered')
+    game.players[1].force.chart(nil, {{x = -30 * 32, y = -30 * 32}, {x = 19 * 32 + 31, y = 30 * 32 + 31}})
+    for _ = 1, 20 do
+      team.target, team.march, team.hop, team.ring, team.offset, team.search_centre = nil, nil, nil, nil, nil, nil
+      scout.tick()
+      if team.target then
+        assert(team.target.x ~= 20 or team.target.y ~= 0, 'the search picked a remembered sea chunk')
+      end
+    end
+    water(nil)
+  end)
+
+  test('scout sea: an ungenerated target is generated and checked on a later sweep', function()
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    local surface, asked = game.surfaces[1], nil
+    surface.is_chunk_generated = function() return false end
+    surface.request_to_generate_chunks = function(position) asked = position end
+    local c = context(list, {x = 20, y = 0})
+    teams.sweep(state, 1, c)
+    local team = state.teams[1]
+    assert(asked and asked.x == 20 * 32 + 16 and team.probe == 'asked' and team.hop, 'target not generated')
+    surface.is_chunk_generated = function() return true end
+    water(function(x) return x >= 640 end)
+    arrive(state, list)
+    teams.sweep(state, 1, c)
+    assert(state.sea and state.sea[geometry.chunk_key(20, 0)], 'generated sea target not remembered')
+    water(nil)
+  end)
+
+  test('scout water: the far bank search stops at ungenerated ground', function()
+    local surface = game.surfaces[1]
+    -- Chunks east of x = 64 are not generated; water covers x 30 to 64.
+    surface.is_chunk_generated = function(chunk) return chunk.x < 2 end
+    water(function(x) return x > 30 and x < 64 end)
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    teams.sweep(state, 1, context(list, {x = 20, y = 0}))
+    local team = state.teams[1]
+    assert(team.hop and team.hop.point.x < 64, 'hop sent onto ungenerated ground past the water')
+    surface.is_chunk_generated = function() return true end
+    water(nil)
+  end)
 end

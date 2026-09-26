@@ -22,6 +22,47 @@ M.NO_BARRACKS_RETRY = 600
 M.CHART_RADIUS = 96
 M.FAILURE_TTL = 60 * 60
 M.FAILURE_LIMIT = 64
+-- A chunk given up because water lies in the way stays blocked longer: the
+-- water does not dry up, unlike a path blocked by enemies.
+M.WATER_TTL = 10 * 60 * 60
+-- A soldier further than STRAY tiles from the team's anchor at the start of
+-- a hop walks after the team instead of taking a slot, and never holds the
+-- hop. Its order is renewed at most every CHASE_RESEND ticks.
+M.STRAY = 64
+M.CHASE_RESEND = 20 * 60
+-- Once the whole front, or half the team, stands on its slots, the rest
+-- get GRACE ticks.
+M.GRACE = 10 * 60
+-- A hop point on water moves to dry ground: first to the far bank on the
+-- same line, up to WADE tiles past it in WADE_STEP steps, so the pathfinder
+-- leads the team around the lake; then along the shore by turning the hop
+-- by each of TURNS to either side.
+M.WADE, M.WADE_STEP = 160, 8
+M.TURNS = {math.pi / 6, math.pi / 3, math.pi / 2, 2 * math.pi / 3, 5 * math.pi / 6}
+-- Shore hops in a row before a target is given up, or a march angle counts
+-- as failed.
+M.DETOUR_LIMIT = 8
+M.MARCH_DETOURS = 16
+-- Hops since the team last charted its target before it is blocked, so a
+-- team that walks without charting anything, as along the coast of an
+-- explored island, ends instead of wandering for ever.
+M.STALL_HOPS = 48
+-- Hops towards one target before it is given up. Targets are the nearest
+-- fog, so a reachable one is charted long before.
+M.TARGET_HOPS = 20
+-- A target chunk is open water when at least SEA_WET of its SEA_SAMPLES
+-- tiles are water. The whole division then skips it for SEA_TTL ticks, so a
+-- coast's endless sea chunks are not tried one after another. At most
+-- SEA_LIMIT chunks are remembered.
+M.SEA_SAMPLES = {4, 16, 28}
+M.SEA_WET = 8
+M.SEA_TTL = 30 * 60 * 60
+M.SEA_LIMIT = 4096
+
+-- A number that names a chunk, for keys that need no string.
+function M.chunk_key(x, y)
+  return x * 1048576 + y
+end
 
 function M.distance_squared(a, b)
   local dx, dy = a.x - b.x, a.y - b.y
@@ -110,6 +151,30 @@ function M.hop(from, target)
   local heading = {x = dx / d, y = dy / d}
   if d <= M.HOP then return {x = target.x, y = target.y}, heading, true end
   return {x = from.x + heading.x * M.HOP, y = from.y + heading.y * M.HOP}, heading, false
+end
+
+-- Points past `point` along `heading`, WADE_STEP apart up to WADE tiles.
+function M.wade(point, heading)
+  local out = {}
+  for d = M.WADE_STEP, M.WADE, M.WADE_STEP do
+    out[#out + 1] = {x = point.x + heading.x * d, y = point.y + heading.y * d}
+  end
+  return out
+end
+
+-- Hops of HOP tiles from `from`, turned from `heading` by each of TURNS,
+-- smallest turn first and `side` (1 or -1) first at each turn. Each entry
+-- holds the point, its heading and the side it turned to.
+function M.detours(from, heading, side)
+  local out = {}
+  for _, turn in ipairs(M.TURNS) do
+    for _, s in ipairs({side, -side}) do
+      local c, sn = math.cos(turn * s), math.sin(turn * s)
+      local h = {x = heading.x * c - heading.y * sn, y = heading.x * sn + heading.y * c}
+      out[#out + 1] = {point = {x = from.x + h.x * M.HOP, y = from.y + h.y * M.HOP}, heading = h, side = s}
+    end
+  end
+  return out
 end
 
 -- Offsets are (forward, lateral) in the team's frame: forward along the

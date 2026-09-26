@@ -4,6 +4,7 @@ local patrol = require("scripts.patrol")
 local config = require("scripts.config")
 local geometry = require("scripts.scout_geometry")
 local teams = require("scripts.scout_teams")
+local render = require("scripts.render")
 
 local M = {}
 
@@ -63,7 +64,8 @@ local function next_target(force, surface, state, team, from, budget)
       if (chunk.x ~= home.x or chunk.y ~= home.y) and geometry.in_sectors(team.sectors,
           geometry.angle(state.origin, {x = chunk.x * 32 + 16, y = chunk.y * 32 + 16})) then
         local blocked = team.failed and team.failed[chunk.x .. ":" .. chunk.y]
-        if not (blocked and blocked > game.tick) then
+        local sea = state.sea and state.sea[geometry.chunk_key(chunk.x, chunk.y)]
+        if not (blocked and blocked > game.tick) and not (sea and sea > game.tick) then
           tested = tested + 1
           if not force.is_chunk_charted(surface, chunk) then
             team.ring, team.offset, team.search_centre = 1, 0, nil
@@ -98,6 +100,8 @@ function M.set(player_index, n, enabled)
     -- another mode's state.
     record.mode = "idle"
     record.scout = nil
+    -- The team labels give way to the division label at once.
+    render.markers(player_index, n, record, divisions.cached(player_index, n))
   end
   return enabled
 end
@@ -123,13 +127,16 @@ local function drive(player_index, n, record, cfg)
   end
   if #members == 0 then
     record.mode, record.scout = "idle", nil
+    render.markers(player_index, n, record, all)
     return
   end
-  if not state.teams then
+  local formed = not state.teams
+  if formed then
     teams.form(state, members)
   elseif state.roster_dirty then
     teams.reconcile(state, members)
   end
+  local alive = teams.count(state)
   local surface, force = members[1].surface, members[1].force
   local budget = math.max(16, math.floor(M.CHUNK_BUDGET / state.team_count))
   local ctx = {by_id = by_id, force = force, surface = surface, cfg = cfg,
@@ -141,6 +148,11 @@ local function drive(player_index, n, record, cfg)
     record.mode, record.scout = "idle", nil
     local player = game.get_player(player_index)
     if player then player.print({"tank-squads.scout-exhausted", n}) end
+  end
+  -- Team labels follow a new, merged or ended team in the same sweep; the
+  -- roster refresh keeps them in step with deaths and new leaders.
+  if formed or record.mode ~= "scout" or teams.count(state) ~= alive then
+    render.markers(player_index, n, record, all)
   end
 end
 

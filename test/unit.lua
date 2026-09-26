@@ -30,6 +30,12 @@ local function reset()
   for _, event in ipairs(events) do defines.events[event] = event end
   surface = {index = 1}
   surface.find_nearest_enemy = function() return nil end
+  -- Dry land everywhere; a test marks water with surface.wet(x, y).
+  surface.is_chunk_generated = function() return true end
+  surface.request_to_generate_chunks = function() end
+  surface.get_tile = function(x, y)
+    return {collides_with = function(layer) return layer == "water_tile" and surface.wet ~= nil and surface.wet(x, y) end}
+  end
   surface.find_entities_filtered = function(query)
     local found = {}
     for _, e in ipairs(entities) do
@@ -1216,7 +1222,8 @@ test("scout success does not blacklist and failures expire with bounded storage"
   scout.tick()
   assert(not team.failed or next(team.failed) == nil, "a successful hop blocked its target")
   for i=1,scout.FAILURE_LIMIT+10 do
-    team.target = {x=i,y=50}
+    -- The stall rule would block the team first; it has its own tests.
+    team.target, team.idle = {x=i,y=50}, nil
     scout.on_command_completed(a.unit_number, defines.behavior_result.fail)
     scout.tick()
     game.tick = game.tick + 1
@@ -1258,7 +1265,7 @@ require('test.vision'){test = test, soldier = soldier, count_reads = count_reads
 require('test.assault'){test = test, soldier = soldier, building = building, gui_element = gui_element,
   handlers = function() return handlers end}
 require('test.scout_geometry'){test = test}
-require('test.scout_teams'){test = test, soldier = soldier, building = building}
+require('test.scout_teams'){test = test, soldier = soldier, building = building, draws = function() return draws end}
 require('test.headquarters'){test = test, soldier = soldier}
 require('test.insignia'){test = test, soldier = soldier, handlers = function() return handlers end,
   draws = function() return draws end, players = function() return players end}

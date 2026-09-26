@@ -106,9 +106,11 @@ All keys can be rebound in the controls menu. Each soldier belongs to one divisi
 
 - **Teams:** one team per three soldiers, at most four. A bigger division makes bigger teams. Each kind of tank is spread evenly, and every team gets at least one flame tank or carrier to screen its siege tanks.
 - **Directions:** the teams split the compass from where scouting started, so each explores its own slice. Inside its slice a team always heads for the nearest uncharted chunk.
-- **Formation:** flame tanks at the front, carriers in a V behind them, and siege tanks 30 tiles back, where their cannons still reach past the front. Teams move in 32-tile hops and wait for every tank before the next hop.
+- **Formation:** flame tanks at the front, carriers in a V behind them, and siege tanks 30 tiles back, where their cannons still reach past the front. Teams move in 32-tile hops. Once the front or half the team has arrived, the rest get 10 seconds to catch up before the next hop. A tank more than 64 tiles from its team, such as one coming from a merged team, drives after it and takes its place in the formation when it arrives.
+- **Water:** a team never sends its tanks into water. With water ahead it heads for the far bank, up to 160 tiles away, and the pathfinder leads it around the lake; with no bank in sight it follows the shore. A chunk still out of reach after 8 hops along the shore, or 20 hops in all, is skipped for 10 minutes. A chunk of open sea is skipped by every team for 30 minutes.
+- **Map:** each team shows on the map with the division's number and a team letter, such as 3A and 3B, and its insignia. The labels follow merges and go back to the division label when scouting ends.
 - **Healing:** a tank below 35% health drives to the nearest barracks or headquarters within 1,000 tiles and comes back at 95%, with guards in teams of more than 10. A team below half its total health, or down to half its tanks, drives back together and returns when every tank is healed.
-- **Far out:** when everything nearby is charted, a team marches straight outward until it finds fog again. A team blocked by water or cliffs, or left with only siege tanks, joins the nearest team. Scouting stops only when every direction is blocked.
+- **Far out:** when everything nearby is charted, a team marches straight outward until it finds fog again. A team blocked by water or cliffs, one that makes 48 hops without charting its target, or one left with only siege tanks joins the nearest team. Scouting stops only when every direction is blocked.
 
 ---
 
