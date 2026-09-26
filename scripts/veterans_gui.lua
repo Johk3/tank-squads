@@ -78,7 +78,7 @@ local function build(player)
   end
   if #units == 0 then list.add{type = "label", name = "empty", caption = {"tank-squads.veterans-empty"}} end
   local actions = body.add{type = "flow", name = "actions", direction = "horizontal"}
-  actions.add{type = "button", name = "select", caption = {"tank-squads.veterans-select"},
+  actions.add{type = "button", name = "select_picked", caption = {"tank-squads.veterans-select"},
     tooltip = {"tank-squads.veterans-select-help"}, tags = {tank_squads_veterans = "select"}}
   actions.add{type = "button", name = "form", caption = {"tank-squads.veterans-form"},
     tooltip = {"tank-squads.veterans-form-help"}, tags = {tank_squads_veterans = "form"}}

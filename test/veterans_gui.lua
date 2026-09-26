@@ -64,11 +64,11 @@ return function(ctx)
     divisions.assign(1, 4, {a, b})
     gui.toggle(1)
     local frame = player.gui.screen.tank_squads_veterans
-    assert(gui.click{player_index = 1, element = frame.body.actions.select})
+    assert(gui.click{player_index = 1, element = frame.body.actions.select_picked})
     assert(frame.valid and player.printed[1][1] == 'tank-squads.veterans-none-picked', 'empty pick')
     tick(frame, a); tick(frame, b)
     a.valid = false
-    assert(gui.click{player_index = 1, element = frame.body.actions.select})
+    assert(gui.click{player_index = 1, element = frame.body.actions.select_picked})
     assert(divisions.selected(1) == 0 and divisions.size(1, 0) == 1, 'dead soldier selected')
     assert(divisions.size(1, 4) == 1, 'selecting changed the division')
   end)
