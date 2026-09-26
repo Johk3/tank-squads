@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.27.1
+Date: 2026-09-26
+  Bugfixes:
+    - Fixed a crash ("Invalid name 'select': LuaGuiElement contains a property or method with the same name.") when a player opened the list of every soldier from the Divisions window.
+---------------------------------------------------------------------------------------------------
 Version: 0.27.0
 Date: 2026-09-26
   Changes:
