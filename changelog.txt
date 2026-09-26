@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.26.0
+Date: 2026-09-26
+  Features:
+    - A patrol under attack no longer leaves its whole route. Only the nearest tanks within 128 tiles come to help, one for every two attackers and at least three, while the rest hold their posts. If the fight goes on, more of the nearest tanks join.
+---------------------------------------------------------------------------------------------------
 Version: 0.25.0
 Date: 2026-09-26
   Features:
