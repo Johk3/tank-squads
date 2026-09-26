@@ -59,6 +59,37 @@ M.SEA_WET = 8
 M.SEA_TTL = 30 * 60 * 60
 M.SEA_LIMIT = 4096
 
+-- Mutual aid. A team whose health ratio falls DISTRESS_DROP below its peak
+-- in the last DISTRESS_WINDOW ticks, or that loses a soldier, falls back a
+-- hop and calls for help. The call ends QUIET ticks after its last drop, and
+-- the team then leaves its target alone for DANGER_TTL ticks. A fall-back
+-- point nearer than FALLBACK_MIN tiles is not worth the move. The nearest
+-- team within HELP_RANGE tiles of the call point, with a ratio of at least
+-- HELPER_HEALTH, answers for at most HELP_HOPS hops.
+M.DISTRESS_DROP = 0.15
+M.DISTRESS_WINDOW = 600
+M.QUIET = 900
+M.HELPER_HEALTH = 0.75
+M.HELP_RANGE = 192
+M.HELP_HOPS = 8
+M.DANGER_TTL = 5 * 60 * 60
+M.FALLBACK_MIN = 8
+
+-- The peak after a sweep with `ratio`: an equal or higher ratio, or any
+-- ratio once the peak is older than DISTRESS_WINDOW, replaces it.
+function M.peak(peak, ratio, tick)
+  if not peak or ratio >= peak.ratio or tick - peak.tick > M.DISTRESS_WINDOW then
+    return {ratio = ratio, tick = tick}
+  end
+  return peak
+end
+
+-- Whether `ratio` lies DISTRESS_DROP or more below the peak. The tolerance
+-- keeps a drop of exactly DISTRESS_DROP from rounding away.
+function M.distressed(peak, ratio)
+  return peak ~= nil and peak.ratio - ratio >= M.DISTRESS_DROP - 1e-9
+end
+
 -- A number that names a chunk, for keys that need no string.
 function M.chunk_key(x, y)
   return x * 1048576 + y

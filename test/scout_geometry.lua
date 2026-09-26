@@ -179,4 +179,31 @@ return function(ctx)
     assert(not geometry.should_withdraw(400, 400, 1, 1), 'a one-soldier team withdrew by count')
     assert(not geometry.should_withdraw(0, 0, 0, 1), 'an empty team withdrew')
   end)
+
+  test('scout geometry: the peak keeps the highest ratio until the window passes', function()
+    local p = geometry.peak(nil, 1, 60)
+    assert(p.ratio == 1 and p.tick == 60, 'no first peak')
+    assert(geometry.peak(p, 0.9, 120) == p, 'a lower ratio replaced the peak')
+    assert(geometry.peak(p, 1, 120).tick == 120, 'an equal ratio did not refresh the peak')
+    assert(geometry.peak(p, 0.9, 60 + geometry.DISTRESS_WINDOW) == p, 'the peak expired inside the window')
+    local late = geometry.peak(p, 0.9, 61 + geometry.DISTRESS_WINDOW)
+    assert(late.ratio == 0.9 and late.tick == 61 + geometry.DISTRESS_WINDOW, 'an old peak was kept')
+  end)
+
+  test('scout geometry: a drop of 15 points below the peak is distress', function()
+    local p = {ratio = 1, tick = 0}
+    assert(geometry.distressed(p, 0.85), 'exactly 15 points below the peak was not distress')
+    assert(not geometry.distressed(p, 0.851), 'less than 15 points below the peak was distress')
+    assert(geometry.distressed({ratio = 0.95, tick = 0}, 0.8), 'rounding hid a 15-point drop')
+    assert(not geometry.distressed(nil, 0), 'no peak was distress')
+  end)
+
+  test('scout geometry: a slow bleed of one point per sweep never calls for help', function()
+    local p, ratio = nil, 1
+    for sweep = 0, 90 do
+      p = geometry.peak(p, ratio, sweep * 60)
+      assert(not geometry.distressed(p, ratio), 'a slow bleed called at sweep ' .. sweep)
+      ratio = ratio - 0.01
+    end
+  end)
 end

@@ -905,4 +905,501 @@ return function(ctx)
     surface.is_chunk_generated = function() return true end
     water(nil)
   end)
+
+  -- Two teams of three carriers (three with count 9), each on its first hop
+  -- towards chunk 20:0. Returns the soldiers, the state and the context.
+  local function pair(count)
+    local kinds = {}
+    for i = 1, count or 6 do kinds[i] = 'carrier' end
+    local list = squad(kinds)
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    local c = context(list, {x = 20, y = 0})
+    for id = 1, state.team_count do teams.sweep(state, id, c) end
+    return list, state, c
+  end
+  local function of(state, id, list)
+    local out = {}
+    for _, e in ipairs(list) do if state.team_of[e.unit_number] == id then out[#out + 1] = e end end
+    return out
+  end
+  local function wound(soldiers, health)
+    for _, e in ipairs(soldiers) do e.health = health end
+  end
+
+  test('scout aid: a first sweep records the peak and opens no call, even when hurt', function()
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    wound(list, 300)
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    teams.sweep(state, 1, context(list, {x = 20, y = 0}))
+    local team = state.teams[1]
+    assert(team.peak and team.peak.ratio == 0.75 and team.ratio == 0.75, 'peak or ratio not recorded')
+    assert(not team.call and team.hop, 'a team hurt before scouting called for help')
+  end)
+
+  test('scout aid: a team losing 15 points falls back to where its hop started, facing the advance', function()
+    local list, state, c = pair()
+    local team = state.teams[1]
+    local hop, idle, hops = team.hop, team.idle, team.target_hops
+    local mine = of(state, 1, list)
+    wound(mine, 340)
+    teams.sweep(state, 1, c)
+    local call = team.call
+    assert(call and call.point.x == 6 and call.point.y == 0, 'no call at the start of the hop')
+    assert(team.hop ~= hop and team.hop.fallback and team.last_point.x == 6, 'no fall-back hop')
+    assert(team.hop.heading.x > 0.99, 'the fall-back does not face the advance')
+    assert(not team.failures and team.idle == idle and team.target_hops == hops, 'the fall-back counted as a hop')
+    for _, e in ipairs(mine) do
+      assert(team.hop.pending[e.unit_number], 'a soldier did not fall back')
+      assert(math.abs(forward(team.hop, e)) < 1e-6, 'a soldier is not on its front slot')
+    end
+  end)
+
+  test('scout aid: a caller with no ground behind it stops where its soldiers stand', function()
+    for _, back in ipairs({'none', 'far'}) do
+      local list, state, c = pair()
+      local team = state.teams[1]
+      team.back = back == 'far' and {point = {x = 500, y = 0}, heading = {x = 1, y = 0}} or nil
+      local mine = of(state, 1, list)
+      wound(mine, 300)
+      teams.sweep(state, 1, c)
+      assert(team.call and team.call.point.x == 6 and team.call.point.y == 0, back .. ': the call is not where the soldiers stand')
+      assert(team.hop.fallback and team.last_point.x == 6, back .. ': the hop in progress went on into the fight')
+      for _, e in ipairs(mine) do teams.on_command_completed(state, e.unit_number, fail()) end
+      teams.sweep(state, 1, c)
+      assert(not team.failures and team.target and team.target.x == 20, back .. ': stopping counted as a scouting failure')
+    end
+  end)
+
+  test('scout aid: a team that takes in a merged soldier starts a fresh peak and does not call', function()
+    local list, state, c = pair()
+    local mine = of(state, 1, list)
+    mine[1].health = 160
+    c.by_id[mine[2].unit_number], c.by_id[mine[3].unit_number] = nil, nil
+    teams.sweep(state, 1, c)
+    assert(state.teams[1] == nil, 'the lone soldier did not merge')
+    teams.sweep(state, 2, c)
+    assert(not state.teams[2].call, 'the host read its newcomer as a fight')
+  end)
+
+  test('scout aid: a soldier killed opens a call', function()
+    local list, state, c = pair()
+    local victim = of(state, 1, list)[1]
+    victim.valid = false
+    c.by_id[victim.unit_number] = nil
+    teams.sweep(state, 1, c)
+    assert(state.teams[1].call, 'a death did not open a call')
+  end)
+
+  test('scout aid: a soldier moved to another division is no death', function()
+    local list, state, c = pair()
+    c.by_id[of(state, 1, list)[1].unit_number] = nil
+    teams.sweep(state, 1, c)
+    assert(not state.teams[1].call, 'a transfer opened a call')
+  end)
+
+  test('scout aid: a caller holds after falling back, then goes around its old target after QUIET', function()
+    local list, state, c = pair()
+    local team = state.teams[1]
+    local mine = of(state, 1, list)
+    wound(mine, 340)
+    teams.sweep(state, 1, c)
+    local point = team.call.point
+    game.tick = 120
+    wound(mine, 280)
+    teams.sweep(state, 1, c)
+    assert(team.call.point == point and team.call.last_drop == 120, 'a new drop moved the call or did not refresh it')
+    arrive(state, mine)
+    teams.sweep(state, 1, c)
+    assert(team.call and not team.hop, 'the caller did not hold after falling back')
+    game.tick = 120 + geometry.QUIET - 1
+    teams.sweep(state, 1, c)
+    assert(team.call and not team.hop, 'the call ended before QUIET')
+    game.tick = 120 + geometry.QUIET
+    c.search = function() return {x = 0, y = 20} end
+    teams.sweep(state, 1, c)
+    assert(not team.call, 'the call outlived QUIET')
+    assert(team.failed['20:0'] == game.tick + geometry.DANGER_TTL, 'the old target was not given up')
+    assert(team.target.x == 0 and team.target.y == 20, 'the team did not look for other fog')
+    assert(team.hop and not team.hop.fallback and not team.failures, 'the team did not go back to scouting')
+  end)
+
+  test('scout aid: a marching caller turns to its next march angle after its call', function()
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    local c = context(list, nil, true)
+    teams.sweep(state, 1, c)
+    local team = state.teams[1]
+    assert(team.march == 1 and team.hop, 'the team did not march')
+    wound(list, 300)
+    teams.sweep(state, 1, c)
+    assert(team.call and team.hop.fallback, 'the marching team did not fall back')
+    game.tick = geometry.QUIET
+    teams.sweep(state, 1, c)
+    assert(not team.call and team.march == 2 and not team.failures, 'the march did not turn')
+  end)
+
+  test('scout aid: a caller that withdraws ends its call, gives up its target and heals with a fresh peak', function()
+    depot(100, 0)
+    local list, state, c = pair()
+    local team = state.teams[1]
+    local mine = of(state, 1, list)
+    wound(mine, 300)
+    teams.sweep(state, 1, c)
+    assert(team.call, 'no call')
+    wound(mine, 150)
+    teams.sweep(state, 1, c)
+    assert(team.withdraw and not team.call, 'the withdraw kept the call')
+    assert(team.failed and team.failed['20:0'], 'the withdraw kept the target')
+    wound(mine, 400)
+    teams.sweep(state, 1, c)
+    assert(not team.withdraw and team.peak == nil, 'a healed team kept its old peak')
+  end)
+
+  test('scout aid: a call ends after QUIET even while every soldier is away healing', function()
+    depot(100, 0)
+    local list, state, c = pair()
+    local team = state.teams[1]
+    local mine = of(state, 1, list)
+    wound(mine, 300)
+    teams.sweep(state, 1, c)
+    wound(mine, 100)
+    teams.sweep(state, 1, c)
+    for _, e in ipairs(mine) do assert(retreat.is_away(team, e.unit_number), 'a soldier did not leave to heal') end
+    assert(team.call, 'the call ended when the soldiers left')
+    game.tick = geometry.QUIET
+    teams.sweep(state, 1, c)
+    assert(not team.call and team.failed['20:0'], 'the call outlived QUIET while its soldiers were away')
+  end)
+
+  test('scout aid: a blocked caller with no team to join ends its call', function()
+    local list = squad({'carrier', 'carrier', 'carrier'})
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    local c = context(list, {x = 20, y = 0})
+    teams.sweep(state, 1, c)
+    wound(list, 300)
+    teams.sweep(state, 1, c)
+    local team = state.teams[1]
+    assert(team.call, 'no call')
+    team.blocked = true
+    teams.sweep(state, 1, c)
+    assert(not team.call, 'a blocked team kept calling')
+  end)
+
+  test('scout aid: the nearest healthy team answers the call', function()
+    local list, state, c = pair(9)
+    wound(of(state, 1, list), 300)
+    state.teams[2].last_point = {x = 100, y = 0}
+    teams.sweep(state, 1, c)
+    local call = state.teams[1].call
+    assert(call.helper == 3 and state.teams[3].helping == 1 and state.teams[3].help_hops == 0, 'the nearest team did not answer')
+    assert(not state.teams[2].helping, 'a second team answered')
+  end)
+
+  test('scout aid: of two teams equally near, the lower id answers', function()
+    local list, state, c = pair(9)
+    wound(of(state, 1, list), 300)
+    state.teams[2].last_point, state.teams[3].last_point = {x = 50, y = 0}, {x = 50, y = 0}
+    teams.sweep(state, 1, c)
+    assert(state.teams[1].call.helper == 2, 'the tie did not go to the lower id')
+  end)
+
+  test('scout aid: blocked, withdrawing, calling, helping, lone, hurt, fresh and distant teams do not answer', function()
+    local cases = {
+      blocked = function(t) t.blocked = true end,
+      withdrawing = function(t) t.withdraw = {} end,
+      calling = function(t) t.call = {point = {x = 0, y = 0}, last_drop = 0} end,
+      helping = function(t) t.helping = 3 end,
+      lone = function(t) t.members, t.present = {t.members[1]}, 1 end,
+      hurt = function(t) t.ratio = geometry.HELPER_HEALTH - 0.01 end,
+      fresh = function(t) t.ratio = nil end,
+      distant = function(t) t.last_point = {x = 6 + geometry.HELP_RANGE + 1, y = 0} end,
+    }
+    for name, spoil in pairs(cases) do
+      local list, state, c = pair()
+      spoil(state.teams[2])
+      wound(of(state, 1, list), 300)
+      teams.sweep(state, 1, c)
+      assert(state.teams[1].call and not state.teams[1].call.helper, 'a ' .. name .. ' team answered')
+    end
+  end)
+
+  test('scout aid: the helper drops its hop without a failure and heads for the call point', function()
+    local list, state, c = pair()
+    local helper = state.teams[2]
+    local idle, hops, target = helper.idle, helper.target_hops, helper.target
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    teams.sweep(state, 2, c)
+    local hop = helper.hop
+    assert(hop and hop.help and hop.heading.x < -0.99, 'no help hop towards the call point')
+    assert(helper.help_hops == 1 and helper.idle == idle and helper.target_hops == hops, 'a help hop counted as a scouting hop')
+    assert(not helper.failures and helper.target == target, 'dropping the hop counted as a failure')
+    for _, e in ipairs(of(state, 2, list)) do assert(hop.pending[e.unit_number], 'a helper soldier was left out') end
+  end)
+
+  test('scout aid: the helper holds once it reaches the call point', function()
+    local list, state, c = pair()
+    local helper = state.teams[2]
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    teams.sweep(state, 2, c)
+    local helpers = of(state, 2, list)
+    for _ = 1, 3 do
+      arrive(state, helpers)
+      teams.sweep(state, 2, c)
+      if not helper.hop then break end
+    end
+    local call = state.teams[1].call
+    assert(not helper.hop and geometry.distance(helper.last_point, call.point) < 1, 'the helper did not stop at the call point')
+    local order = helpers[1].command
+    teams.sweep(state, 2, c)
+    assert(not helper.hop and helpers[1].command == order, 'the helper moved on while the call was open')
+  end)
+
+  test('scout aid: a helper gives up after HELP_HOPS and the caller asks the next team', function()
+    local list, state, c = pair(9)
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    local call = state.teams[1].call
+    assert(call.helper == 2, 'team 2 did not answer')
+    state.teams[2].help_hops = geometry.HELP_HOPS
+    teams.sweep(state, 2, c)
+    local two = state.teams[2]
+    assert(not two.helping and call.refused[2] and not call.helper, 'the helper did not give up')
+    assert(not (two.failed and next(two.failed)) and not two.failures, 'giving up counted as a scouting failure')
+    teams.sweep(state, 1, c)
+    assert(call.helper == 3 and state.teams[3].helping == 1, 'the caller asked the refusing team again or nobody')
+  end)
+
+  test('scout aid: a help hop whose front failed ends the help without blocking a chunk', function()
+    local list, state, c = pair()
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    teams.sweep(state, 2, c)
+    local helper = state.teams[2]
+    assert(helper.hop and helper.hop.help, 'no help hop')
+    for _, e in ipairs(of(state, 2, list)) do teams.on_command_completed(state, e.unit_number, fail()) end
+    teams.sweep(state, 2, c)
+    local call = state.teams[1].call
+    assert(not helper.helping and call.refused[2] and not call.helper, 'a failed help hop did not end the help')
+    assert(not helper.failures and not (helper.failed and next(helper.failed)), 'a failed help hop counted as a scouting failure')
+    assert(helper.hop and not helper.hop.help, 'the helper did not go back to scouting')
+  end)
+
+  test('scout aid: a helper with no dry way to the call point gives up', function()
+    local list, state, c = pair()
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    water(function() return true end)
+    teams.sweep(state, 2, c)
+    water(nil)
+    local helper, call = state.teams[2], state.teams[1].call
+    assert(not helper.helping and call.refused[2] and not helper.hop, 'the helper walked into water')
+    assert(not helper.failures and not (helper.failed and next(helper.failed)), 'the water counted as a scouting failure')
+  end)
+
+  test('scout aid: a caller that withdraws releases its helper', function()
+    depot(100, 0)
+    local list, state, c = pair()
+    local mine = of(state, 1, list)
+    wound(mine, 300)
+    teams.sweep(state, 1, c)
+    assert(state.teams[2].helping == 1, 'team 2 did not answer')
+    wound(mine, 150)
+    teams.sweep(state, 1, c)
+    teams.sweep(state, 2, c)
+    local two = state.teams[2]
+    assert(not two.helping and two.hop and not two.hop.help, 'the helper kept helping a withdrawing team')
+  end)
+
+  test('scout aid: a caller that merges away releases its helper', function()
+    local list, state, c = pair()
+    local mine = of(state, 1, list)
+    wound(mine, 300)
+    teams.sweep(state, 1, c)
+    c.by_id[mine[2].unit_number], c.by_id[mine[3].unit_number] = nil, nil
+    teams.sweep(state, 1, c)
+    assert(state.teams[1] == nil, 'the caller did not merge')
+    teams.sweep(state, 2, c)
+    assert(not state.teams[2].helping, 'the helper kept helping a merged team')
+  end)
+
+  test('scout aid: a helper that merges away is replaced', function()
+    local list, state, c = pair(9)
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    assert(state.teams[1].call.helper == 2, 'team 2 did not answer')
+    local theirs = of(state, 2, list)
+    c.by_id[theirs[2].unit_number], c.by_id[theirs[3].unit_number] = nil, nil
+    teams.sweep(state, 2, c)
+    assert(state.teams[2] == nil, 'the helper did not merge')
+    teams.sweep(state, 1, c)
+    assert(state.teams[1].call.helper == 3 and state.teams[3].helping == 1, 'the caller found no new helper')
+  end)
+
+  test('scout aid: a helper that gets hurt falls back, calls itself and stops helping', function()
+    local list, state, c = pair()
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    teams.sweep(state, 2, c)
+    wound(of(state, 2, list), 300)
+    teams.sweep(state, 2, c)
+    local helper = state.teams[2]
+    assert(helper.call and not helper.helping and not state.teams[1].call.helper, 'the hurt helper kept helping')
+    assert(helper.hop and helper.hop.fallback, 'the hurt helper did not fall back')
+  end)
+
+  test('scout aid: a helper that withdraws stops helping', function()
+    depot(100, 0)
+    local list, state, c = pair()
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    wound(of(state, 2, list), 150)
+    teams.sweep(state, 2, c)
+    local helper = state.teams[2]
+    assert(helper.withdraw and not helper.helping and not state.teams[1].call.helper, 'the withdrawing helper kept helping')
+  end)
+
+  test('scout aid: a released helper keeps its target with a fresh hop count', function()
+    local list, state, c = pair()
+    local helper = state.teams[2]
+    local target = helper.target
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    teams.sweep(state, 2, c)
+    helper.target_hops = 15
+    state.teams[1].call = nil
+    arrive(state, of(state, 2, list))
+    teams.sweep(state, 2, c)
+    assert(not helper.helping and not helper.failures, 'the released helper counted a failure')
+    assert(helper.target == target and helper.target_hops == 1, 'the helper lost its target or kept its old hop count')
+    assert(helper.hop and not helper.hop.help, 'the helper did not go back to scouting')
+  end)
+
+  test('scout aid: two teams hurt at once both fall back, neither helps, and both resume after QUIET', function()
+    local list, state, c = pair()
+    wound(list, 300)
+    teams.sweep(state, 1, c)
+    teams.sweep(state, 2, c)
+    local one, two = state.teams[1], state.teams[2]
+    assert(one.call and two.call and one.hop.fallback and two.hop.fallback, 'a hurt team did not fall back')
+    assert(not one.call.helper and not two.call.helper and not one.helping and not two.helping, 'a hurt team answered')
+    game.tick = geometry.QUIET
+    c.search = function() return {x = 0, y = 20} end
+    arrive(state, list)
+    teams.sweep(state, 1, c)
+    teams.sweep(state, 2, c)
+    assert(not one.call and not two.call and one.hop and two.hop, 'the teams did not resume after QUIET')
+  end)
+
+  test('scout aid: a helper is released when a caller whose soldiers are all away ends its call', function()
+    depot(100, 0)
+    local list, state, c = pair()
+    local mine = of(state, 1, list)
+    wound(mine, 300)
+    teams.sweep(state, 1, c)
+    assert(state.teams[2].helping == 1, 'team 2 did not answer')
+    wound(mine, 100)
+    teams.sweep(state, 1, c)
+    game.tick = geometry.QUIET
+    teams.sweep(state, 1, c)
+    teams.sweep(state, 2, c)
+    assert(not state.teams[1].call and not state.teams[2].helping, 'the helper stayed with a call that went quiet')
+  end)
+
+  test('scout aid: a soldier back from healing unhealed is no fight', function()
+    depot(100, 0)
+    local list, state, c = pair()
+    local team = state.teams[1]
+    local hurt = of(state, 1, list)[1]
+    hurt.health = 100
+    teams.sweep(state, 1, c)
+    assert(retreat.is_away(team, hurt.unit_number) and not team.call, 'the injured soldier did not leave quietly')
+    for _, convoy in pairs(team.retreat.convoys) do convoy.failures = retreat.FAILURE_LIMIT end
+    teams.sweep(state, 1, c)
+    assert(not retreat.is_away(team, hurt.unit_number), 'the convoy did not give up')
+    assert(not team.call, 'an unhealed soldier coming back opened a call')
+  end)
+
+  test('scout aid: a team waiting for its soldiers to come back from healing is not asked to help', function()
+    depot(100, 0)
+    local list, state, c = pair(9)
+    local theirs = of(state, 2, list)
+    theirs[1].health, theirs[2].health = 100, 100
+    teams.sweep(state, 2, c)
+    assert(retreat.is_away(state.teams[2], theirs[1].unit_number), 'the soldiers did not leave to heal')
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    assert(state.teams[1].call.helper == 3, 'a team with one soldier at hand was asked to help')
+  end)
+
+  test('scout aid: a helper whose soldiers leave to heal is replaced', function()
+    depot(100, 0)
+    local list, state, c = pair(9)
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    assert(state.teams[1].call.helper == 2, 'team 2 did not answer')
+    local theirs = of(state, 2, list)
+    theirs[1].health, theirs[2].health = 100, 100
+    teams.sweep(state, 2, c)
+    teams.sweep(state, 1, c)
+    assert(state.teams[1].call.helper == 3 and state.teams[3].helping == 1, 'the caller waited on a helper that cannot come')
+  end)
+
+  test('scout aid: a death while the team waits for its healers calls once they are back', function()
+    depot(100, 0)
+    local list, state, c = pair()
+    local team = state.teams[1]
+    local mine = of(state, 1, list)
+    mine[1].health = 100
+    teams.sweep(state, 1, c)
+    assert(retreat.is_away(team, mine[1].unit_number), 'the injured soldier did not leave')
+    mine[2].valid = false
+    c.by_id[mine[2].unit_number] = nil
+    teams.sweep(state, 1, c)
+    assert(not team.call, 'a lone soldier called')
+    mine[1].health = 400
+    teams.sweep(state, 1, c)
+    assert(team.call, 'the death was forgotten')
+  end)
+
+  test('scout aid: a helper whose last hop onto the call point fails still holds there', function()
+    local list, state, c = pair()
+    local helper = state.teams[2]
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    teams.sweep(state, 2, c)
+    local helpers = of(state, 2, list)
+    arrive(state, helpers)
+    teams.sweep(state, 2, c)
+    assert(helper.hop and helper.hop.reach, 'no final hop onto the call point')
+    for _, e in ipairs(helpers) do teams.on_command_completed(state, e.unit_number, fail()) end
+    teams.sweep(state, 2, c)
+    local call = state.teams[1].call
+    assert(helper.helping == 1 and call.helper == 2 and not call.refused, 'crowding at the call point read as a refusal')
+    assert(not helper.hop, 'the helper did not hold')
+  end)
+
+  test('scout aid: a helper called away mid-hop heads for the new call', function()
+    local list, state, c = pair(9)
+    local helper = state.teams[2]
+    wound(of(state, 1, list), 300)
+    teams.sweep(state, 1, c)
+    teams.sweep(state, 2, c)
+    assert(helper.hop and helper.hop.help, 'no help hop')
+    state.teams[1].call, state.teams[1].ratio = nil, 0.7
+    teams.sweep(state, 2, c)
+    assert(not helper.helping and helper.hop and helper.hop.help, 'the old help hop did not run on')
+    wound(of(state, 3, list), 300)
+    teams.sweep(state, 3, c)
+    local call = state.teams[3].call
+    assert(call.helper == 2, 'team 2 did not answer the new call')
+    teams.sweep(state, 2, c)
+    assert(helper.hop.help == 3, 'the helper kept walking to the old call')
+    assert(not call.refused, 'the new call was refused')
+  end)
 end

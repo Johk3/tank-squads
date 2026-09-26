@@ -43,14 +43,20 @@ end
 
 -- The team's soldiers in this sweep's roster. Ids that left it (deaths,
 -- transfers) are dropped here, so a departed soldier never stalls a hop.
+-- Also returns whether one of them died: it is gone for good and was not
+-- away healing. A soldier moved to another division still exists.
 local function roster(state, team, by_id)
-  local out, kept = {}, {}
+  local out, kept, died = {}, {}, false
   for _, unit in ipairs(team.members) do
     local e = by_id[unit]
     if e then
       out[#out + 1], kept[#kept + 1] = e, unit
     else
       state.team_of[unit] = nil
+      if not retreat.is_away(team, unit) then
+        local entity = game.get_entity_by_unit_number(unit)
+        if not (entity and entity.valid) then died = true end
+      end
     end
   end
   if #kept ~= #team.members then team.members = kept end
@@ -62,7 +68,7 @@ local function roster(state, team, by_id)
   if team.chase then
     for unit in pairs(team.chase) do if not by_id[unit] then team.chase[unit] = nil end end
   end
-  return out
+  return out, died
 end
 
 local function anchor(team)
@@ -236,47 +242,14 @@ local function chase(team, soldier, point)
   team.chase[unit] = game.tick + geometry.CHASE_RESEND
 end
 
-local function start_hop(state, team, present, ctx, from, near, far)
-  -- A team that walks without charting its targets gives up.
-  if (team.idle or 0) >= geometry.STALL_HOPS then
-    team.blocked = true
-    return
-  end
-  -- Open water is skipped, not failed: the search then passes over it.
-  if team.target and at_sea(state, team, ctx.surface) then
-    team.target = nil
-    return
-  end
-  local destination
-  if team.target then
-    if (team.target_hops or 0) >= geometry.TARGET_HOPS then
-      hop_failed(team, from, geometry.WATER_TTL)
-      return
-    end
-    team.target_hops = (team.target_hops or 0) + 1
-    destination = {x = team.target.x * 32 + 16, y = team.target.y * 32 + 16}
-  else
-    local a = geometry.march_angles(team.sectors)[team.march]
-    destination = {x = from.x + math.cos(a) * geometry.MARCH_DISTANCE, y = from.y + math.sin(a) * geometry.MARCH_DISTANCE}
-  end
-  local point, heading, reach = geometry.hop(from, destination)
-  if not point then
-    team.target = nil
-    return
-  end
-  local shore
-  point, heading, reach, shore = dry_hop(ctx.surface, team, from, point, heading, reach)
-  if shore then team.detours = (team.detours or 0) + 1 elseif point then team.detours = nil end
-  local limit = team.target and geometry.DETOUR_LIMIT or geometry.MARCH_DETOURS
-  if not point or (team.detours or 0) > limit then
-    hop_failed(team, from, geometry.WATER_TTL)
-    return
-  end
+-- Sends each soldier to its formation slot at `point`, facing `heading`.
+-- Returns the hop's pending and front sets.
+local function deploy(team, soldiers, point, heading)
   local entries = {}
-  for i, e in ipairs(near) do entries[i] = {id = e.unit_number, kind = assault.kind(e.name), position = e.position} end
+  for i, e in ipairs(soldiers) do entries[i] = {id = e.unit_number, kind = assault.kind(e.name), position = e.position} end
   local slots = geometry.slots(entries, point, heading)
   local pending, front = {}, {}
-  for _, e in ipairs(near) do
+  for _, e in ipairs(soldiers) do
     local unit = e.unit_number
     local slot = slots[unit]
     go(e, slot.position, slot.band == "rear" and 6 or 4)
@@ -284,11 +257,188 @@ local function start_hop(state, team, present, ctx, from, near, far)
     if slot.band == "front" then front[unit] = true end
     if team.chase then team.chase[unit] = nil end
   end
+  return pending, front
+end
+
+-- Mutual aid. A team losing a fight falls back one hop, holds and calls for
+-- help. When its call ends it gives up the target it was heading for, so it
+-- goes around the fight instead of back into it. The numbers are in
+-- scout_geometry.
+
+-- Blocks the target for DANGER_TTL. A marching team turns to its next angle.
+local function give_up(team)
+  if team.target then
+    block(team, team.target, geometry.DANGER_TTL)
+    team.target, team.target_hops, team.probe = nil, nil, nil
+  elseif team.march then
+    team.march, team.found = team.march % geometry.MARCH_ANGLES + 1, nil
+  end
+end
+
+-- Ends the team's help. The caller's call forgets its helper; with
+-- `refused`, it also never asks this team again. The helper keeps its target
+-- with a fresh hop count, since the help may have taken it far away.
+local function end_help(state, team, refused)
+  local caller = team.helping and state.teams[team.helping]
+  local call = caller and caller.call
+  if call and call.helper and state.teams[call.helper] == team then
+    if refused then
+      call.refused = call.refused or {}
+      call.refused[call.helper] = true
+    end
+    call.helper = nil
+  end
+  team.helping, team.help_hops, team.detours, team.target_hops = nil, nil, nil, nil
+end
+
+-- Ends the team's call and its help; with `give`, it also gives up its
+-- target.
+local function stand_down(state, team, give)
+  if team.call then
+    team.call = nil
+    if give then give_up(team) end
+  end
+  if team.helping then end_help(state, team, false) end
+end
+
+-- Records the ratio and its peak, and the tick of a death, which is answered
+-- once soldiers are at hand. True when the ratio fell DISTRESS_DROP below the
+-- peak. A withdrawing team is not measured; its peak starts again when the
+-- withdraw ends.
+local function detect(team, health, max_health, died)
+  if team.withdraw then return false end
+  if died then team.death = game.tick end
+  if max_health <= 0 then return false end
+  local ratio = health / max_health
+  team.ratio = ratio
+  team.peak = geometry.peak(team.peak, ratio, game.tick)
+  return geometry.distressed(team.peak, ratio)
+end
+
+-- Opens a call, or refreshes the open one. A new call drops the hop in
+-- progress without a failure and falls back to where the latest hop started,
+-- facing the way the team advanced, so the front stands towards the threat.
+-- With no such point, or one that is too near or too far, a team on the
+-- move stops where its soldiers stand, and a team at rest holds where it is.
+local function raise(state, team, present)
+  local tick = game.tick
+  if team.call then
+    team.call.last_drop = tick
+    return
+  end
+  -- A helper in trouble looks after itself first.
+  if team.helping then end_help(state, team, false) end
+  local here = team.last_point or centroid(present)
+  local back, point, heading = team.back, nil, nil
+  if back then
+    local d = geometry.distance_squared(back.point, here)
+    if d >= geometry.FALLBACK_MIN ^ 2 and d <= (2 * geometry.HOP) ^ 2 then point, heading = back.point, back.heading end
+  end
+  if not point and team.hop then point, heading = centroid(present), team.hop.heading end
+  if point then
+    local pending, front = deploy(team, present, point, heading)
+    team.hop = {from = here, point = point, heading = heading, reach = true, pending = pending, front = front,
+      size = #present, failed = {}, expires = tick + geometry.HOP_TIMEOUT, fallback = true}
+    team.last_point = point
+  else
+    point = here
+  end
+  team.call = {point = {x = point.x, y = point.y}, last_drop = tick}
+end
+
+-- Picks a helper for an open call that has none, or whose helper is down to
+-- one soldier at hand while the rest heal: the team nearest the call point
+-- that is not blocked, withdrawing, calling or helping, had two or more
+-- soldiers at hand and was healthy at its last sweep, stands within
+-- HELP_RANGE and has not refused this call. Ties go to the lower id. At most
+-- three teams are compared.
+local function summon(state, id, call)
+  local current = call.helper and state.teams[call.helper]
+  if current and current.helping == id and (current.present or 0) >= 2 then return end
+  call.helper = nil
+  local best, best_d = nil, geometry.HELP_RANGE * geometry.HELP_RANGE
+  for other = 1, state.team_count do
+    local t = state.teams[other]
+    if other ~= id and t and not t.blocked and not t.withdraw and not t.call and not t.helping
+        and (t.present or 0) >= 2 and (t.ratio or 0) >= geometry.HELPER_HEALTH and t.last_point
+        and not (call.refused and call.refused[other]) then
+      local d = geometry.distance_squared(t.last_point, call.point)
+      if d < best_d or (d == best_d and not best) then best, best_d = other, d end
+    end
+  end
+  if best then
+    call.helper = best
+    state.teams[best].helping, state.teams[best].help_hops = id, 0
+  end
+end
+
+-- A caller starts no hop while its call is open, and a helper none once it
+-- stands on the call point.
+local function holding(state, team)
+  if team.call then return true end
+  local caller = team.helping and state.teams[team.helping]
+  local call = caller and caller.call
+  return call ~= nil and team.last_point ~= nil and geometry.distance_squared(team.last_point, call.point) < 1
+end
+
+local function start_hop(state, team, present, ctx, from, near, far)
+  -- A team that walks without charting its targets gives up.
+  if (team.idle or 0) >= geometry.STALL_HOPS then
+    team.blocked = true
+    return
+  end
+  local helping, destination = team.helping, nil
+  if helping then
+    -- A help hop heads for the call point and never counts towards a target.
+    if (team.help_hops or 0) >= geometry.HELP_HOPS then
+      end_help(state, team, true)
+      return
+    end
+    destination = state.teams[helping].call.point
+  else
+    -- Open water is skipped, not failed: the search then passes over it.
+    if team.target and at_sea(state, team, ctx.surface) then
+      team.target = nil
+      return
+    end
+    if team.target then
+      if (team.target_hops or 0) >= geometry.TARGET_HOPS then
+        hop_failed(team, from, geometry.WATER_TTL)
+        return
+      end
+      team.target_hops = (team.target_hops or 0) + 1
+      destination = {x = team.target.x * 32 + 16, y = team.target.y * 32 + 16}
+    else
+      local a = geometry.march_angles(team.sectors)[team.march]
+      destination = {x = from.x + math.cos(a) * geometry.MARCH_DISTANCE, y = from.y + math.sin(a) * geometry.MARCH_DISTANCE}
+    end
+  end
+  local point, heading, reach = geometry.hop(from, destination)
+  if not point then
+    if not helping then team.target = nil end
+    return
+  end
+  local shore
+  point, heading, reach, shore = dry_hop(ctx.surface, team, from, point, heading, reach)
+  if shore then team.detours = (team.detours or 0) + 1 elseif point then team.detours = nil end
+  local limit = (helping or team.target) and geometry.DETOUR_LIMIT or geometry.MARCH_DETOURS
+  if not point or (team.detours or 0) > limit then
+    -- A helper that cannot get there gives up; that is no scouting failure.
+    if helping then end_help(state, team, true) else hop_failed(team, from, geometry.WATER_TTL) end
+    return
+  end
+  local pending, front = deploy(team, near, point, heading)
   for _, e in ipairs(far) do chase(team, e, point) end
+  -- Where a call for help falls back to: the ground the team came from.
+  team.back = {point = {x = from.x, y = from.y}, heading = heading}
   team.hop = {from = from, point = point, heading = heading, reach = reach, pending = pending, front = front,
-    size = #near, failed = {}, expires = game.tick + geometry.HOP_TIMEOUT}
+    size = #near, failed = {}, expires = game.tick + geometry.HOP_TIMEOUT, help = helping}
   team.last_point = point
-  team.idle = (team.idle or 0) + 1
+  if helping then
+    team.help_hops = (team.help_hops or 0) + 1
+  else
+    team.idle = (team.idle or 0) + 1
+  end
 end
 
 local function all_front_failed(hop)
@@ -313,9 +463,20 @@ local function settled(hop)
 end
 
 -- Targets change only here, never in the middle of a hop.
-local function finish_hop(team, ctx)
+local function finish_hop(state, team, ctx)
   local hop = team.hop
   team.hop = nil
+  -- A fall-back hop leaves failures, targets and marches alone. A failed
+  -- front holds where it stopped.
+  if hop.fallback then return end
+  -- A help hop leaves failures and targets alone too. A failed front short
+  -- of the call point ends the help. On the point itself it is the crowd of
+  -- the caller's soldiers, and the helper holds where it stopped. A hop for
+  -- an earlier call just ends.
+  if hop.help then
+    if team.helping == hop.help and not hop.reach and all_front_failed(hop) then end_help(state, team, true) end
+    return
+  end
   if all_front_failed(hop) then
     hop_failed(team, hop.from)
     return
@@ -332,7 +493,7 @@ end
 
 -- Between hops: find a target (or keep marching) and start the next hop.
 local function plan(state, team, present, ctx, from, near, far)
-  if not team.target and not team.march then
+  if not team.helping and not team.target and not team.march then
     local chunk, empty = ctx.search(team, from)
     if chunk then
       team.target, team.target_hops, team.probe = chunk, nil, nil
@@ -383,6 +544,9 @@ local function merge_check(state, id, team, members, present)
     state.team_of[unit] = host_id
   end
   host.formed = host.formed + #team.members
+  -- The newcomers change the host's health ratio, which is no fight: the
+  -- host measures its distress from a fresh peak.
+  host.peak = nil
   if keep then
     for _, r in ipairs(team.sectors) do host.sectors[#host.sectors + 1] = {from = r.from, to = r.to} end
   end
@@ -406,6 +570,8 @@ end
 local function end_withdraw(team, members, ctx, failed)
   team.withdraw, team.last_point = nil, nil
   team.formed = #members
+  -- The healed team measures its distress from a fresh peak.
+  team.peak, team.death = nil, nil
   if failed then team.withdraw_after = game.tick + retreat.TIMEOUT end
   if team.target and ctx.force.is_chunk_charted(ctx.surface, team.target) then team.target = nil end
 end
@@ -486,16 +652,21 @@ end
 
 function M.sweep(state, id, ctx)
   local team = state.teams[id]
-  local members = roster(state, team, ctx.by_id)
+  local members, died = roster(state, team, ctx.by_id)
   for key, expiry in pairs(team.failed or {}) do
     if expiry <= game.tick then team.failed[key] = nil end
   end
   local cfg = ctx.cfg
+  local rejoined = false
   local present, _, health, max_health = retreat.sweep(team, members, {
     force = ctx.force, surface_index = state.surface_index,
     retreat = team.withdraw and 0 or cfg.retreat, rejoin = cfg.rejoin, range = cfg.range,
-    on_rejoin = function(soldier) rejoin(team, soldier) end,
+    on_rejoin = function(soldier) rejoined = true; rejoin(team, soldier) end,
   })
+  team.present = #present
+  -- A soldier back from a depot, healed or not, changes the ratio without a
+  -- fight: the team measures from a fresh peak.
+  if rejoined then team.peak = nil end
   local hop = team.hop
   if hop then
     for unit in pairs(hop.pending) do if retreat.is_away(team, unit) then hop.pending[unit] = nil end end
@@ -503,12 +674,38 @@ function M.sweep(state, id, ctx)
   end
   if merge_check(state, id, team, members, present) then return end
   -- A blocked team with no host left waits for the division to stop.
-  if team.blocked then return end
+  if team.blocked then
+    stand_down(state, team, false)
+    return
+  end
+  local distressed = detect(team, health, max_health, died)
+  -- Before the wait below, so a call ends while every soldier is away.
+  if team.call and game.tick - team.call.last_drop >= geometry.QUIET then stand_down(state, team, true) end
   -- A lone soldier waits for the rest of its team to come back from healing.
   if #present == 0 or (#present == 1 and #members > 1) then return end
-  if withdraw(team, members, present, health, max_health, ctx) then return end
+  if withdraw(team, members, present, health, max_health, ctx) then
+    stand_down(state, team, true)
+    return
+  end
+  -- A death is answered now that soldiers are at hand, if it is recent.
+  local death = team.death
+  team.death = nil
+  if distressed or (death and game.tick - death <= geometry.DISTRESS_WINDOW) then raise(state, team, present) end
+  if team.call then summon(state, id, team.call) end
+  if team.helping then
+    local caller = state.teams[team.helping]
+    local call = caller and caller.call
+    if not (call and call.helper == id) then
+      end_help(state, team, false)
+    elseif team.hop and not team.hop.fallback and team.hop.help ~= team.helping then
+      -- An ordinary hop, or one towards an earlier call, gives way to the
+      -- help; that is no failure.
+      team.hop = nil
+    end
+  end
+  hop = team.hop
   if hop then
-    if team.march and not team.found then
+    if team.march and not team.found and not (team.call or team.helping) then
       local chunk = ctx.search(team, team.last_point)
       if chunk then team.found = chunk end
     end
@@ -516,9 +713,10 @@ function M.sweep(state, id, ctx)
       hop.expires = game.tick + geometry.GRACE
     end
     if next(hop.pending) and game.tick < hop.expires then return end
-    finish_hop(team, ctx)
+    finish_hop(state, team, ctx)
     if team.blocked then return end
   end
+  if holding(state, team) then return end
   local from, near, far = core(team, present)
   chart(ctx, centroid(near))
   plan(state, team, present, ctx, from, near, far)
