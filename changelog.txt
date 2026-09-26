@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.27.0
+Date: 2026-09-26
+  Changes:
+    - Veteran ranks give much larger bonuses. Trained soldiers get +30% speed, +100% damage and take 65% less damage. Seasoned soldiers get +60% speed, +200% damage and take 75% less damage. Veterans get +100% speed, +400% damage and take 85% less damage.
+---------------------------------------------------------------------------------------------------
 Version: 0.26.0
 Date: 2026-09-26
   Features:
