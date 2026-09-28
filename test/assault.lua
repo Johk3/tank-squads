@@ -466,21 +466,229 @@ return function(ctx)
     assert(carriers.assault and carriers.assault.phase == 'stage' and carriers.leg == nil, 'carrier-only escort did not stage')
   end)
 
-  test('assault wiring: a manual attack order on a nest is unchanged', function()
-    local structures = escort_world()
-    nest(structures)
-    local members = mixed(5)
+  local function compound_world()
+    defines.command.compound = 6
+    defines.compound_command = {return_last = 2}
+    return escort_world()
+  end
+
+  local function angle(p, center) return math.atan2(p.y - center.y, p.x - center.x) end
+
+  -- The last destination of a command: its own, or its last leg's.
+  local function final(command)
+    if command.type == defines.command.compound then return command.commands[#command.commands].destination end
+    return command.destination
+  end
+
+  -- Division 3, selected, ordered onto the area around (x, y).
+  local function order_at(members, x, y, half)
     divisions.assign(1, 3, members)
     divisions.set_selected(1, 3)
-    local area = {left_top = {x = 285, y = -5}, right_bottom = {x = 305, y = 5}}
-    assert(commands.order(1, area, game.surfaces[1]) == 'attack')
+    half = half or 2
+    return commands.order(1, {left_top = {x = x - half, y = y - half}, right_bottom = {x = x + half, y = y + half}},
+      game.surfaces[1])
+  end
+
+  test('surround geometry: ring slots spread evenly round the nest, each kind evenly too', function()
+    local members = {tank('tank-squad-siege', 0, 0), tank('tank-squad-siege', 0, 2), tank('tank-squad-flame', 0, 4),
+      tank('tank-squad-flame', 0, 6)}
+    for i = 1, 4 do members[#members + 1] = tank(nil, 0, 6 + 2 * i) end
+    local center = {x = 300, y = 0}
+    local slots = assault.ring_slots(members, center, 50, math.pi)
+    local seen = {}
     for _, e in ipairs(members) do
-      -- A plain area attack: native, or one ranged target at a time.
-      local mission = storage.assaults and storage.assaults[e.unit_number]
-      assert(e.command.type == defines.command.attack_area or (mission and e.command.type == defines.command.attack),
-        'manual attack staged')
+      local slot = slots[e.unit_number]
+      assert(close(geometry.distance(slot, center), 50), 'slot off the circle')
+      -- Eight slots 45 degrees apart, offset half a step from the bearing.
+      local half_steps = ((angle(slot, center) - math.pi) / (math.pi / 8)) % 2
+      assert(close(half_steps, 1), 'slots not evenly spaced')
+      local key = math.floor(slot.x * 100 + 0.5) .. ':' .. math.floor(slot.y * 100 + 0.5)
+      assert(not seen[key], 'two soldiers share a slot')
+      seen[key] = true
     end
-    assert(divisions.record(1, 3).escort == nil)
+    local function apart(a, b)
+      local d = math.abs(angle(slots[a.unit_number], center) - angle(slots[b.unit_number], center))
+      return math.min(d, 2 * math.pi - d)
+    end
+    assert(close(apart(members[1], members[2]), math.pi), 'siege tanks not on opposite sides')
+    assert(close(apart(members[3], members[4]), math.pi), 'flame tanks not on opposite sides')
+  end)
+
+  test('surround geometry: the walk to a far slot goes round the staging circle in short steps', function()
+    local center = {x = 0, y = 0}
+    local slot = {x = -50, y = 0}
+    local points = assault.around({x = 300, y = 0}, center, 50, slot)
+    assert(#points == 4, 'expected 3 waypoints and the slot, got ' .. #points)
+    assert(points[4] == slot, 'walk does not end at the slot')
+    local last = 0
+    for i = 1, 3 do
+      assert(close(geometry.distance(points[i], center), 50), 'waypoint off the staging circle')
+      local a = angle(points[i], center)
+      local d = math.abs(a - last)
+      assert(math.min(d, 2 * math.pi - d) <= assault.WAYPOINT_ARC + 1e-6, 'waypoints too far apart')
+      last = a
+    end
+    local near = geometry.slot_position(center, 50, 0.3)
+    local direct = assault.around({x = 300, y = 0}, center, 50, near)
+    assert(#direct == 1 and direct[1] == near, 'a near slot got waypoints')
+  end)
+
+  test('manual order: an attack order onto a nest surrounds it instead of charging in', function()
+    local structures = compound_world()
+    nest(structures)
+    local members = {}
+    for i = 1, 8 do members[i] = tank(nil, 5 + 2 * i, 0) end
+    members[9] = tank('tank-squad-siege', 5, 0)
+    members[10] = tank('tank-squad-flame', 3, 0)
+    assert(order_at(members, 295, 0, 10) == 'assault', 'nest order did not start an assault')
+    local order = divisions.record(1, 3).order
+    local a = order.assault
+    assert(a and a.surround and a.phase == 'stage', 'no surrounding assault')
+    local far_side = 0
+    for _, e in ipairs(members) do
+      local slot = a.slots[e.unit_number]
+      assert(close(geometry.distance(slot, a.center), a.standoff), 'slot off the staging circle')
+      if slot.x > a.center.x + 1 then far_side = far_side + 1 end
+      assert(final(e.command) == slot, 'soldier not sent to its slot')
+      if e.command.type == defines.command.compound then
+        for _, leg in ipairs(e.command.commands) do
+          assert(geometry.distance(leg.destination, a.center) >= a.standoff - 1e-6, 'a path cuts across the nest')
+        end
+      end
+    end
+    assert(far_side >= 3, 'nest not surrounded: ' .. far_side .. ' soldiers behind it')
+    assert(storage.order_assaults[members[1].unit_number].id == order.id, 'soldier not held by the assault')
+  end)
+
+  test('manual order: a move order onto a nest surrounds it; one clear of nests stays a move', function()
+    local structures = compound_world()
+    spawner(structures, 300, 0)
+    local members = mixed(5)
+    assert(order_at(members, 280, 0) == 'assault', 'move order beside a spawner did not stage')
+    assert(order_at(members, 200, 0) == 'move', 'move order far from a nest staged')
+    assert(divisions.record(1, 3).order.assault == nil, 'plain order kept the assault')
+    for _, e in ipairs(members) do
+      assert(e.command.type == defines.command.go_to_location and e.command.destination.x == 200, 'soldier not moved')
+    end
+  end)
+
+  test('manual order: each siege tank gets its own screen in front of it', function()
+    local structures = compound_world()
+    nest(structures)
+    local members = {tank('tank-squad-siege', 5, 0), tank('tank-squad-siege', 5, 2)}
+    for i = 1, 6 do members[#members + 1] = tank(nil, 7 + 2 * i, 0) end
+    assert(order_at(members, 295, 0) == 'assault')
+    local a = divisions.record(1, 3).order.assault
+    arrive(a, members)
+    commands.tick()
+    assert(a.phase == 'barrage', 'test setup: no barrage')
+    local screens = {}
+    for _, e in ipairs(members) do
+      local unit = e.unit_number
+      if a.roles[unit] == 'screen' then
+        local nearest, best
+        for _, gun in ipairs({members[1], members[2]}) do
+          local d = geometry.distance(a.screen_slots[unit].point, a.slots[gun.unit_number])
+          if not best or d < best then nearest, best = gun, d end
+        end
+        assert(close(best, assault.SCREEN_AHEAD), 'screen not 10 tiles ahead of a siege tank')
+        assert(e.command.destination == a.screen_slots[unit].point, 'screen carrier not sent to its point')
+        screens[nearest.unit_number] = true
+      end
+    end
+    assert(screens[members[1].unit_number] and screens[members[2].unit_number], 'a siege tank was left unscreened')
+  end)
+
+  test('manual order: the sweep drives the assault, completions reach it, and the fallen nest ends it', function()
+    local structures = compound_world()
+    local w, sp = nest(structures)
+    local members = mixed(5)
+    assert(order_at(members, 300, 0) == 'assault')
+    local order = divisions.record(1, 3).order
+    local a = order.assault
+    arrive(a, members)
+    commands.tick()
+    assert(a.phase == 'barrage', 'sweep did not drive the assault')
+    local siege = members[1]
+    assert(siege.command.target == w, 'siege did not open on the worm')
+    assert(commands.on_command_completed(siege.unit_number, defines.behavior_result.success), 'completion not claimed')
+    assert(a.orders[siege.unit_number] == nil, 'completion did not reach the assault')
+    assert(not commands.on_command_completed(9999, defines.behavior_result.success), 'claimed a stranger')
+    w.valid, sp.valid = false, false
+    commands.tick()
+    assert(order.assault == nil, 'assault outlived its nest')
+    assert(next(storage.order_assaults) == nil, 'soldiers still held')
+    for _, e in ipairs(members) do
+      local mission = storage.assaults and storage.assaults[e.unit_number]
+      assert(e.command.type == defines.command.attack_area or mission, 'soldier did not carry on with the order')
+    end
+    assert(not commands.on_command_completed(siege.unit_number, defines.behavior_result.success),
+      'a finished assault claimed a completion')
+  end)
+
+  test('manual order: recruits and added soldiers join the running assault', function()
+    local structures = compound_world()
+    local w = nest(structures)
+    local members = mixed(5)
+    assert(order_at(members, 300, 0) == 'assault')
+    local record = divisions.record(1, 3)
+    local a = record.order.assault
+    arrive(a, members)
+    commands.tick()
+    local recruit = tank('tank-squad-siege', 0, 0)
+    divisions.add_member(1, 3, recruit.unit_number, recruit)
+    assert(commands.join(record, recruit))
+    assert(a.roles[recruit.unit_number] == 'siege' and recruit.command.target == w, 'recruit did not join the barrage')
+    local newcomer = tank('tank-squad-flame', 0, 0)
+    divisions.assign(1, 0, {newcomer})
+    divisions.set_selected(1, 0)
+    assert(commands.add(1, 3) == 1)
+    assert(a.roles[newcomer.unit_number] == 'flame', 'added soldier did not join the assault')
+    assert(storage.order_assaults[newcomer.unit_number].id == record.order.id, 'added soldier not held')
+  end)
+
+  test('manual order: a new order, job or selection order takes soldiers out of the assault', function()
+    local structures = compound_world()
+    nest(structures)
+    local members = mixed(5)
+    assert(order_at(members, 300, 0) == 'assault')
+    local record = divisions.record(1, 3)
+    -- The drag selection orders two soldiers elsewhere: the last order wins.
+    divisions.assign(1, 0, {members[4], members[5]})
+    divisions.set_selected(1, 0)
+    assert(commands.order(1, {left_top = {x = -52, y = -2}, right_bottom = {x = -48, y = 2}}, game.surfaces[1]) == 'move')
+    local a = record.order.assault
+    commands.tick()
+    assert(a.roles[members[4].unit_number] == nil and a.roles[members[5].unit_number] == nil,
+      'assault kept soldiers ordered elsewhere')
+    assert(members[4].command.destination.x == -50, 'selection order undone')
+    local patrolling = require('scripts.patrol')
+    divisions.assign(1, 5, {members[3]})
+    patrolling.add_waypoint(1, 5, {x = 0, y = 40}, game.surfaces[1])
+    patrolling.start(1, 5)
+    assert(not commands.on_command_completed(members[3].unit_number, defines.behavior_result.success),
+      'assault took a patrolling soldier\'s completion')
+    escort.start(1, 3, 1, 'defensive')
+    assert(record.order == nil, 'escort kept the order')
+    assert(not commands.on_command_completed(members[1].unit_number, defines.behavior_result.success),
+      'dropped assault claimed a completion')
+  end)
+
+  test('manual order: the drag selection surrounds a nest too', function()
+    local structures = compound_world()
+    local w, sp = nest(structures)
+    local members = mixed(5)
+    divisions.select_area(1, members)
+    assert(commands.order(1, {left_top = {x = 298, y = -2}, right_bottom = {x = 302, y = 2}}, game.surfaces[1]) == 'assault')
+    local order = divisions.record(1, 0).order
+    local a = order.assault
+    arrive(a, members)
+    commands.tick()
+    assert(a.phase == 'barrage', 'selection assault not driven')
+    assert(commands.on_command_completed(members[1].unit_number, defines.behavior_result.success))
+    w.valid, sp.valid = false, false
+    commands.tick()
+    assert(order.assault == nil, 'selection assault outlived its nest')
   end)
 
   test('assault wiring: a destroyed nest ends the assault and the escort roams on', function()

@@ -328,14 +328,6 @@ local function block(state, position)
   state.failed[key] = game.tick + scout.FAILURE_TTL
 end
 
-local function enemy_forces(force)
-  local out = {}
-  for _, other in pairs(game.forces) do
-    if other ~= force and force.is_enemy(other) then out[#out + 1] = other end
-  end
-  return out
-end
-
 -- The distance from `from` to e when e is a target in the band that has not
 -- failed, else nil.
 local function candidate(state, e, from, min2, max2)
@@ -401,7 +393,7 @@ function formations.offensive(state, members, character, moved, characters, cfg)
   end
   if state.leg and state.leg.expires > game.tick then return end
   local target = pick_target(state, surface, force, origin, cfg.band_min, cfg.band_max)
-  if target and assault.try_start(state, members, target, enemy_forces(force)) then return end
+  if target and assault.try_start(state, members, target, assault.enemy_forces(force)) then return end
   local command
   if target then
     command = {type = defines.command.attack_area, destination = {x = target.position.x, y = target.position.y},

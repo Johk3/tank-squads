@@ -1,5 +1,5 @@
 local divisions = require('scripts.divisions')
-local combat = require('scripts.combat')
+local commands = require('scripts.commands')
 local escort = require('scripts.escort')
 local patrol = require('scripts.patrol')
 local scout = require('scripts.scout')
@@ -107,11 +107,7 @@ function M.join(b, soldier)
   if patrol.join(record, soldier) then return true end
   if scout.join(record, soldier) then return true end
   if record.mode == 'escort' then return escort.join(record, soldier) end
-  if record.mode == 'idle' and record.order then
-    combat.set_command(soldier, record.order.command)
-    return true
-  end
-  return false
+  return commands.join(record, soldier)
 end
 
 -- Saves from before 0.18.0 hold one target per division, shared by all its

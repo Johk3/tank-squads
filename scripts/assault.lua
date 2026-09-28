@@ -1,7 +1,8 @@
--- Staged nest assault for offensive escorts: the division gathers on a
--- staging arc outside the nest, siege tanks open a barrage on the worms,
--- flame tanks push in, and carriers follow. A few carriers screen the siege
--- line. Only scripts/escort.lua calls this module.
+-- Staged nest assault: the division gathers on a staging arc outside the
+-- nest, siege tanks open a barrage on the worms, flame tanks push in, and
+-- carriers follow. A few carriers screen the siege line. Offensive escorts
+-- (scripts/escort.lua) stage on their own side of the nest; a manual order
+-- onto a nest (scripts/commands.lua) surrounds it.
 local combat = require('scripts.combat')
 local geometry = require('scripts.escort_geometry')
 
@@ -25,6 +26,9 @@ M.SCREEN_SPACING = 4
 M.PUSH_MARGIN = 8
 M.FLAME_EDGE = 10
 M.NO_KILL_TIMEOUT = 5 * 3600
+-- A surrounding soldier walks round the staging circle to its slot through
+-- waypoints at most this far apart, so its path never cuts across the nest.
+M.WAYPOINT_ARC = math.pi / 4
 
 local KINDS = {['tank-squad-siege'] = 'siege', ['tank-squad-flame'] = 'flame'}
 
@@ -49,27 +53,77 @@ function M.nest_shape(structures)
   return center, radius
 end
 
--- Slots SLOT_SPACING tiles apart along the arc, centred on the bearing. The
--- soldiers keep their angular order around the nest, so no two paths cross.
--- A division too big for the arc wraps evenly around the whole circle.
-function M.arc_slots(members, center, distance, bearing)
-  local count = #members
-  local step = math.min(M.SLOT_SPACING / distance, 2 * math.pi / math.max(count, 1))
+local function by_offset(a, b)
+  if a.offset ~= b.offset then return a.offset < b.offset end
+  return a.id < b.id
+end
+
+-- Each soldier's angle around the nest, relative to the bearing, in order.
+local function offsets(members, center, bearing)
   local sorted = {}
   for _, e in ipairs(members) do
     local p = e.position
     local offset = math.atan2(p.y - center.y, p.x - center.x) - bearing
-    sorted[#sorted + 1] = {id = e.unit_number, offset = (offset + math.pi) % (2 * math.pi) - math.pi}
+    sorted[#sorted + 1] = {id = e.unit_number, name = e.name, offset = (offset + math.pi) % (2 * math.pi) - math.pi}
   end
-  table.sort(sorted, function(a, b)
-    if a.offset ~= b.offset then return a.offset < b.offset end
-    return a.id < b.id
-  end)
-  local slots = {}
+  table.sort(sorted, by_offset)
+  return sorted
+end
+
+local function place(sorted, center, distance, bearing, step)
+  local count, slots = #sorted, {}
   for i, s in ipairs(sorted) do
     slots[s.id] = geometry.slot_position(center, distance, bearing + (i - (count + 1) / 2) * step)
   end
   return slots
+end
+
+-- Slots SLOT_SPACING tiles apart along the arc, centred on the bearing. The
+-- soldiers keep their angular order around the nest, so no two paths cross.
+-- A division too big for the arc wraps evenly around the whole circle.
+function M.arc_slots(members, center, distance, bearing)
+  local step = math.min(M.SLOT_SPACING / distance, 2 * math.pi / math.max(#members, 1))
+  return place(offsets(members, center, bearing), center, distance, bearing, step)
+end
+
+local KIND_ORDER = {siege = 1, flame = 2, carrier = 3}
+
+-- Slots evenly spaced around the whole nest, the middle one on the bearing.
+-- Each kind is spread evenly round the circle, so every side gets its share
+-- of siege tanks, flame tanks and carriers. Within a kind the soldiers keep
+-- their angular order.
+function M.ring_slots(members, center, distance, bearing)
+  local groups = {}
+  for _, s in ipairs(offsets(members, center, bearing)) do
+    local kind = M.kind(s.name)
+    groups[kind] = groups[kind] or {}
+    table.insert(groups[kind], s)
+  end
+  local spread = {}
+  for kind, group in pairs(groups) do
+    for j, s in ipairs(group) do
+      spread[#spread + 1] = {id = s.id, share = (j - 0.5) / #group, kind = KIND_ORDER[kind]}
+    end
+  end
+  table.sort(spread, function(a, b)
+    if a.share ~= b.share then return a.share < b.share end
+    if a.kind ~= b.kind then return a.kind < b.kind end
+    return a.id < b.id
+  end)
+  return place(spread, center, distance, bearing, 2 * math.pi / math.max(#members, 1))
+end
+
+-- The points a soldier at `from` walks through to reach its slot `to`: round
+-- the staging circle the short way, at most WAYPOINT_ARC apart, then the slot.
+function M.around(from, center, distance, to)
+  local start = math.atan2(from.y - center.y, from.x - center.x)
+  local finish = math.atan2(to.y - center.y, to.x - center.x)
+  local delta = (finish - start + math.pi) % (2 * math.pi) - math.pi
+  local legs = math.ceil(math.abs(delta) / M.WAYPOINT_ARC)
+  local points = {}
+  for i = 1, legs - 1 do points[i] = geometry.slot_position(center, distance, start + delta * i / legs) end
+  points[#points + 1] = to
+  return points
 end
 
 -- A line across the path from the siege tanks to the nest, SCREEN_AHEAD
@@ -107,9 +161,23 @@ function M.follow_ready(flame_engaged, push_ticks)
   return flame_engaged or push_ticks >= M.FOLLOW_DELAY
 end
 
+local function leg(destination)
+  return {type = defines.command.go_to_location, destination = destination,
+    radius = 4, distraction = defines.distraction.by_enemy}
+end
+
 local function go(soldier, destination)
-  combat.set_command(soldier, {type = defines.command.go_to_location, destination = destination,
-    radius = 4, distraction = defines.distraction.by_enemy})
+  combat.set_command(soldier, leg(destination))
+end
+
+-- A surrounding soldier walks round the nest to its slot.
+local function go_round(a, soldier, slot)
+  local points = M.around(soldier.position, a.center, a.standoff, slot)
+  if #points == 1 then return go(soldier, slot) end
+  local legs = {}
+  for i, point in ipairs(points) do legs[i] = leg(point) end
+  combat.set_command(soldier, {type = defines.command.compound,
+    structure_type = defines.compound_command.return_last, commands = legs})
 end
 
 local function set_role(a, unit, role)
@@ -141,18 +209,45 @@ local function siege_centroid(a, members)
   if n > 0 then return {x = x / n, y = y / n} end
 end
 
+-- The staging slots of the siege tanks, in unit number order. A
+-- surrounding assault screens each of them on its own.
+local function siege_lines(a)
+  local units = {}
+  for unit, role in pairs(a.roles) do
+    if role == 'siege' then units[#units + 1] = unit end
+  end
+  table.sort(units)
+  local lines = {}
+  for i, unit in ipairs(units) do lines[i] = {unit = unit, point = a.slots[unit]} end
+  return lines
+end
+
+local function nearest_squared(points, position)
+  local best = math.huge
+  for _, point in ipairs(points) do best = math.min(best, geometry.distance_squared(point, position)) end
+  return best
+end
+
 -- Promotes the carriers nearest the siege line until the screen is full.
 -- Never demotes while siege tanks remain, so the screen does not reshuffle
--- when a carrier dies. Reads carrier positions only when a slot is empty.
+-- when a carrier dies. Reads carrier positions only when a slot is empty. A
+-- surrounding assault compares staging slots instead of positions.
 local function refill_screen(a, members, c)
   local missing = M.screen_size(c.siege, c.carrier + c.screen) - c.screen
   if missing <= 0 then return end
-  local anchor = a.siege_center or siege_centroid(a, members)
-  if not anchor then return end
+  local anchors = {}
+  if a.surround then
+    for i, line in ipairs(siege_lines(a)) do anchors[i] = line.point end
+  else
+    anchors[1] = a.siege_center or siege_centroid(a, members)
+  end
+  if not anchors[1] then return end
   local carriers = {}
   for _, e in ipairs(members) do
-    if a.roles[e.unit_number] == 'carrier' then
-      carriers[#carriers + 1] = {id = e.unit_number, d = geometry.distance_squared(e.position, anchor)}
+    local unit = e.unit_number
+    if a.roles[unit] == 'carrier' then
+      local p = a.surround and a.slots[unit] or e.position
+      carriers[#carriers + 1] = {id = unit, d = nearest_squared(anchors, p)}
     end
   end
   table.sort(carriers, function(p, q)
@@ -162,10 +257,36 @@ local function refill_screen(a, members, c)
   for i = 1, math.min(missing, #carriers) do set_role(a, carriers[i].id, 'screen') end
 end
 
+-- Each screen carrier joins the siege tank with the fewest screen carriers,
+-- the nearest one on a tie, and the line forms in front of that tank.
+local function place_screen_around(a, units)
+  local lines, groups = siege_lines(a), {}
+  if #lines == 0 then return end
+  for _, unit in ipairs(units) do
+    local slot, best, best_n, best_d = a.slots[unit], nil, nil, nil
+    for i, line in ipairs(lines) do
+      local n, d = groups[i] and #groups[i] or 0, geometry.distance_squared(line.point, slot)
+      if not best or n < best_n or (n == best_n and d < best_d) then best, best_n, best_d = i, n, d end
+    end
+    groups[best] = groups[best] or {}
+    table.insert(groups[best], unit)
+  end
+  for i, group in pairs(groups) do
+    local points = M.screen_points(lines[i].point, a.center, #group)
+    for j, unit in ipairs(group) do
+      a.screen_slots[unit] = {key = 'screen:' .. lines[i].unit .. ':' .. j .. ':' .. #group, point = points[j]}
+    end
+  end
+end
+
 local function place_screen(a)
   local units = {}
   for unit in pairs(a.screen) do units[#units + 1] = unit end
   table.sort(units)
+  if a.surround then
+    a.screen_slots = {}
+    return place_screen_around(a, units)
+  end
   local points = M.screen_points(a.siege_center, a.center, #units)
   a.screen_slots = {}
   for i, unit in ipairs(units) do
@@ -220,6 +341,8 @@ local function command(a, soldier)
     -- The existing assault missions fire from range, one target at a time.
     combat.set_command(soldier, {type = defines.command.attack_area, destination = a.center,
       radius = a.radius + M.PUSH_MARGIN, distraction = defines.distraction.by_enemy})
+  elseif key == 'slot' and a.surround then
+    go_round(a, soldier, destination)
   else
     go(soldier, destination)
   end
@@ -240,8 +363,12 @@ end
 
 local function worms_in_reach(a)
   local reach, n = (a.worm_range + a.siege_range) ^ 2, 0
+  local lines = {a.siege_center}
+  if a.surround then
+    for i, line in ipairs(siege_lines(a)) do lines[i] = line.point end
+  end
   for _, s in ipairs(a.structures) do
-    if s.worm and s.entity.valid and geometry.distance_squared(s.position, a.siege_center) <= reach then n = n + 1 end
+    if s.worm and s.entity.valid and nearest_squared(lines, s.position) <= reach then n = n + 1 end
   end
   return n
 end
@@ -303,12 +430,21 @@ local function advance(a, members, c, tick)
   end
 end
 
--- Called by the offensive formation once it has picked a leg target. Returns
--- true when a nest assault replaced the plain leg. Any division stages: one
--- of a single kind skips the phases it has no tanks for, so carriers alone
--- gather on the arc and then attack together.
-function M.try_start(state, members, target, forces)
-  local origin = target.position
+-- Every force that `force` is at war with, for nest searches.
+function M.enemy_forces(force)
+  local out = {}
+  for _, other in pairs(game.forces) do
+    if other ~= force and force.is_enemy(other) then out[#out + 1] = other end
+  end
+  return out
+end
+
+-- Starts a nest assault when a spawner of `forces` stands within
+-- SPAWNER_REACH of origin, and keeps it as holder.assault. Returns true when
+-- it started. Any division stages: one of a single kind skips the phases it
+-- has no tanks for, so carriers alone gather on the arc and then attack
+-- together. With surround, the staging slots ring the whole nest.
+function M.start(holder, members, origin, forces, surround)
   local found = members[1].surface.find_entities_filtered{position = origin, radius = M.NEST_SEARCH,
     type = {'unit-spawner', 'turret'}, force = forces}
   local structures, nest, worm_range = {}, false, 0
@@ -335,17 +471,24 @@ function M.try_start(state, members, target, forces)
     siege_range = prototypes.entity['tank-squad-siege'].attack_parameters.range,
     bearing = bearing, standoff = standoff, arc_centre = geometry.slot_position(center, standoff, bearing),
     phase = 'stage', phase_tick = tick, roles = {}, screen = {}, stagers = {},
-    slots = M.arc_slots(members, center, standoff, bearing), screen_slots = {}, orders = {}, targets = {},
-    progress = {}, failed = {}, kills = 0, last_kill_tick = tick,
+    slots = (surround and M.ring_slots or M.arc_slots)(members, center, standoff, bearing),
+    screen_slots = {}, orders = {}, targets = {},
+    progress = {}, failed = {}, kills = 0, last_kill_tick = tick, surround = surround or nil,
   }
   for _, e in ipairs(members) do
     adopt(a, e)
     a.stagers[e.unit_number] = true
   end
   refill_screen(a, members, count_roles(a))
-  state.assault = a
+  holder.assault = a
   for _, e in ipairs(members) do command(a, e) end
   return true
+end
+
+-- Called by the offensive formation once it has picked a leg target. Returns
+-- true when a nest assault replaced the plain leg.
+function M.try_start(state, members, target, forces)
+  return M.start(state, members, target.position, forces)
 end
 
 -- One sweep of a running assault. members are the soldiers present, so

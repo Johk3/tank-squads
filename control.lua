@@ -199,11 +199,13 @@ script.on_event(defines.events.on_entity_died, function(event)
     -- corpse) right before it dies.
     divisions.forget(entity.unit_number)
     patrol.forget(entity.unit_number)
+    commands.forget(entity.unit_number)
   elseif entity.name == names.headquarters then
     headquarters.unregister(entity.unit_number)
     -- Same order as for soldiers above.
     divisions.forget(entity.unit_number)
     patrol.forget(entity.unit_number)
+    commands.forget(entity.unit_number)
   else
     veterans.on_kill(event)
   end
@@ -217,6 +219,7 @@ script.on_event(defines.events.on_ai_command_completed, function(event)
   if combat.on_command_completed(event.unit_number, event.result) then return end
   if scout.on_command_completed(event.unit_number, event.result) then return end
   if escort.on_command_completed(event.unit_number, event.result) then return end
+  if commands.on_command_completed(event.unit_number, event.result) then return end
   patrol.advance(event.unit_number, event.result)
 end)
 
@@ -365,6 +368,7 @@ script.on_nth_tick(PHASE_TICKS, function(event)
   scout.tick(phase)
   patrol.tick(phase)
   escort.tick(phase)
+  commands.tick(phase)
   vision.tick(phase, divisions.PHASES)
   weapons.tick(phase, divisions.PHASES)
   headquarters.tick(phase, divisions.PHASES)
@@ -396,6 +400,7 @@ remote.add_interface("tank-squads", {
   order = function(player_index, area)
     return commands.order(player_index, area, game.surfaces[1])
   end,
+  order_tick = function() commands.tick() end,
   alt_select = function(player_index, area)
     return handle_alt_select(player_index, area, game.surfaces[1])
   end,
