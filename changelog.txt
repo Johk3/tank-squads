@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.28.0
+Date: 2026-09-28
+  Features:
+    - A division ordered onto a biter nest now surrounds it before it attacks. Its tanks spread evenly round the nest from out of worm range, each kind spread round it too, and walk round the nest to reach the far side. Siege tanks then shell the worms, each with its own screen of carriers, flame tanks push in and carriers follow. Once the nest falls, the division carries on with the order.
+---------------------------------------------------------------------------------------------------
 Version: 0.27.1
 Date: 2026-09-26
   Bugfixes:
