@@ -322,4 +322,82 @@ return function(ctx)
     local ghosts = require('scripts.engineers.ghosts')
     assert(ghosts.bucket(1, 1).count == 2, 'events did not register the ghosts')
   end)
+
+  test('engineers: the crane faces its cluster and keeps its base on the hull', function()
+    local crane = require('scripts.engineers.crane')
+    assert(math.abs(crane.orientation({x = 0, y = 0}, {x = 0, y = -5})) < 1e-9)
+    assert(math.abs(crane.orientation({x = 0, y = 0}, {x = 5, y = 0}) - 0.25) < 1e-9)
+    local look = require('scripts.appearance').constructor
+    local d = look.crane_base * look.crane_scale / 32
+    local east = crane.offset(0.25)
+    assert(math.abs(east.x - d) < 1e-9 and math.abs(east.y) < 1e-9)
+  end)
+
+  test('engineers: a crane cycle draws once and lasts a second', function()
+    local E = ctx.engineers
+    E.engine()
+    local crane = require('scripts.engineers.crane')
+    local record = require('scripts.engineers.constructor').register(E.constructor_entity(0, 0))
+    record.centre = {x = 0, y = -6}
+    game.tick = 120
+    crane.start(record)
+    local draws = ctx.draws()
+    local draw = draws[#draws]
+    assert(draw.type == 'animation' and draw.args.animation == 'tank-squad-constructor-crane')
+    assert(draw.args.time_to_live == 60 and record.release_tick == 150 and record.done_tick == 180)
+    assert(math.abs(draw.args.animation_offset + 120 * draw.args.animation_speed) < 1e-9, 'cycle does not start on frame 1')
+    crane.stop(record)
+    assert(not draw.valid and record.crane == nil)
+  end)
+
+  test('engineers: a ghost that vanished is dropped, the rest is built', function()
+    local E = ctx.engineers
+    local _, _, surface = E.engine()
+    local ghosts = require('scripts.engineers.ghosts')
+    local crane = require('scripts.engineers.crane')
+    local record = require('scripts.engineers.constructor').register(E.constructor_entity(0, 0))
+    local a, b, c = E.ghost(10, 0), E.ghost(11, 0), E.ghost(12, 0)
+    for _, g in ipairs({a, b, c}) do ghosts.add(g) end
+    record.cluster = ghosts.claim(record, 3, 9)
+    assert(#record.cluster == 3)
+    b.valid = false
+    local tree = soldier(nil, nil, 12, 0)
+    tree.name, tree.type = 'tree-01', 'tree'
+    tree.destroy = function() tree.valid = false end
+    assert(crane.place(record) == 2, 'did not build the two remaining walls')
+    assert(not a.valid and not c.valid and not tree.valid, 'tree on the ghost was not cleared')
+    assert(ghosts.bucket(surface.index, 1).count == 0 and #record.cluster == 0)
+  end)
+
+  test('engineers: a ghost under a unit waits three cycles, then is let go', function()
+    local E = ctx.engineers
+    E.engine()
+    local ghosts = require('scripts.engineers.ghosts')
+    local crane = require('scripts.engineers.crane')
+    local record = require('scripts.engineers.constructor').register(E.constructor_entity(0, 0))
+    local g = E.ghost(10, 0)
+    ghosts.add(g)
+    record.cluster = ghosts.claim(record, 3, 9)
+    local blocker = soldier(nil, nil, 10, 0)
+    blocker.type = 'unit'
+    for _ = 1, crane.RETRIES do
+      assert(crane.place(record) == 0 and #record.cluster == 1, 'gave up too early')
+    end
+    assert(crane.place(record) == 0 and #record.cluster == 0, 'never gave up')
+    assert(storage.engineers.claims[g.unit_number] == nil and g.valid)
+  end)
+
+  test('engineers: a ghost that cannot be revived is blocked for five minutes', function()
+    local E = ctx.engineers
+    E.engine()
+    local ghosts = require('scripts.engineers.ghosts')
+    local crane = require('scripts.engineers.crane')
+    local record = require('scripts.engineers.constructor').register(E.constructor_entity(0, 0))
+    local g = E.ghost(10, 0)
+    ghosts.add(g)
+    g.revive = function() return nil end
+    record.cluster = ghosts.claim(record, 3, 9)
+    assert(crane.place(record) == 0 and #record.cluster == 0)
+    assert(storage.engineers.blocked[g.unit_number] == game.tick + ghosts.BLOCK)
+  end)
 end
