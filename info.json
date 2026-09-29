@@ -1,10 +1,10 @@
 {
   "name": "tank-squads",
-  "version": "0.29.2",
+  "version": "0.30.0",
   "title": "Tank Squads",
   "author": "johk",
   "factorio_version": "2.0",
-  "description": "Train chaingun carriers, siege tanks and flame tanks at a barracks and command them RTS-style: drag-select, number-key divisions, attack, patrol, scout and escort teammates. Veterans may be rebuilt as rare electric and nuclear tanks. Native engine units with no per-tick scripting.",
+  "description": "Train chaingun carriers, siege tanks and flame tanks at a barracks and command them RTS-style: drag-select, number-key divisions, attack, patrol, scout and escort teammates. Shredders park behind your divisions and ram the enemy when a division is in trouble. Veterans may be rebuilt as rare electric and nuclear tanks. Native engine units with no per-tick scripting.",
   "dependencies": [
     "base >= 2.0.56"
   ]

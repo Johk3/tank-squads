@@ -9,6 +9,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 ## Features
 
 - **Five kinds of tanks.** Fast chaingun carriers in three ammunition tiers, a long-range siege tank with an oversized cannon, a heavily armored flame tank, and two rare tanks a carrier may become on promotion: the electric tank and the nuclear tank.
+- **Shredders.** Unmanned rammers that need no orders. They split between your divisions and wait far behind them. When a division is losing, its shredders charge the strongest enemies at 60 tiles a second and burst into shrapnel that only hurts enemies. They also follow players who walk into danger.
 - **Mobile headquarters.** A huge, slow, unarmed command vehicle. It heals nearby soldiers, and wherever it parks it sets up camp with a far-reaching roboport and solar decks that power a nearby grid. It keeps the map live around itself like any tank.
 - **Barracks.** A 3x3 military bunker that trains soldiers like an assembler trains items. It needs no power, heals nearby soldiers, and plays a door animation when a new tank rolls out.
 - **RTS controls.** Drag-select with the command tool, alt-drag to move or attack, and use **Ctrl + 1–9** / **Alt + 1–9** to assign and recall up to nine divisions. **Ctrl + Shift + 1–9** adds the selection to a division without touching its other soldiers.
@@ -45,6 +46,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 | Flame Tank | 2,400 | 10 | slowest | 60 steel, 40 gears, 10 flamethrower ammo | 30 s |
 | Electric Tank | 1,400 | 24 | medium | promotion only | — |
 | Nuclear Tank | 1,600 | 52 | slow | promotion only | — |
+| Shredder | 600 | ram | fastest | 25 steel, 5 engine units, 10 grenades | 20 s |
 
 - The ammunition is used up during training. Soldiers never run out of ammo in the field.
 - Your normal weapon research applies: bullet damage for carriers, cannon research for siege tanks, and flamethrower research for flame tanks.
@@ -53,6 +55,17 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 - Electric and nuclear tanks cannot be trained. Each time a carrier is promoted it has a small chance, 1% at Trained rising to 8% at Legend, to be rebuilt as one of them, keeping its name, experience, rank, division and orders.
 - The electric tank's plasma ball deals 120 electric damage to its target and 180 to every enemy within 6 tiles. Laser damage research applies.
 - The nuclear tank's tactical nuke destroys almost everything within 14 tiles, without craters or fires. It never fires one while its own or allied units or buildings are within 17 tiles of the target, and fires a plain rocket instead. The blast only hurts enemies. It reloads in 20 seconds, down to 6 seconds at Legend. Rocket damage research does not change the nuke.
+
+### Shredders
+
+Shredders are unmanned rammers. Train them at a barracks with the **Build Shredder** recipe. They never join a division and take no orders:
+
+- They split evenly between all your team's divisions and park 60 tiles behind each one, on the side of the nearest barracks or headquarters.
+- When a division loses half its soldiers within 30 seconds, or its last soldier, its shredders lock onto the strongest enemies nearby, charge at 60 tiles a second and ram them. Each crash deals 1,500 damage and bursts into shrapnel that hits every enemy within 8 tiles for 600 damage. Shrapnel never hurts friends.
+- If a target dies before the crash, the shredder picks the next enemy nearby. With none left, it rejoins the divisions.
+- A shredder attacked while parked rams its attacker.
+- When you walk near a large pack of enemies or a nest, up to three shredders follow 40 tiles behind you and strike as soon as you are hurt. They return to the divisions after ten quiet seconds.
+- A barracks set to build shredders keeps building them even when its linked division is full.
 
 ### Mobile headquarters
 

@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.30.0
+Date: 2026-09-29
+  Features:
+    - New unit: the Shredder, an unmanned rammer built at the barracks from steel plate, engine units and grenades. It never joins a division and takes no orders.
+    - Shredders split evenly between all your team's divisions and park 60 tiles behind them, on the side of the nearest barracks or headquarters.
+    - When a division loses half its soldiers within 30 seconds, or its last soldier, its shredders lock onto the strongest enemies nearby, charge at 60 tiles a second and ram them for 1,500 damage. Each crash bursts into shrapnel that hits every enemy within 8 tiles and never hurts friends.
+    - A shredder whose target dies first picks the next enemy nearby. With none left it returns and rejoins the divisions.
+    - A shredder attacked while parked rams its attacker.
+    - When a player walks near a large pack of enemies or a nest, up to three shredders follow 40 tiles behind and strike as soon as the player is hurt. They return to the divisions after ten quiet seconds.
+---------------------------------------------------------------------------------------------------
 Version: 0.29.2
 Date: 2026-09-29
   Changes:
