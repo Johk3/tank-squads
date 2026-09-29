@@ -33,6 +33,9 @@ M.WINDOW = 30 * 60
 M.STRIKE_RADIUS, M.TARGET_LIMIT = 40, 50
 M.IGNITION = 20
 M.BREAKUP_TICKS = 8
+-- A charge gives up after this many targets it could not reach, so it
+-- never circles a fight across water or cliffs.
+M.RETARGETS = 5
 local TARGETS = {'unit', 'unit-spawner', 'turret'}
 local LOOK = appearance.shredder
 M.DANGER_UNITS, M.DANGER_RADIUS, M.NEST_RADIUS = 10, 40, 50
@@ -254,15 +257,20 @@ end
 
 -- Runs in the division's own slice, right after the roster refresh, so it
 -- reuses the cached members. A division counts when it has an armed
--- soldier; its surface is that soldier's.
+-- soldier. A division may span surfaces: its group stays on its surface
+-- while an armed soldier is there, else moves to the first armed soldier's.
 function M.update_group(player_index, n)
   local s = M.state()
   local key = player_index .. ':' .. n
   local player = game.get_player(player_index)
   local members = player and divisions.cached(player_index, n) or {}
+  local old = s.groups[key] and s.groups[key].surface_index
   local surface_index
   for _, e in ipairs(members) do
-    if names.soldier_set[e.name] then surface_index = e.surface_index; break end
+    if names.soldier_set[e.name] then
+      if e.surface_index == old then surface_index = old; break end
+      surface_index = surface_index or e.surface_index
+    end
   end
   if not surface_index then M.drop_group(key); return end
   local here = {}
@@ -272,6 +280,11 @@ function M.update_group(player_index, n)
   if not group then
     group = {key = key, player_index = player_index, n = n, members = {}}
     s.groups[key] = group
+    s.dirty = true
+  end
+  if group.surface_index ~= surface_index or group.force_index ~= player.force.index then
+    -- Its shredders stay behind on the old surface; the split sorts them out.
+    group.ordered = nil
     s.dirty = true
   end
   group.force_index, group.surface_index, group.updated = player.force.index, surface_index, game.tick
@@ -422,6 +435,7 @@ end
 -- Puts the shredder back on its wheels, out of any group; the next
 -- rebalance gives it a post.
 function M.stand_down(record)
+  record.striking = nil
   unlock(record)
   clear_renders(record)
   leave(record)
@@ -442,15 +456,20 @@ function M.launch(record)
 end
 
 -- A new enemy near the old target's last position: the least locked, then
--- the strongest.
+-- the strongest. Enemies this charge could not reach are skipped.
 function M.retarget(record)
   local around = record.target_position or record.entity.position
   unlock(record)
+  if (record.retargets or 0) > M.RETARGETS then M.stand_down(record); return false end
   local entity = record.entity
+  local skip = record.unreachable or {}
   local locks, best, best_locks = M.state().locks, nil, nil
   for _, r in ipairs(M.targets(entity.surface, around, entity.force, M.STRIKE_RADIUS)) do
-    local n = locks[r.entity.unit_number] or 0
-    if not best_locks or n < best_locks then best, best_locks = r.entity, n end
+    local id = r.entity.unit_number
+    if not (id and skip[id]) then
+      local n = locks[id] or 0
+      if not best_locks or n < best_locks then best, best_locks = r.entity, n end
+    end
   end
   if not best then M.stand_down(record); return false end
   lock(record, best)
@@ -462,6 +481,7 @@ end
 -- without, it charges at once.
 function M.charge(record, target, ignite)
   if not swap(record, M.CHARGING) then return false end
+  record.retargets, record.unreachable = 0, nil
   lock(record, target)
   draw_lock(record)
   if not ignite then return M.launch(record) end
@@ -484,19 +504,25 @@ function M.strike(ids, surface, position, force, radius)
   local ready = {}
   for _, id in ipairs(ids) do
     local record = s.units[id]
-    if record and READY[record.state] and record.entity.valid then ready[#ready + 1] = record end
+    if record and READY[record.state] and record.entity.valid and record.entity.surface_index == surface.index then
+      ready[#ready + 1] = record
+    end
   end
   local sent = 0
   for i, record in ipairs(ready) do
-    if M.charge(record, ranked[(i - 1) % #ranked + 1].entity, true) then sent = sent + 1 end
+    if M.charge(record, ranked[(i - 1) % #ranked + 1].entity, true) then
+      record.striking = true
+      sent = sent + 1
+    end
   end
   return sent
 end
 
+-- Only a strike counts; a shredder ramming its own attacker does not.
 local function striking(group, units)
   for _, id in ipairs(group.members) do
     local record = units[id]
-    if record and (record.state == 'igniting' or record.state == 'charging') then return true end
+    if record and record.striking and (record.state == 'igniting' or record.state == 'charging') then return true end
   end
   return false
 end
@@ -510,7 +536,7 @@ function M.on_soldier_died(entity)
   local player_index, n, division = divisions.owner(entity.unit_number)
   if not division or n == 0 then return 0 end
   local group = s.groups[player_index .. ':' .. n]
-  if not group or #group.members == 0 then return 0 end
+  if not group or #group.members == 0 or entity.surface_index ~= group.surface_index then return 0 end
   local tick, size = game.tick, #division.members
   local window = group.window
   if not window or tick - window.start > M.WINDOW then
@@ -565,7 +591,16 @@ function M.on_command_completed(unit_number, result)
   if not record then return false end
   if record.state == 'moving' then park(record)
   elseif record.state == 'igniting' then M.launch(record)
-  elseif record.state == 'charging' then M.retarget(record) end
+  elseif record.state == 'charging' then
+    -- A failed attack on a living target means no path to it.
+    local target = record.target
+    if result == defines.behavior_result.fail and target and target.valid and target.unit_number then
+      record.unreachable = record.unreachable or {}
+      record.unreachable[target.unit_number] = true
+      record.retargets = (record.retargets or 0) + 1
+    end
+    M.retarget(record)
+  end
   return true
 end
 
@@ -599,7 +634,8 @@ end
 -- first, never a group's last one, then from the pool; nearest first.
 function M.form(player)
   local s = M.state()
-  local position, force_index, surface_index = player.position, player.force.index, player.surface.index
+  local character = player.character
+  local position, force_index, surface_index = character.position, player.force.index, character.surface.index
   local sizes = {}
   for key, group in pairs(s.groups) do
     local ready = 0
@@ -664,14 +700,24 @@ function M.watch_player(player)
     if shadow then M.release(player.index) end
     return
   end
-  local surface, force = player.surface, player.force
+  -- The character, not the player: a player in map or remote view has a
+  -- camera position and surface of its own. A driven vehicle carries the
+  -- character along.
+  local character, force = player.character, player.force
+  local surface = character.surface
   if shadow and (shadow.surface_index ~= surface.index or shadow.force_index ~= force.index) then
     M.release(player.index)
     shadow = nil
   end
   if not shadow and not s.present[force.index .. ':' .. surface.index] then return end
-  local position = player.position
+  local position = character.position
   if M.danger(surface, position, force) then
+    -- Members that crashed ramming their own attackers leave the shadow;
+    -- an emptied shadow that never struck forms again.
+    if shadow and #shadow.members == 0 and not shadow.spent then
+      M.release(player.index)
+      shadow = nil
+    end
     if shadow then shadow.calm_since = nil else shadow = M.form(player) end
     if shadow then M.follow(shadow, surface, position, force) end
   elseif shadow then
@@ -713,8 +759,9 @@ function M.on_damaged(event)
   if names.shredder_set[entity.name] then
     local s = storage.shredders
     local record = s and s.units[entity.unit_number]
+    -- A killing blow is left to the engine: swapping now would cancel the death.
     if entity.name == M.PARKED and record and READY[record.state] and cause and cause.valid
-      and cause.unit_number and entity.force.is_enemy(cause.force) then
+      and cause.unit_number and (event.final_health or 1) > 0 and entity.force.is_enemy(cause.force) then
       M.charge(record, cause, false)
     end
     return true

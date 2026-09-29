@@ -613,4 +613,143 @@ return function(ctx)
     assert(record.group == '1:1', 'new shredder not assigned')
     assert(reads.n == 0 and forces.n == 0, 'the split read a settled shredder ' .. reads.n .. ' + ' .. forces.n .. ' times')
   end)
+
+  -- Review fixes.
+
+  local function moon_surface(found)
+    local moon = {index = 2}
+    moon.find_entities_filtered = function() return found or {} end
+    moon.count_entities_filtered = function() return 0 end
+    moon.find_nearest_enemy = function() return nil end
+    return moon
+  end
+
+  test('shredders: a strike never sends shredders to another surface', function()
+    local members, big = battle()
+    local ids = {}
+    for _, r in ipairs(records()) do ids[#ids + 1] = r.id end
+    local moon = moon_surface({big})
+    assert(shredders.strike(ids, moon, {x = 0, y = 0}, ctx.players()[1].force, 40) == 0, 'shredders sent across surfaces')
+    for _, r in ipairs(records()) do assert(r.state ~= 'igniting') end
+  end)
+
+  test('shredders: losses on another surface than the group send nobody', function()
+    local members = battle()
+    local moon = moon_surface()
+    members[1].surface, members[1].surface_index = moon, 2
+    members[2].surface, members[2].surface_index = moon, 2
+    die(members[1])
+    assert(die(members[2]) == 0, 'distress on another surface sent the group')
+  end)
+
+  test('shredders: a group keeps its surface while it has a soldier there, and resets on a move', function()
+    building()
+    engine()
+    local members = division(1, 100)
+    shredder(0, 0)
+    shredders.tick()
+    local group = storage.shredders.groups['1:1']
+    assert(group.surface_index == 1)
+    local moon = moon_surface()
+    members[1].surface, members[1].surface_index = moon, 2
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(group.surface_index == 1, 'group jumped to the surface of its first-listed soldier')
+    members[2].surface, members[2].surface_index = moon, 2
+    storage.shredders.dirty = false
+    game.tick = game.tick + 60
+    shredders.update_group(1, 1)
+    assert(group.surface_index == 2, 'group stayed on an empty surface')
+    assert(storage.shredders.dirty, 'surface change left the split untouched')
+  end)
+
+  test('shredders: shadows follow the character, not the remote view', function()
+    local player = danger()
+    player.position = {x = 5000, y = 0}
+    player.surface = moon_surface()
+    shredders.watch()
+    local shadow = storage.shredders.shadows[1]
+    assert(shadow, 'danger at the character ignored while the camera looked away')
+    assert(shadow.surface_index == 1 and shadow.point.x * shadow.point.x + shadow.point.y * shadow.point.y < 60 * 60,
+      'shadow follows the camera')
+  end)
+
+  test('shredders: an unreachable target is skipped, and with none reachable the shredder stands down', function()
+    local members, big, small = battle()
+    die(members[1]); die(members[2])
+    local r
+    for _, x in ipairs(records()) do if x.target == big then r = x end end
+    shredders.on_command_completed(r.id, 0)
+    shredders.on_command_completed(r.id, defines.behavior_result.fail)
+    assert(r.target == small, 'retargeted the same unreachable enemy')
+    shredders.on_command_completed(r.id, defines.behavior_result.fail)
+    assert(r.state == 'parked' and r.entity.name == names.shredder, 'kept charging with nothing reachable')
+  end)
+
+  test('shredders: retargets stop after a limit', function()
+    building()
+    local _, enemy = engine()
+    local members = division(1, 100, 1)
+    shredder(0, 1)
+    shredders.tick()
+    for i = 1, 10 do enemy_unit(enemy, 105, i, 400 + i) end
+    die(members[1])
+    local r = records()[1]
+    shredders.on_command_completed(r.id, 0)
+    -- RETARGETS new targets, then the next failure gives up.
+    for _ = 1, shredders.RETARGETS do
+      shredders.on_command_completed(r.id, defines.behavior_result.fail)
+      assert(r.state == 'charging', 'gave up before the limit')
+    end
+    shredders.on_command_completed(r.id, defines.behavior_result.fail)
+    assert(r.state == 'parked', 'retargeted without limit')
+  end)
+
+  test('shredders: a killing blow does not bring a shredder back', function()
+    local _, enemy = engine()
+    local e, record = shredder(0, 0)
+    local biter = enemy_unit(enemy, 3, 0, 400)
+    shredders.on_damaged{entity = e, cause = biter, final_health = 0}
+    assert(record.state == 'moving' and record.entity == e, 'dying shredder swapped for a charger')
+  end)
+
+  test('shredders: an emptied shadow refills while the danger lasts', function()
+    local player = danger()
+    shredders.watch()
+    local shadow = storage.shredders.shadows[1]
+    for _, id in ipairs(shadow.members) do storage.shredders.units[id].shadow = nil end
+    shadow.members = {}
+    game.tick = game.tick + 60
+    shredders.watch()
+    local now = storage.shredders.shadows[1]
+    assert(now and #now.members > 0, 'player left without a shadow in danger')
+  end)
+
+  test('shredders: a self-defence ram does not block the division distress', function()
+    local members, big, small, enemy = battle()
+    local r = records()[1]
+    local biter = enemy_unit(enemy, 1, 1, 15)
+    shredders.on_damaged{entity = r.entity, cause = biter, final_health = 500}
+    assert(r.state == 'charging')
+    die(members[1])
+    assert(die(members[2]) == 1, 'one ramming shredder silenced the division')
+  end)
+
+  test('shredders: targets killed by others do not use up the retarget limit', function()
+    building()
+    local _, enemy = engine()
+    local members = division(1, 100, 1)
+    shredder(0, 1)
+    shredders.tick()
+    local foes = {}
+    for i = 1, 10 do foes[i] = enemy_unit(enemy, 105, i, 400 + i) end
+    die(members[1])
+    local r = records()[1]
+    shredders.on_command_completed(r.id, 0)
+    for _ = 1, shredders.RETARGETS + 2 do
+      r.target.valid = false
+      shredders.on_command_completed(r.id, defines.behavior_result.success)
+      assert(r.state == 'charging', 'gave up while enemies were left')
+    end
+  end)
 end
