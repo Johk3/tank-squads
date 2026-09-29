@@ -6,6 +6,8 @@ import struct
 import zlib
 
 ROOT = Path(__file__).resolve().parent.parent
+# Text and provenance chunks carry editor metadata the mod never needs.
+METADATA = {b"caBX", b"tEXt", b"iTXt", b"zTXt", b"eXIf"}
 
 
 def png_rows(path):
@@ -18,6 +20,7 @@ def png_rows(path):
         payload = content[offset + 8:offset + 8 + size]
         expected_crc = struct.unpack_from(">I", content, offset + 8 + size)[0]
         assert zlib.crc32(kind + payload) == expected_crc, f"Corrupt PNG chunk in {path}"
+        assert kind not in METADATA, f"Embedded {kind.decode()} metadata in {path.relative_to(ROOT)}"
         if kind == b"IHDR":
             width, height, depth, color, compression, filtering, interlace = struct.unpack(">IIBBBBB", payload)
             assert (depth, color, compression, filtering, interlace) == (8, 6, 0, 0, 0), "Expected non-interlaced RGBA8"
