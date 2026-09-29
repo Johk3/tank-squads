@@ -144,6 +144,7 @@ local function clear_player(event)
   escort_gui.close(event.player_index)
   unit_card.clear(event.player_index)
   veterans_gui.close(event.player_index)
+  engineers.close_window(event.player_index)
   if event.name == defines.events.on_player_removed then panel.clear_player(event.player_index) end
   if storage.patrol_mode then storage.patrol_mode[event.player_index] = nil end
   local player = game.get_player(event.player_index)
@@ -329,6 +330,7 @@ script.on_event(defines.events.on_gui_click, function(event)
   if barracks_gui.click(event) then panel.update(event.player_index); return end
   if escort_gui.click(event) then panel.update(event.player_index); return end
   if veterans_gui.click(event) then panel.update(event.player_index); return end
+  if engineers.click(event) then panel.update(event.player_index); return end
   if panel.click(event) then panel.update(event.player_index); return end
   local element = event.element
   if not (element and element.valid) then return end
@@ -458,6 +460,11 @@ script.on_nth_tick(PHASE_TICKS, function(event)
     panel.update(player_index)
     barracks_gui.refresh(player_index)
   end
+  engineers.slow_sweep(panel.update)
+end)
+
+script.on_event(defines.events.on_gui_checked_state_changed, function(event)
+  if engineers.checked(event) then panel.update(event.player_index) end
 end)
 
 remote.add_interface("tank-squads", {

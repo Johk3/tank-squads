@@ -2,6 +2,8 @@ local colors = require("scripts.render").COLORS
 local divisions = require("scripts.divisions")
 local insignia = require("scripts.insignia")
 local veterans_gui = require("scripts.veterans_gui")
+local names = require("scripts.names")
+local engineers = require("scripts.engineers.init")
 local M = {}
 
 local NAME = "tank_squads_divisions"
@@ -51,6 +53,8 @@ local function build(player)
   filler.style.height = 24
   filler.style.minimal_width = 24
   title_button(bar, "veterans", "tank-squad-rank-3", {"tank-squads.veterans-open"})
+  -- Shown only while the force has constructors (see M.update).
+  title_button(bar, "engineers", "item/" .. names.constructor_recruit, {"tank-squads.engineers-open"})
   title_button(bar, "compact", "utility/list_view", {"tank-squads.divisions-compact"})
   title_button(bar, "collapse", "utility/collapse", {"tank-squads.divisions-collapse"})
   local body = frame.add{type = "flow", name = "body", direction = "vertical"}
@@ -102,7 +106,8 @@ function M.update(player_index)
   for _, record in pairs(slots) do
     if #record.members > 0 or divisions.is_reinforced(record) then populated = true; break end
   end
-  if not populated then
+  local constructors = engineers.count(player.force_index) > 0
+  if not populated and not constructors then
     if frame then frame.visible = false end
     -- A panel from before the window moved to the screen.
     local old = player.gui.left[NAME]
@@ -112,12 +117,17 @@ function M.update(player_index)
   local choice = layout(player_index)
   -- A window from before the rows held insignias or before the veterans
   -- button is rebuilt.
-  if frame and not (frame.body.divisions.row_0 and frame.titlebar.veterans) then frame.destroy(); frame = nil end
+  if frame and not (frame.body.divisions.row_0 and frame.titlebar.veterans and frame.titlebar.engineers) then
+    frame.destroy()
+    frame = nil
+  end
   if not frame then
     frame = build(player)
     arrange(frame, choice)
   end
   frame.visible = true
+  local button = frame.titlebar.engineers
+  if button.visible ~= constructors then button.visible = constructors end
   -- A folded window shows no rows, so it skips them until it is unfolded.
   if choice.collapsed then return end
   local compact = choice.compact == true
@@ -180,6 +190,7 @@ function M.click(event)
   if not (element and element.valid) then return false end
   local action = element.tags.tank_squads_panel
   if action == "veterans" then veterans_gui.toggle(event.player_index); return true end
+  if action == "engineers" then engineers.toggle_window(event.player_index); return true end
   if action ~= "collapse" and action ~= "compact" then return false end
   local choice = layout(event.player_index)
   if action == "collapse" then choice.collapsed = not choice.collapsed or nil

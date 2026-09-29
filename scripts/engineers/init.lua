@@ -7,6 +7,7 @@ local constructor = require('scripts.engineers.constructor')
 local teams = require('scripts.engineers.teams')
 local task_force = require('scripts.engineers.task_force')
 local loans = require('scripts.engineers.loans')
+local window = require('scripts.engineers.window')
 local names = require('scripts.names')
 
 local M = {}
@@ -16,6 +17,26 @@ M.deploy = constructor.deploy
 M.count = constructor.count
 M.on_ghost = ghosts.add
 M.set_pool = teams.set_pool
+M.toggle_window = window.toggle
+M.close_window = window.close
+M.click = window.click
+M.checked = window.checked
+M.refresh_windows = window.refresh_all
+
+-- Once per second. Without the engineers state this is one table check.
+-- Open windows refresh; a player with constructors but no division still
+-- gets the panel (and its engineers button) through update_panel.
+function M.slow_sweep(update_panel)
+  local s = state.peek()
+  if not s then return end
+  window.refresh_all()
+  if not next(s.constructors) then return end
+  for _, player in pairs(game.connected_players) do
+    if not (storage.divisions and storage.divisions[player.index]) and constructor.count(player.force_index) > 0 then
+      update_panel(player.index)
+    end
+  end
+end
 
 -- The last constructor gone lets its team go at once.
 function M.unregister(unit_number)

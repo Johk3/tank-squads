@@ -1061,4 +1061,78 @@ return function(ctx)
     constructor.tick()
     assert(record.state == 'healing' and record.entity.command.destination.x == 90, 'kept heading to a lost barracks')
   end)
+  test('engineers: the division panel shows the engineers button only with constructors', function()
+    local E = ctx.engineers
+    E.engine()
+    local panel = require('scripts.panel')
+    panel.update(1)
+    local frame = ctx.players()[1].gui.screen.tank_squads_divisions
+    assert(not frame or not frame.visible, 'panel shown with nothing in it')
+    require('scripts.engineers.init').register(E.constructor_entity(0, 0))
+    panel.update(1)
+    frame = ctx.players()[1].gui.screen.tank_squads_divisions
+    assert(frame and frame.visible and frame.titlebar.engineers.visible, 'no engineers button')
+    assert(panel.click({player_index = 1, element = frame.titlebar.engineers}))
+    assert(ctx.players()[1].gui.screen.tank_squads_engineers.valid, 'the button did not open the window')
+  end)
+
+  test('engineers: the engineers window marks escort divisions and lists constructors', function()
+    local E = ctx.engineers
+    E.engine()
+    local engineers = require('scripts.engineers.init')
+    local divisions = require('scripts.divisions')
+    divisions.assign(1, 2, {soldier()})
+    local record = engineers.register(E.constructor_entity(5, 5))
+    engineers.toggle_window(1)
+    local frame = ctx.players()[1].gui.screen.tank_squads_engineers
+    assert(frame and frame.valid and frame.style.width == 300)
+    local body = frame.body
+    assert(body.pool.cell_2.visible and not body.pool.cell_3.visible, 'division rows wrong')
+    local box = body.pool.cell_2.pool_2
+    box.state = true
+    assert(engineers.checked({player_index = 1, element = box}))
+    assert(divisions.record(1, 2).mode == 'engineer', 'the tick did not mark the division')
+    local row = body.list['state_' .. record.id]
+    assert(row and row.style.single_line, 'constructor row missing or wrapping')
+    assert(engineers.click({player_index = 1, element = body.list['map_' .. record.id]}))
+    assert(ctx.players()[1].controller.type == defines.controllers.remote, 'map not opened')
+    engineers.toggle_window(1)
+    assert(not frame.valid, 'window did not close')
+  end)
+
+  test('engineers: window and panel tolerate a save without engineers', function()
+    ctx.engineers.engine()
+    local engineers = require('scripts.engineers.init')
+    engineers.refresh_windows()
+    engineers.toggle_window(1)
+    engineers.toggle_window(1)
+    require('scripts.panel').update(1)
+    assert(storage.engineers == nil, 'the window created the engineers state')
+  end)
+
+  test('engineers: the slow sweep does no per-player work without engineers state', function()
+    ctx.engineers.engine()
+    local engineers = require('scripts.engineers.init')
+    local real, touched, updated = game.connected_players, false, false
+    game.connected_players = setmetatable({}, {__index = function() touched = true end,
+      __pairs = function() touched = true; return next, {}, nil end})
+    engineers.slow_sweep(function() updated = true end)
+    game.connected_players = real
+    assert(not touched and not updated, 'per-player work without engineers state')
+  end)
+
+  test('engineers: the slow sweep refreshes only open windows and panels of players with constructors', function()
+    local E = ctx.engineers
+    E.engine()
+    local engineers = require('scripts.engineers.init')
+    local record = engineers.register(E.constructor_entity(5, 5))
+    local updates = 0
+    engineers.slow_sweep(function() updates = updates + 1 end)
+    assert(updates == 1, 'player with constructors but no division got no panel update')
+    engineers.toggle_window(1)
+    engineers.unregister(record.entity.unit_number)
+    engineers.slow_sweep(function() updates = updates + 1 end)
+    assert(updates == 1, 'panel updated with no constructor left')
+    assert(ctx.players()[1].gui.screen.tank_squads_engineers.body.list.none, 'open window did not refresh')
+  end)
 end
