@@ -152,7 +152,10 @@ local function clear_player(event)
 end
 script.on_event(defines.events.on_player_removed, clear_player)
 script.on_event(defines.events.on_player_changed_force, clear_player)
-script.on_event(defines.events.on_forces_merged, shredders.on_forces_merged)
+script.on_event(defines.events.on_forces_merged, function(event)
+  shredders.on_forces_merged(event)
+  engineers.on_forces_merged(event)
+end)
 
 -- Older saves could run a patrol or scout on the drag selection, which now
 -- owns nobody. The job moves to the lowest empty division; with none free
@@ -204,10 +207,10 @@ script.on_configuration_changed(function()
     for _, entity in pairs(surface.find_entities_filtered{name = names.shredder_names}) do
       shredders.register(entity)
     end
-    for _, entity in pairs(surface.find_entities_filtered{name = names.constructor}) do
-      engineers.register(entity)
-    end
   end
+  -- Registers every constructor, lets go of old claims and reads the ghosts
+  -- again.
+  engineers.reconcile()
   headquarters.reconcile()
   veterans.reapply()
   upgrade_selections()
@@ -252,6 +255,8 @@ script.on_event(defines.events.on_entity_died, function(event)
   elseif names.soldier_set[entity.name] then
     -- Before divisions.forget: the loss window reads the division roster.
     shredders.on_soldier_died(entity)
+    -- Also before divisions.forget: a task force reads the lender's loan.
+    engineers.forget_soldier(entity)
     weapons.unregister(entity.unit_number)
     -- Order matters: the dying entity is still .valid during on_entity_died,
     -- so divisions.forget must run first to drop it from storage.divisions
@@ -286,6 +291,7 @@ script.on_event(defines.events.on_ai_command_completed, function(event)
   if shredders.on_command_completed(event.unit_number, event.result) then return end
   headquarters.on_command_completed(event.unit_number)
   if combat.on_command_completed(event.unit_number, event.result) then return end
+  if engineers.on_command_completed(event.unit_number, event.result) then return end
   if cover.on_command_completed(event.unit_number) then return end
   if scout.on_command_completed(event.unit_number, event.result) then return end
   if escort.on_command_completed(event.unit_number, event.result) then return end
@@ -441,6 +447,7 @@ script.on_nth_tick(PHASE_TICKS, function(event)
   escort.tick(phase)
   commands.tick(phase)
   shredders.tick(phase)
+  engineers.tick(phase)
   vision.tick(phase, divisions.PHASES)
   weapons.tick(phase, divisions.PHASES)
   headquarters.tick(phase, divisions.PHASES)
@@ -511,6 +518,11 @@ remote.add_interface("tank-squads", {
   vision_tick = function() vision.tick(nil, divisions.PHASES) end,
   headquarters_tick = function() headquarters.tick(nil, divisions.PHASES) end,
   shredders_tick = function() shredders.tick() end,
+  engineers_tick = function() engineers.tick() end,
+  engineers_min_team = function(value) return engineers.set_min_team(value) end,
+  engineers_constructor = function(unit_number) return engineers.describe(unit_number) end,
+  engineers_set_pool = function(player_index, n, value) return engineers.set_pool(player_index, n, value) end,
+  engineers_build = function(unit_number) return engineers.build_now(unit_number) end,
   cover_tick = function() cover.tick() end,
   shredders_strike = function(ids, surface_index, position, force_name, radius)
     return shredders.strike(ids, game.surfaces[surface_index], position, game.forces[force_name], radius)

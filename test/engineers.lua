@@ -784,4 +784,222 @@ return function(ctx)
     assert(early == 0, 'called after one loss of three')
     assert(#calls == 1 and calls[1][1] == 1 and calls[1][2] == 1, 'did not call division 1')
   end)
+
+  local function working(x, y)
+    local E = ctx.engineers
+    local record = require('scripts.engineers.constructor').register(E.constructor_entity(x or 0, y or 0))
+    storage.engineers.min_team = 0
+    return record
+  end
+
+  local function add_ghost(x, y)
+    local g = ctx.engineers.ghost(x, y)
+    require('scripts.engineers.ghosts').add(g)
+    return g
+  end
+
+  test('engineers: the standing spot lies beside the cluster, toward the constructor', function()
+    local constructor = require('scripts.engineers.constructor')
+    local spot = constructor.spot({x = 20.5, y = 0}, {x = 0, y = 0}, {{x = 20, y = 0}, {x = 21, y = 0}})
+    assert(math.abs(spot.x - 17.5) < 1e-9 and spot.y == 0)
+    spot = constructor.spot({x = 0, y = 0}, {x = 0, y = 0}, {{x = 0, y = 0}})
+    assert(spot.x == 0 and math.abs(spot.y - 2.5) < 1e-9, 'no fallback direction')
+  end)
+
+  test('engineers: without an escort a constructor waits at the barracks', function()
+    local E = ctx.engineers
+    ctx.building()
+    E.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local record = constructor.register(E.constructor_entity(30, 0))
+    add_ghost(50, 0)
+    constructor.tick()
+    assert(record.state == 'waiting' and record.entity.command.destination.x == 0, 'did not head home')
+    local flying = ctx.players()[1].flying
+    assert(flying[1] and flying[1].text[1] == 'tank-squads.constructor-waiting', 'no waiting message')
+  end)
+
+  test('engineers: a constructor walks beside its cluster and builds it', function()
+    ctx.engineers.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local record = working()
+    local a, b = add_ghost(20, 0), add_ghost(21, 0)
+    constructor.tick()
+    assert(record.state == 'moving' and #record.cluster == 2)
+    local d = record.entity.command.destination
+    assert(math.abs(d.x - 17.5) < 1e-9 and d.y == 0, 'stood at ' .. d.x)
+    constructor.on_command_completed(record.id, defines.behavior_result.success)
+    assert(record.state == 'building' and record.crane)
+    game.tick = record.release_tick
+    constructor.tick(99)
+    assert(not a.valid and not b.valid, 'walls not placed on the release frame')
+    game.tick = record.done_tick
+    constructor.tick(99)
+    assert(record.state == 'idle', 'did not look for more work')
+  end)
+
+  test('engineers: a cluster it cannot reach is blocked for five minutes', function()
+    ctx.engineers.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local ghosts = require('scripts.engineers.ghosts')
+    local record = working()
+    local g = add_ghost(20, 0)
+    constructor.tick()
+    constructor.on_command_completed(record.id, defines.behavior_result.fail)
+    assert(record.state == 'moving', 'gave up after one failed path')
+    constructor.on_command_completed(record.id, defines.behavior_result.fail)
+    assert(record.state == 'seeking' and storage.engineers.blocked[g.unit_number] == game.tick + ghosts.BLOCK)
+  end)
+
+  test('engineers: enemies within 80 tiles pause the work until 5 calm seconds', function()
+    local E = ctx.engineers
+    local _, enemy = E.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local record = working()
+    add_ghost(20, 0)
+    local biter = E.enemy_unit(enemy, 60, 0)
+    constructor.tick()
+    assert(record.state == 'paused')
+    biter.valid = false
+    constructor.tick()
+    assert(record.state == 'paused', 'resumed at once')
+    game.tick = game.tick + constructor.CALM
+    constructor.tick()
+    assert(record.state == 'moving', 'never resumed')
+  end)
+
+  test('engineers: a hurt constructor heals at a barracks, then works again', function()
+    local b = ctx.building()
+    ctx.engineers.engine()
+    b.position = {x = -50, y = 0}
+    local constructor = require('scripts.engineers.constructor')
+    local record = working()
+    record.entity.health = 100
+    constructor.tick()
+    assert(record.state == 'healing' and record.entity.command.destination.x == -50)
+    record.entity.health = 800
+    constructor.tick()
+    assert(record.state == 'idle', 'still healing at full health')
+  end)
+
+  test('engineers: a nest by the ghosts calls a task force, then work goes on', function()
+    local E = ctx.engineers
+    local _, enemy = E.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local task_force = require('scripts.engineers.task_force')
+    local record = working()
+    add_ghost(50, 0)
+    local spawner = E.enemy_unit(enemy, 70, 0, 'biter-spawner', 'unit-spawner', 350)
+    require('scripts.divisions').assign(1, 1, {soldier(nil, nil, 10, 0), soldier(nil, nil, 11, 0),
+      soldier(nil, nil, 12, 0)})
+    constructor.tick()
+    assert(record.state == 'task_force' and record.task_force, 'no task force called')
+    spawner.valid = false
+    task_force.tick()
+    constructor.tick()
+    assert(record.state == 'moving', 'did not return to the cluster')
+  end)
+
+  test('engineers: a nest too strong blocks its ghosts', function()
+    local E = ctx.engineers
+    local _, enemy = E.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local record = working()
+    local g = add_ghost(50, 0)
+    E.enemy_unit(enemy, 70, 0, 'biter-spawner', 'unit-spawner', 350)
+    constructor.tick()
+    assert(storage.engineers.blocked[g.unit_number], 'ghosts by a nest stayed open')
+    assert(record.state ~= 'task_force')
+    local flying = ctx.players()[1].flying
+    assert(flying[#flying].text[1] == 'tank-squads.constructor-too-strong')
+  end)
+
+  test('engineers: entry points tolerate a save without engineers', function()
+    local E = ctx.engineers
+    E.engine()
+    local engineers = require('scripts.engineers.init')
+    engineers.tick(0)
+    engineers.tick()
+    assert(engineers.on_command_completed(12345, defines.behavior_result.success) == false)
+    engineers.forget_soldier(soldier())
+    engineers.on_ghost(E.ghost(1, 1))
+    engineers.on_post_died({})
+    assert(engineers.describe(1) == nil)
+    assert(storage.engineers == nil, 'an entry point created the engineers state')
+  end)
+
+  test('engineers: the last constructor gone lets its team go', function()
+    local E = ctx.engineers
+    E.engine()
+    local engineers = require('scripts.engineers.init')
+    local s1 = soldier(nil, nil, 1, 0)
+    require('scripts.divisions').assign(1, 3, {s1})
+    engineers.set_pool(1, 3, true)
+    local record = engineers.register(E.constructor_entity(10, 0))
+    engineers.tick(0)
+    assert(storage.engineers.team_of[s1.unit_number] == record.id)
+    engineers.unregister(record.id)
+    assert(storage.engineers.team_of[s1.unit_number] == nil and next(storage.engineers.teams) == nil)
+  end)
+
+  test('engineers: an idle constructor seeks again only for a new ghost or after a minute', function()
+    ctx.engineers.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local ghosts = require('scripts.engineers.ghosts')
+    local record = working()
+    constructor.tick()
+    assert(record.state == 'idle')
+    local idle_since = game.tick
+    local claims, claim = 0, ghosts.claim
+    ghosts.claim = function(...) claims = claims + 1; return claim(...) end
+    local ok, err = pcall(function()
+      while game.tick + 60 < idle_since + ghosts.RECHECK do
+        game.tick = game.tick + 60
+        constructor.tick()
+      end
+      assert(claims == 0, 'searched ' .. claims .. ' times with no new ghost')
+      game.tick = idle_since + ghosts.RECHECK
+      constructor.tick()
+      assert(claims == 1 and record.state == 'idle', 'no search after a minute')
+      game.tick = game.tick + 60
+      constructor.tick()
+      assert(claims == 1, 'searched again right after the minute')
+      add_ghost(20, 0)
+      game.tick = game.tick + 60
+      constructor.tick()
+      assert(claims == 2 and record.state == 'moving', 'a new ghost did not wake it')
+    end)
+    ghosts.claim = claim
+    assert(ok, err)
+  end)
+
+  test('engineers: building at once lets go of ghosts kept under a unit', function()
+    ctx.engineers.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local record = working()
+    local free, covered = add_ghost(20, 0), add_ghost(21, 0)
+    local blocker = soldier(nil, nil, 21, 0)
+    blocker.type = 'unit'
+    assert(constructor.build_now(record) == 1 and not free.valid and covered.valid)
+    assert(next(storage.engineers.claims) == nil, 'a ghost under a unit stayed claimed')
+    assert(record.cluster == nil and record.state == 'seeking')
+  end)
+
+  test('engineers: a constructor that vanished without an event lets its team go', function()
+    local E = ctx.engineers
+    E.engine()
+    local engineers = require('scripts.engineers.init')
+    local s1 = soldier(nil, nil, 1, 0)
+    require('scripts.divisions').assign(1, 3, {s1})
+    engineers.set_pool(1, 3, true)
+    local record = engineers.register(E.constructor_entity(10, 0))
+    engineers.tick(0)
+    assert(storage.engineers.team_of[s1.unit_number] == record.id)
+    record.entity.valid = false
+    require('scripts.engineers.constructor').tick()
+    assert(storage.engineers.constructors[record.id] == nil)
+    engineers.tick(0)
+    assert(storage.engineers.team_of[s1.unit_number] == nil and next(storage.engineers.teams) == nil,
+      'the team outlived its constructor')
+  end)
 end
