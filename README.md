@@ -67,6 +67,15 @@ Shredders are unmanned rammers. Train them at a barracks with the **Build Shredd
 - When you walk near a large pack of enemies or a nest, up to three shredders follow 40 tiles behind you and strike as soon as you are hurt. They return to the divisions after ten quiet seconds.
 - A barracks set to build shredders keeps building them even when its linked division is full.
 
+### Constructors
+
+Constructors are unmanned wall-laying vehicles. Train them at a barracks with the **Build Constructor** recipe. They never join a division and take no orders:
+
+- They build the stone wall and gate ghosts that your construction robots cannot reach, nearest first. They never run out of walls. Each crane cycle sets down up to nine walls and clears trees and rocks in the way.
+- Open the **Engineers** window with the constructor button on the division panel. It appears once you have a constructor. Tick the divisions that escort your constructors: their soldiers are shared out between the constructors, up to eight each. Any new order to a division takes it out of the escort.
+- A constructor with fewer than two escorts waits at the nearest barracks or headquarters. Enemies within 80 tiles pause the work until five seconds after the fight. A damaged constructor repairs at a barracks.
+- When a nest lies next to the walls, the constructor borrows soldiers from nearby idle divisions, the spare soldiers of patrols (a patrol keeps one soldier per 64 tiles of its route) and soldiers in no division. They clear the nest, then return to their jobs. Their divisions' shredders join in if they take heavy losses.
+
 ### Mobile headquarters
 
 Research **Mobile headquarters** (automation to utility science), then choose **Build Mobile Headquarters** in a barracks. It costs 400 steel, 100 gears, 40 electric engines, 40 processing units, 40 solar panels, 40 accumulators and 4 roboports, and takes 60 seconds.

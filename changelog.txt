@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.32.0
+Date: 2026-09-29
+  Features:
+    - New unit: the Constructor, an unmanned wall-laying vehicle built at the barracks from steel plate, engine units and stone bricks. It never joins a division and takes no orders.
+    - Constructors build the stone wall and gate ghosts your construction robots cannot reach, nearest first, from an endless supply of walls. Each crane cycle sets down up to nine walls and clears trees and rocks in their way.
+    - Mark divisions as engineer escort in the new Engineers window. Their soldiers are shared out between your constructors, up to eight each, and ring them as they work. A constructor with fewer than two escorts waits at the nearest barracks or headquarters.
+    - Enemies within 80 tiles pause the work until five seconds after the fight.
+    - When a nest lies next to the walls, the constructor borrows soldiers from nearby idle divisions, the spare soldiers of patrols and soldiers in no division, enough for the nest's worms and spawners. They clear the nest with the usual nest assault, call their divisions' shredders if they take heavy losses, and return to their jobs afterwards. A nest too strong for the soldiers nearby is tried again after five minutes.
+---------------------------------------------------------------------------------------------------
 Version: 0.31.0
 Date: 2026-09-29
   Features:
