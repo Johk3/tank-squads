@@ -40,6 +40,8 @@ local function on_built(event)
     shredders.register(entity)
   elseif entity and entity.valid and entity.name == names.constructor then
     engineers.register(entity)
+  elseif entity and entity.valid and entity.name == "entity-ghost" then
+    engineers.on_ghost(entity)
   end
 end
 
@@ -80,10 +82,15 @@ local died_filters = {}
 for _, filter in ipairs(filters) do died_filters[#died_filters + 1] = filter end
 for _, filter in ipairs(veterans.KILL_FILTERS) do died_filters[#died_filters + 1] = filter end
 
+-- Wall and gate ghosts, for constructors. Only build events take them.
+filters[#filters + 1] = {filter = "ghost_name", name = "stone-wall"}
+filters[#filters + 1] = {filter = "ghost_name", name = "gate"}
 script.on_event(defines.events.on_built_entity, on_built, filters)
 script.on_event(defines.events.on_robot_built_entity, on_built, filters)
 script.on_event(defines.events.script_raised_built, on_built, filters)
 script.on_event(defines.events.script_raised_revive, on_built, filters)
+script.on_event(defines.events.on_post_entity_died, engineers.on_post_died,
+  {{filter = "type", type = "wall"}, {filter = "type", type = "gate"}})
 script.on_event(defines.events.on_script_trigger_effect, function(event)
   if shredders.on_trigger(event) then return end
   local shooter = weapons.on_shot(event)

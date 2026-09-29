@@ -115,6 +115,20 @@ return function(ctx)
     return e
   end
 
+  local function chunks_of(points)
+    local ghosts = require('scripts.engineers.ghosts')
+    local chunks, entries = {}, {}
+    for id, p in ipairs(points) do
+      local cx, cy = ghosts.chunk_of(p)
+      local key = ghosts.key(cx, cy)
+      chunks[key] = chunks[key] or {cx = cx, cy = cy, entries = {}, count = 0}
+      local entry = {id = id, position = {x = p.x, y = p.y}, chunk = key}
+      chunks[key].entries[id], chunks[key].count, entries[id] = entry, chunks[key].count + 1, entry
+    end
+    return chunks, entries
+  end
+  local function every() return true end
+
   ctx.engineers = {engine = engine, constructor_entity = constructor_entity, ghost = ghost, enemy_unit = enemy_unit,
     all = all}
 
@@ -203,5 +217,109 @@ return function(ctx)
     assert(not loans.on_loan(7))
     loans.lend(8, {task_force = 1})
     assert(loans.finish(8).task_force == 1 and not loans.on_loan(8))
+  end)
+
+  test('engineers: nearest ghost across chunks', function()
+    local ghosts = require('scripts.engineers.ghosts')
+    local chunks = chunks_of{{x = 100, y = 100}, {x = 40, y = 0}, {x = 33, y = 0}, {x = -5, y = 0}}
+    assert(ghosts.nearest(chunks, {x = 0, y = 0}, every).id == 4)
+    assert(ghosts.nearest(chunks, {x = 36, y = 0}, every).id == 3)
+    assert(ghosts.nearest(chunks, {x = 0, y = 0}, function(e) return e.id ~= 4 end).id == 3)
+    assert(ghosts.nearest(chunks, {x = 0, y = 0}, function() return false end) == nil)
+  end)
+
+  test('engineers: a cluster is the seed and its nearest accepted neighbours', function()
+    local ghosts = require('scripts.engineers.ghosts')
+    local points = {}
+    for x = 0, 10 do points[#points + 1] = {x = x, y = 0} end
+    local chunks, entries = chunks_of(points)
+    local c = ghosts.cluster(chunks, entries[1], 3, 9, every)
+    assert(#c == 4 and c[1].id == 1 and c[2].id == 2 and c[4].id == 4)
+    c = ghosts.cluster(chunks, entries[1], 3, 9, function(e) return e.id ~= 2 end)
+    assert(#c == 3 and c[2].id == 3)
+    local grid = {}
+    for x = -2, 2 do for y = -2, 2 do grid[#grid + 1] = {x = x, y = y} end end
+    chunks, entries = chunks_of(grid)
+    assert(#ghosts.cluster(chunks, entries[13], 3, 9, every) == 9, 'cluster exceeded its maximum')
+  end)
+
+  test('engineers: ghosts register only on surfaces a constructor visited', function()
+    local E = ctx.engineers
+    local _, _, surface = E.engine()
+    local ghosts = require('scripts.engineers.ghosts')
+    local constructor = require('scripts.engineers.constructor')
+    local first = E.ghost(1, 1)
+    E.ghost(2, 2, 'iron-chest')
+    ghosts.add(first)
+    assert(storage.engineers == nil, 'a ghost created the engineers state')
+    constructor.register(E.constructor_entity(0, 0))
+    local bucket = ghosts.bucket(surface.index, 1)
+    assert(bucket and bucket.count == 1, 'the first constructor did not read the surface')
+    local second = E.ghost(3, 3, 'gate')
+    ghosts.add(second)
+    ghosts.add(second)
+    assert(bucket.count == 2, 'a ghost counted twice')
+  end)
+
+  test('engineers: claim skips ghosts robots can reach', function()
+    local E = ctx.engineers
+    local _, _, surface = E.engine()
+    local ghosts = require('scripts.engineers.ghosts')
+    local constructor = require('scripts.engineers.constructor')
+    local near, far = E.ghost(5, 0), E.ghost(20, 0)
+    surface.networks = {{x = 5, y = 0, r = 4}}
+    local record = constructor.register(E.constructor_entity(0, 0))
+    local cluster = ghosts.claim(record, 3, 9)
+    assert(cluster and #cluster == 1 and cluster[1].entity == far, 'took a ghost robots can reach')
+    assert(storage.engineers.claims[far.unit_number] == record.id)
+    ghosts.release(cluster)
+    surface.networks = {}
+    assert(ghosts.claim(record, 3, 9)[1].entity == far, 'asked about coverage again before a minute passed')
+    ghosts.release({{id = far.unit_number}})
+    game.tick = game.tick + ghosts.RECHECK + 1
+    assert(ghosts.claim(record, 3, 9)[1].entity == near, 'never asked about coverage again')
+  end)
+
+  test('engineers: claimed and blocked ghosts go to nobody else', function()
+    local E = ctx.engineers
+    E.engine()
+    local ghosts = require('scripts.engineers.ghosts')
+    local constructor = require('scripts.engineers.constructor')
+    local g1, g2 = E.ghost(2, 0), E.ghost(30, 0)
+    local a = constructor.register(E.constructor_entity(0, 0))
+    local b = constructor.register(E.constructor_entity(0, 1))
+    local c1 = ghosts.claim(a, 3, 9)
+    assert(c1[1].entity == g1 and ghosts.claim(b, 3, 9)[1].entity == g2)
+    ghosts.block(c1, 600)
+    assert(ghosts.claim(a, 3, 9) == nil, 'took a blocked or claimed ghost')
+    game.tick = game.tick + 601
+    assert(ghosts.claim(a, 3, 9)[1].entity == g1, 'block never expired')
+  end)
+
+  test('engineers: a vanished ghost leaves the registry and its chunk', function()
+    local E = ctx.engineers
+    local _, _, surface = E.engine()
+    local ghosts = require('scripts.engineers.ghosts')
+    local record = require('scripts.engineers.constructor').register(E.constructor_entity(0, 0))
+    local g = E.ghost(4, 4)
+    ghosts.add(g)
+    g.valid = false
+    assert(ghosts.claim(record, 3, 9) == nil)
+    local bucket = ghosts.bucket(surface.index, 1)
+    assert(bucket.count == 0 and next(bucket.chunks) == nil, 'empty chunk kept')
+  end)
+
+  test('engineers: build and death events feed the registry', function()
+    local E = ctx.engineers
+    E.engine()
+    dofile('control.lua')
+    local handlers = ctx.handlers()
+    handlers[defines.events.on_built_entity]{entity = E.constructor_entity(0, 0)}
+    local g = E.ghost(6, 0)
+    handlers[defines.events.on_built_entity]{entity = g}
+    local wall = E.ghost(9, 0)
+    handlers[defines.events.on_post_entity_died]{ghost = wall}
+    local ghosts = require('scripts.engineers.ghosts')
+    assert(ghosts.bucket(1, 1).count == 2, 'events did not register the ghosts')
   end)
 end

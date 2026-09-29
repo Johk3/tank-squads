@@ -9,6 +9,7 @@
 -- 'task_force', 'healing' or 'idle'.
 local names = require('scripts.names')
 local state = require('scripts.engineers.state')
+local ghosts = require('scripts.engineers.ghosts')
 
 local M = {}
 
@@ -21,6 +22,7 @@ function M.register(entity)
     surface_index = entity.surface_index, state = 'seeking', since = game.tick, said = {}}
   s.constructors[record.id] = record
   s.dirty = true
+  ghosts.scan(entity.surface)
   return record
 end
 
