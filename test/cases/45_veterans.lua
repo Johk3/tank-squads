@@ -19,10 +19,10 @@ if not t then
   local siege_plain, siege_veteran = unit('tank-squad-siege', 0, 45), unit('tank-squad-siege', 0, 60)
   local flame_plain, flame_veteran = unit('tank-squad-flame', 0, -15), unit('tank-squad-flame', 0, -30)
   local armour_plain, armour_veteran = unit('tank-squad-soldier-3', 0, -45), unit('tank-squad-soldier-3', 0, -55)
-  assert(remote.call('tank-squads', 'veteran_add_xp', veteran.unit_number, 1000) == 3)
-  assert(remote.call('tank-squads', 'veteran_add_xp', siege_veteran.unit_number, 1000) == 3)
-  assert(remote.call('tank-squads', 'veteran_add_xp', flame_veteran.unit_number, 1000) == 3)
-  assert(remote.call('tank-squads', 'veteran_add_xp', armour_veteran.unit_number, 1000) == 3)
+  assert(remote.call('tank-squads', 'veteran_add_xp', veteran.unit_number, 50) == 1)
+  assert(remote.call('tank-squads', 'veteran_add_xp', siege_veteran.unit_number, 50) == 1)
+  assert(remote.call('tank-squads', 'veteran_add_xp', flame_veteran.unit_number, 50) == 1)
+  assert(remote.call('tank-squads', 'veteran_add_xp', armour_veteran.unit_number, 50) == 1)
   local function wall(x, y) return assert(s.create_entity{name = 'stone-wall', position = {x, y}, force = 'enemy'}) end
   local function silo(x, y) return assert(s.create_entity{name = 'rocket-silo', position = {x, y}, force = 'enemy'}) end
   local targets = {plain = silo(14, 20), veteran = silo(14, 30), siege_plain = silo(30, 45), siege_veteran = silo(30, 60), flame_plain = silo(8, -15), flame_veteran = silo(8, -30), armour_plain = wall(12, -45), armour_veteran = wall(12, -55)}
@@ -46,22 +46,22 @@ local ok, result = pcall(function()
   assert(record.kills == 1, 'kill not credited: ' .. record.kills)
   assert(math.abs(record.xp - 50.5) < 0.01, 'kill XP not weighted by max health: ' .. record.xp)
   assert(record.rank == 1, 'no promotion at 50 XP')
-  assert(math.abs(killer.speed - killer.prototype.speed * 1.1) < 1e-6, 'promotion did not raise speed')
+  assert(math.abs(killer.speed - killer.prototype.speed * 1.3) < 1e-6, 'promotion did not raise speed')
   local lost = {}
   for key, target in pairs(t.targets) do lost[key] = t.health[key] - target.health end
   assert(lost.plain > 0 and lost.siege_plain > 0, 'plain shooters did not fire: ' .. serpent.line(lost))
   local ratio = lost.veteran / lost.plain
-  assert(ratio > 1.5 and ratio < 2.0, 'veteran carrier damage ratio ' .. ratio)
+  assert(ratio > 1.8 and ratio < 2.2, 'Trained carrier damage ratio ' .. ratio)
   local flame_ratio = lost.flame_veteran / lost.flame_plain
-  assert(flame_ratio > 1.5 and flame_ratio < 2.5, 'veteran flame damage ratio ' .. flame_ratio .. ' (' .. serpent.line(lost) .. ')')
+  assert(flame_ratio > 1.5 and flame_ratio < 2.5, 'Trained flame damage ratio ' .. flame_ratio .. ' (' .. serpent.line(lost) .. ')')
   local armour_ratio = lost.armour_veteran / lost.armour_plain
-  assert(armour_ratio > 1.5 and armour_ratio < 2.0, 'veteran damage ratio through flat armour ' .. armour_ratio .. ' (' .. serpent.line(lost) .. ')')
+  assert(armour_ratio > 1.8 and armour_ratio < 2.2, 'Trained damage ratio through flat armour ' .. armour_ratio .. ' (' .. serpent.line(lost) .. ')')
   local extra = lost.siege_veteran - lost.siege_plain
-  assert(math.abs(extra - 750) < 1, 'veteran shell bonus ' .. extra .. ' (' .. serpent.line(lost) .. ')')
+  assert(math.abs(extra - 1000) < 1, 'Trained shell bonus ' .. extra .. ' (' .. serpent.line(lost) .. ')')
   killer.health = killer.max_health
   killer.damage(100, 'enemy', 'physical')
   local taken = killer.max_health - killer.health
-  assert(math.abs(taken - 80) < 0.01, 'Trained soldier lost ' .. taken)
+  assert(math.abs(taken - 35) < 0.01, 'Trained soldier lost ' .. taken)
   local id = killer.unit_number
   killer.health = 10
   killer.damage(100, 'enemy', 'physical')
