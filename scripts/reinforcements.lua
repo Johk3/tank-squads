@@ -6,6 +6,13 @@ local scout = require('scripts.scout')
 local M = {}
 
 local HEADQUARTERS_RECIPE = 'tank-squad-train-headquarters'
+local SHREDDER_RECIPE = require('scripts.names').shredder_recipe
+
+-- A shredder never counts toward a division's quota.
+local function trains_shredders(b)
+  local recipe = b.entity.get_recipe()
+  return recipe ~= nil and recipe.name == SHREDDER_RECIPE
+end
 
 -- Each linked barracks keeps its own quota: the number of soldiers it
 -- trained that still serve in the division. The division record holds one
@@ -86,7 +93,7 @@ end
 
 function M.sync_production(b)
   local needed = M.needs_recruit(b)
-  if b.reinforcement and not needed then
+  if b.reinforcement and not needed and not trains_shredders(b) then
     if b.entity.active then b.reinforcement_paused = true; b.entity.active = false end
   elseif b.reinforcement_paused then
     b.entity.active = true

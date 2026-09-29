@@ -1013,6 +1013,7 @@ test("entity events are filtered to the mod's own entities", function()
   assert(handlers.on_entity_spawned == nil, "every biter spawn reaches Lua")
   local expected = {[names.barracks] = true}
   for _, name in ipairs(names.unit_names) do expected[name] = true end
+  for _, name in ipairs(names.shredder_names) do expected[name] = true end
   local helpers = {}
   for _, name in ipairs(require("scripts.headquarters").HELPER_NAMES) do helpers[name] = true end
   local function check(event, allowed)
@@ -1047,9 +1048,11 @@ test("entity events are filtered to the mod's own entities", function()
   check("on_entity_cloned", cloned)
   local units = {}
   for _, name in ipairs(names.unit_names) do units[name] = true end
+  for _, name in ipairs(names.shredder_names) do units[name] = true end
   check("script_raised_destroy", units)
   local filters = assert(event_filters.on_entity_damaged, "on_entity_damaged is unfiltered")
-  assert(#filters == #names.unit_names, "on_entity_damaged is not limited to soldiers and headquarters")
+  assert(#filters == #names.unit_names + #names.shredder_names,
+    "on_entity_damaged is not limited to soldiers, headquarters and shredders")
 end)
 
 test("the one-second sweep visits each division and barracks once, spread over the second", function()
@@ -1330,5 +1333,8 @@ require('test.electric'){test = test, soldier = soldier, draws = function() retu
 require('test.nuclear'){test = test, soldier = soldier, players = function() return players end}
 require('test.transition'){test = test, soldier = soldier, building = building, players = function() return players end}
 require('test.shredder_geometry'){test = test}
+require('test.shredders'){test = test, soldier = soldier, building = building,
+  handlers = function() return handlers end, players = function() return players end,
+  draws = function() return draws end}
 print(string.format("%d passed, %d failed", passed, failed))
 assert(failed == 0, "regression tests failed")

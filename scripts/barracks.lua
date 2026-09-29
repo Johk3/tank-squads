@@ -4,6 +4,7 @@ local weapons = require("scripts.weapons")
 local reinforcements = require('scripts.reinforcements')
 local divisions = require('scripts.divisions')
 local headquarters = require('scripts.headquarters')
+local shredders = require('scripts.shredders')
 
 local M = {}
 
@@ -110,10 +111,15 @@ local function rally_position(b)
   return b.entity.position
 end
 
+-- Shredders are no soldiers, but the barracks repairs them too.
+local HEALED = {}
+for _, name in ipairs(names.unit_names) do HEALED[#HEALED + 1] = name end
+for _, name in ipairs(names.shredder_names) do HEALED[#HEALED + 1] = name end
+
 local function heal_nearby(b)
   local surface = b.entity.surface
   local pos = b.entity.position
-  for _, soldier in pairs(surface.find_entities_filtered{position = pos, radius = HEAL_RADIUS, name = names.unit_names, force = b.entity.force}) do
+  for _, soldier in pairs(surface.find_entities_filtered{position = pos, radius = HEAL_RADIUS, name = HEALED, force = b.entity.force}) do
     if soldier.health < soldier.max_health then
       soldier.health = math.min(soldier.max_health, soldier.health + HEAL_AMOUNT)
     end
@@ -148,6 +154,18 @@ local function deploy(b, tier)
   return true
 end
 
+-- Shredders never join a division, so no quota holds them back.
+local function deploy_shredders(b, output, budget)
+  local deployed = 0
+  while deployed < budget and output.get_item_count(names.shredder_recruit) > 0 do
+    if not shredders.deploy(b.entity, rally_position(b)) then break end
+    output.remove{name = names.shredder_recruit, count = 1}
+    animate_deploy(b)
+    deployed = deployed + 1
+  end
+  return deployed
+end
+
 -- Mining hands the output inventory to the player, where a recruit item can
 -- never become a soldier. Deploy every buffered recruit first: a linked
 -- barracks fills its own quota in its division, and the rest walk to the
@@ -163,6 +181,7 @@ function M.evacuate(entity)
       output.remove{name = item, count = 1}
     end
   end
+  deploy_shredders(b, output, math.huge)
 end
 
 -- A linked barracks runs in its division's phase, right after that
@@ -207,6 +226,7 @@ function M.tick(phase)
             deployed = deployed + 1
           end
         end
+        deployed = deployed + deploy_shredders(b, output, DEPLOYS_PER_SWEEP - deployed)
       end
     end
   end
