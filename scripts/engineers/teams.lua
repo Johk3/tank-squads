@@ -28,43 +28,23 @@ local function halt(soldier)
 end
 
 -- Deals soldiers to constructors. soldiers = {{id, strength}}, constructors
--- = sorted ids, previous = the last team of each soldier. Team sizes differ
--- by at most one. A soldier stays in its team while the team has room; the
--- rest are dealt round-robin, strongest first.
-function M.split(soldiers, constructors, previous, cap)
-  local teams, room, count = {}, {}, #constructors
+-- = sorted ids. The strongest min(#soldiers, cap * #constructors) soldiers
+-- are dealt round-robin, strongest first (ties by id), so every team gets a
+-- similar mix and team sizes differ by at most one. The deal is fresh each
+-- time: a strong newcomer takes the place of the weakest soldier.
+function M.split(soldiers, constructors, cap)
+  local teams, count = {}, #constructors
   for _, c in ipairs(constructors) do teams[c] = {} end
   if count == 0 then return teams end
-  local total = math.min(#soldiers, cap * count)
-  local base, extra = math.floor(total / count), total % count
-  for i, c in ipairs(constructors) do room[c] = base + (i <= extra and 1 or 0) end
   local sorted = {}
   for i, s in ipairs(soldiers) do sorted[i] = s end
   table.sort(sorted, function(a, b)
     if a.strength ~= b.strength then return a.strength > b.strength end
     return a.id < b.id
   end)
-  local rest = {}
-  for _, s in ipairs(sorted) do
-    local c = previous[s.id]
-    if c and room[c] and room[c] > 0 then
-      local team = teams[c]
-      team[#team + 1], room[c] = s.id, room[c] - 1
-    else
-      rest[#rest + 1] = s
-    end
-  end
-  local i = 0
-  for _, s in ipairs(rest) do
-    for _ = 1, count do
-      i = i % count + 1
-      local c = constructors[i]
-      if room[c] > 0 then
-        local team = teams[c]
-        team[#team + 1], room[c] = s.id, room[c] - 1
-        break
-      end
-    end
+  for i = 1, math.min(#sorted, cap * count) do
+    local team = teams[constructors[(i - 1) % count + 1]]
+    team[#team + 1] = sorted[i].id
   end
   return teams
 end
@@ -138,16 +118,29 @@ local function pool(force_index)
   return out
 end
 
+-- Whether the soldier's division is still in the pool. A soldier the
+-- player ordered, dragged or moved to another division has left it, and a
+-- team no longer commands it even before the next split drops it.
+local function in_pool(id)
+  local _, _, record = divisions.owner(id)
+  return record ~= nil and record.mode == 'engineer'
+end
+
 -- A soldier dealt out of its team stops where it is while its division is
 -- still in the pool. One that left the pool keeps the player's order.
 local function spare(id)
-  local _, _, record = divisions.owner(id)
-  if not (record and record.mode == 'engineer') then return end
+  if not in_pool(id) then return end
   local e = game.get_entity_by_unit_number(id)
   if e and e.valid then halt(e) end
 end
 
+-- A soldier dealt to another team moves without a stop; one dealt to no
+-- team is spared.
 local function apply(s, split)
+  local dealt = {}
+  for c, ids in pairs(split) do
+    for _, id in ipairs(ids) do dealt[id] = c end
+  end
   for c, ids in pairs(split) do
     local record = s.constructors[c]
     local team = s.teams[c]
@@ -155,10 +148,8 @@ local function apply(s, split)
       team = {members = {}, state = new_state(record.surface_index), present = 0}
       s.teams[c] = team
     end
-    local keep = {}
-    for _, id in ipairs(ids) do keep[id] = true end
     for _, id in ipairs(team.members) do
-      if not keep[id] and s.team_of[id] == c then
+      if not dealt[id] and s.team_of[id] == c then
         s.team_of[id] = nil
         spare(id)
       end
@@ -195,7 +186,7 @@ function M.refresh()
     local signature = table.concat(parts, ',')
     if s.dirty or s.signatures[force_index] ~= signature then
       s.signatures[force_index] = signature
-      apply(s, M.split(soldiers, constructors, s.team_of, M.CAP))
+      apply(s, M.split(soldiers, constructors, M.CAP))
     end
   end
   local gone = {}
@@ -219,7 +210,9 @@ local function drive(s, c, team, cfg, characters)
   local members = {}
   for _, id in ipairs(team.members) do
     local e = game.get_entity_by_unit_number(id)
-    if e and e.valid and e.surface_index == st.surface_index and not loans.on_loan(id) then members[#members + 1] = e end
+    if e and e.valid and e.surface_index == st.surface_index and not loans.on_loan(id) and in_pool(id) then
+      members[#members + 1] = e
+    end
   end
   if #members == 0 then team.present = 0; return end
   local present, retreated = retreat.sweep(st, members, {force = entity.force, surface_index = st.surface_index,
@@ -262,7 +255,8 @@ function M.on_command_completed(unit_number, result)
   local s = state.peek()
   local c = s and s.team_of[unit_number]
   local team = c and s.teams[c]
-  if not team then return false end
+  -- A soldier that left the pool completes the player's order, not the team's.
+  if not (team and in_pool(unit_number)) then return false end
   local st = team.state
   if retreat.is_away(st, unit_number) then
     retreat.on_command_completed(st, unit_number, result)

@@ -405,23 +405,47 @@ return function(ctx)
     local teams = require('scripts.engineers.teams')
     local soldiers = {{id = 1, strength = 3}, {id = 2, strength = 3}, {id = 3, strength = 1.5},
       {id = 4, strength = 1}, {id = 5, strength = 1}}
-    local split = teams.split(soldiers, {10, 20}, {}, 8)
+    local split = teams.split(soldiers, {10, 20}, 8)
     assert(#split[10] == 3 and #split[20] == 2)
     assert(split[10][1] == 1 and split[20][1] == 2 and split[10][2] == 3, 'not dealt strongest first')
     local many = {}
     for i = 1, 20 do many[i] = {id = i, strength = 1} end
-    split = teams.split(many, {10, 20}, {}, 8)
+    split = teams.split(many, {10, 20}, 8)
     assert(#split[10] == 8 and #split[20] == 8, 'cap ignored')
-    split = teams.split({{id = 1, strength = 1}}, {10, 20, 30}, {}, 8)
+    split = teams.split({{id = 1, strength = 1}}, {10, 20, 30}, 8)
     assert(#split[10] + #split[20] + #split[30] == 1)
-    assert(next(teams.split(soldiers, {}, {}, 8)) == nil)
+    assert(next(teams.split(soldiers, {}, 8)) == nil)
   end)
 
-  test('engineers: the split keeps soldiers in their team', function()
+  test('engineers: the split gives every team a mix of strong and weak', function()
     local teams = require('scripts.engineers.teams')
-    local soldiers = {{id = 1, strength = 3}, {id = 2, strength = 3}, {id = 3, strength = 1}, {id = 4, strength = 1}}
-    local split = teams.split(soldiers, {10, 20}, {[1] = 20, [2] = 20, [3] = 10}, 8)
-    assert(split[20][1] == 1 and split[20][2] == 2 and split[10][1] == 3 and split[10][2] == 4)
+    local soldiers = {{id = 1, strength = 3}, {id = 2, strength = 3}, {id = 3, strength = 3},
+      {id = 4, strength = 1}, {id = 5, strength = 1}, {id = 6, strength = 1}}
+    local split = teams.split(soldiers, {10, 20}, 8)
+    local strength = {}
+    for _, x in ipairs(soldiers) do strength[x.id] = x.strength end
+    for _, c in ipairs({10, 20}) do
+      local strong, weak = 0, 0
+      for _, id in ipairs(split[c]) do
+        if strength[id] == 3 then strong = strong + 1 else weak = weak + 1 end
+      end
+      assert(#split[c] == 3 and strong > 0 and weak > 0, 'a team got only strong or only weak soldiers')
+    end
+  end)
+
+  test('engineers: a strong newcomer takes the place of the weakest in full teams', function()
+    local teams = require('scripts.engineers.teams')
+    local soldiers = {}
+    for i = 1, 16 do soldiers[i] = {id = i, strength = 1} end
+    soldiers[17] = {id = 17, strength = 3}
+    local split = teams.split(soldiers, {10, 20}, 8)
+    local dealt = {}
+    for _, c in ipairs({10, 20}) do
+      assert(#split[c] == 8)
+      for _, id in ipairs(split[c]) do dealt[id] = true end
+    end
+    assert(dealt[17], 'the strong newcomer was left out')
+    assert(not dealt[16], 'the weakest soldier kept its place')
   end)
 
   test('engineers: marking a division puts it in the pool until another order', function()
@@ -529,5 +553,27 @@ return function(ctx)
     teams.refresh()
     assert(#storage.engineers.teams[c.id].members == 0 and not storage.engineers.team_of[a.unit_number])
     assert(a.command == ordered, 'the split halted a soldier the player ordered')
+  end)
+  test('engineers: a team lets go of soldiers the player ordered before the next split', function()
+    local E = ctx.engineers
+    E.engine()
+    local divisions = require('scripts.divisions')
+    local teams = require('scripts.engineers.teams')
+    local a, b = soldier(nil, nil, 0, 0), soldier(nil, nil, 2, 0)
+    divisions.assign(1, 3, {a, b})
+    teams.set_pool(1, 3, true)
+    local c = require('scripts.engineers.constructor').register(E.constructor_entity(4, 0))
+    teams.refresh()
+    for _ = 1, 6 do teams.tick() end
+    assert(storage.engineers.teams[c.id].state.anchor, 'the team never settled on its constructor')
+    require('scripts.commands').order(1, {left_top = {x = 10, y = 10}, right_bottom = {x = 12, y = 12}},
+      game.surfaces[1])
+    local ordered_a, ordered_b = a.command, b.command
+    storage.engineers.teams[c.id].state.members_dirty = true
+    teams.tick()
+    assert(a.command == ordered_a and b.command == ordered_b, 'the team re-commanded a soldier the player ordered')
+    assert(teams.present(c.id) == 0)
+    assert(not teams.on_command_completed(a.unit_number, defines.behavior_result.success),
+      'the team swallowed the completion of an order')
   end)
 end
