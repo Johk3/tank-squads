@@ -21,6 +21,10 @@ M.KILL_FILTERS = {{filter = "force", force = "enemy"}}
 
 M.SHOT, M.SHELL_HIT = "tank-squad-shot", "tank-squad-shell-hit"
 
+-- A large bonus is dealt in at most this many hits per shot, each larger
+-- than a native hit, so a Legend's shot costs four damage calls, not eleven.
+M.MAX_HITS = 4
+
 -- A rank's extra damage per attack is a share of the native attack's own
 -- damage, of the same type, scaled by the force's research for that ammo.
 -- `hit` is the size of one native hit. The bonus is banked on the gun record
@@ -142,13 +146,14 @@ function M.on_shot(event, shooter)
   end
   local hit = base.hit * research
   amount = amount + (shooter.bonus or 0)
-  -- A bonus is at most four times an attack's damage, so this deals at most
-  -- four hits for a carrier and twelve for a flame tank.
-  while amount >= hit and target.valid do
+  local hits = math.floor(amount / hit)
+  if hits > M.MAX_HITS then hit, hits = amount / M.MAX_HITS, M.MAX_HITS end
+  local dealt = 0
+  while dealt < hits and target.valid do
     target.damage(hit, force, base.type, source, source)
-    amount = amount - hit
+    dealt = dealt + 1
   end
-  shooter.bonus = amount
+  shooter.bonus = math.max(0, amount - dealt * hit)
 end
 
 return M

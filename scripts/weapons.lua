@@ -3,6 +3,7 @@ local combat = require('scripts.combat')
 local vision = require('scripts.vision')
 local appearance = require("scripts.appearance")
 local veterans = require("scripts.veterans")
+local ranks = require("scripts.ranks")
 local colors = appearance.tier_colors
 local M = {}
 
@@ -101,6 +102,14 @@ local function check(id, record)
   elseif not record.gun.valid then
     M.register(record.entity)
   else
+    -- Elite and Legend regenerate. The sweep already holds the record, so
+    -- only ranked soldiers read their health.
+    local regen = record.rank and record.rank >= 4 and ranks.bonus(record.rank).regen
+    if regen then
+      local e = record.entity
+      local max = e.max_health
+      if e.health < max then e.health = math.min(max, e.health + max * regen) end
+    end
     if record.recoiling and game.tick - record.last_shot >= record.recoil_ticks then
       record.gun.animation_speed, record.gun.animation_offset = 0, 0
       record.recoiling = nil

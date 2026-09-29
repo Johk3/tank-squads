@@ -28,7 +28,7 @@ return function(ctx)
     record.kills = 13
     card.refresh()
     assert(frame.kill_count.caption[2] == 13, 'sweep did not refresh the card')
-    record.xp, record.rank = 5000, 3
+    record.xp, record.rank = 20000, 5
     card.refresh()
     assert(frame.xp_bar.value == 1 and frame.xp_text.caption[1] == 'tank-squads.card-xp-top')
   end)

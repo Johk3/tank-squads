@@ -2,8 +2,9 @@ return function(ctx)
   local test = ctx.test
   local ranks = require('scripts.ranks')
 
-  test('ranks: thresholds promote at exactly 50, 250 and 1000 XP', function()
-    local cases = {{0, 0}, {49.9, 0}, {50, 1}, {249.99, 1}, {250, 2}, {999, 2}, {1000, 3}, {1e9, 3}}
+  test('ranks: thresholds promote at 50, 250, 1000, 4000 and 15000 XP', function()
+    local cases = {{0, 0}, {49.9, 0}, {50, 1}, {249.99, 1}, {250, 2}, {999, 2}, {1000, 3},
+      {3999, 3}, {4000, 4}, {14999, 4}, {15000, 5}, {1e9, 5}}
     for _, case in ipairs(cases) do
       assert(ranks.for_xp(case[1]) == case[2], case[1] .. ' XP gave rank ' .. ranks.for_xp(case[1]))
     end
@@ -19,7 +20,13 @@ return function(ctx)
       assert(high.xp > low.xp and high.speed > low.speed and high.damage > low.damage and high.reduction > low.reduction,
         'rank ' .. rank .. ' is not stronger than the one below')
     end
-    assert(ranks.next_xp(0) == 50 and ranks.next_xp(2) == 1000 and ranks.next_xp(3) == nil)
+    assert(ranks.next_xp(0) == 50 and ranks.next_xp(2) == 1000 and ranks.next_xp(3) == 4000
+      and ranks.next_xp(4) == 15000 and ranks.next_xp(5) == nil)
+    assert(ranks.TOP == 5)
+    assert(ranks.bonus(4).speed == 1.30 and ranks.bonus(4).damage == 7.00 and ranks.bonus(4).reduction == 0.90)
+    assert(ranks.bonus(5).speed == 1.60 and ranks.bonus(5).damage == 11.00 and ranks.bonus(5).reduction == 0.93)
+    for rank = 0, 3 do assert(ranks.bonus(rank).regen == 0, 'rank ' .. rank .. ' regenerates') end
+    assert(ranks.bonus(4).regen == 0.01 and ranks.bonus(5).regen == 0.02)
     assert(ranks.sprite(2) == 'tank-squad-rank-2')
   end)
   local unit_names = require('scripts.unit_names')
@@ -57,6 +64,11 @@ return function(ctx)
     local text = io.open('locale/en/tank-squads.cfg'):read('*a')
     for i = 1, unit_names.ADJECTIVES do assert(text:find('\nname%-adjective%-' .. i .. '='), 'missing adjective ' .. i) end
     for i = 1, unit_names.NOUNS do assert(text:find('\nname%-noun%-' .. i .. '='), 'missing noun ' .. i) end
+  end)
+
+  test('ranks: every rank has a locale name', function()
+    local text = io.open('locale/en/tank-squads.cfg'):read('*a')
+    for rank = 0, ranks.TOP do assert(text:find('\nrank%-' .. rank .. '='), 'missing rank-' .. rank) end
   end)
   local function alt_draws()
     local out = {}
@@ -215,10 +227,12 @@ return function(ctx)
     assert(#target.damaged == 1, 'flame bonus hits: ' .. #target.damaged)
     for _, hit in ipairs(target.damaged) do assert(hit.amount == 7 and hit.type == 'fire') end
     assert(math.abs(gun.bonus - 3.5) < 1e-9)
-    -- A Veteran's 21 * 4 = 84 is twelve particle-sized hits.
+    -- A Veteran's 21 * 4 = 84 would be twelve particle-sized hits; the cap
+    -- deals it as four hits of 21.
     gun.rank, gun.bonus = 3, 0
     veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = flame, target_entity = target}, gun)
-    assert(#target.damaged == 13 and math.abs(gun.bonus) < 1e-9, 'veteran flame hits: ' .. #target.damaged)
+    assert(#target.damaged == 5 and math.abs(target.damaged[5].amount - 21) < 1e-9 and math.abs(gun.bonus) < 1e-9,
+      'veteran flame hits: ' .. #target.damaged)
   end)
 
   test('bonuses: a siege tank adds its bonus when the shell lands, not when it fires', function()
@@ -269,5 +283,41 @@ return function(ctx)
       ctx.handlers().on_script_trigger_effect{effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}
     end
     assert(#target.damaged == 2, 'control did not route shots')
+  end)
+
+  test('bonuses: the bonus is dealt in at most four hits with the same total', function()
+    local e = ranked(names.soldier_names[1], 5)
+    local target = ctx.soldier('enemy')
+    local gun = {rank = 5}
+    -- A Legend Mk1: 6 * 11 = 66 per shot, which is eleven native hits of 6.
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}, gun)
+    assert(#target.damaged == 4, 'hits ' .. #target.damaged)
+    local total = 0
+    for _, hit in ipairs(target.damaged) do total = total + hit.amount end
+    assert(math.abs(total - 66) < 1e-9 and math.abs(gun.bonus) < 1e-9, 'total ' .. total)
+  end)
+
+  test('bonuses: a dying target keeps the undealt bonus banked', function()
+    local e = ranked(names.soldier_names[1], 5)
+    local target = ctx.soldier('enemy')
+    target.damage = function() target.valid = false end
+    local gun = {rank = 5}
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = e, target_entity = target}, gun)
+    assert(math.abs(gun.bonus - 66 * 3 / 4) < 1e-9, 'banked ' .. tostring(gun.bonus))
+  end)
+
+  test('regen: elite and legend soldiers heal a share of max health each sweep', function()
+    local weapons = require('scripts.weapons')
+    local elite, legend, veteran = ctx.soldier(), ctx.soldier(), ctx.soldier()
+    for _, e in ipairs({elite, legend, veteran}) do weapons.register(e); e.health = 100 end
+    storage.weapons[elite.unit_number].rank = 4
+    storage.weapons[legend.unit_number].rank = 5
+    storage.weapons[veteran.unit_number].rank = 3
+    weapons.tick()
+    assert(elite.health == 104 and legend.health == 108 and veteran.health == 100,
+      'healed to ' .. elite.health .. ', ' .. legend.health .. ', ' .. veteran.health)
+    legend.health = 399
+    weapons.tick()
+    assert(legend.health == 400, 'regen overheals: ' .. legend.health)
   end)
 end
