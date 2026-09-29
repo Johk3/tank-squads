@@ -10,6 +10,8 @@
 --   locks[target unit_number] = shredders aimed at it
 --   doomed[unit_number] = true for crashed shredders the next slice removes
 --   present[force_index .. ':' .. surface_index] = true where shredders are
+--   dirty = true when a shredder or group came, went or changed hands, so
+--     the next split has work to do
 -- }
 -- Everything runs from events and the existing sweep slices; a parked
 -- shredder costs nothing until its division moves.
@@ -42,7 +44,7 @@ local PLAYER_TYPES = {character = true, car = true, ['spider-vehicle'] = true}
 function M.state()
   local s = storage.shredders
   if not s then
-    s = {units = {}, groups = {}, shadows = {}, locks = {}, doomed = {}, present = {}}
+    s = {units = {}, groups = {}, shadows = {}, locks = {}, doomed = {}, present = {}, dirty = true}
     storage.shredders = s
   end
   return s
@@ -58,6 +60,7 @@ end
 -- Takes the shredder out of its group or shadow.
 local function leave(record)
   local s = M.state()
+  s.dirty = true
   if record.group then
     local group = s.groups[record.group]
     if group then remove(group.members, record.id) end
@@ -86,13 +89,17 @@ local function clear_renders(record)
   end
 end
 
+-- A shredder destroyed without an event keeps its record until the next
+-- split, so orders check the entity first.
 local function send(record, position)
+  if not record.entity.valid then return end
   record.state = 'moving'
   record.entity.commandable.set_command{type = defines.command.go_to_location, destination = position,
     radius = 2, distraction = defines.distraction.none}
 end
 
 local function park(record)
+  if not record.entity.valid then return end
   record.state = 'parked'
   record.entity.commandable.set_command{type = defines.command.stop, distraction = defines.distraction.none}
 end
@@ -159,7 +166,7 @@ local function swap(record, name)
   return new
 end
 
--- record = {entity, id, state, group, shadow, home_position, homeward,
+-- record = {entity, id, force_index, surface_index, state, group, shadow, home_position, homeward,
 --   target, target_position, lock_id, renders}. state is 'parked',
 -- 'moving', 'igniting', 'charging' or 'spent'.
 function M.register(entity)
@@ -167,8 +174,13 @@ function M.register(entity)
   local s = M.state()
   local record = s.units[entity.unit_number]
   if record then return record end
-  record = {entity = entity, id = entity.unit_number, state = 'moving', renders = {}}
+  -- Force and surface are kept on the record, so the split reads no entity
+  -- of a settled army. A shredder teleported to another surface by another
+  -- mod keeps its old split until it registers again.
+  record = {entity = entity, id = entity.unit_number, state = 'moving', renders = {},
+    force_index = entity.force_index, surface_index = entity.surface_index}
   s.units[record.id] = record
+  s.dirty = true
   return record
 end
 
@@ -181,6 +193,7 @@ function M.unregister(unit_number)
   clear_renders(record)
   s.units[unit_number] = nil
   s.doomed[unit_number] = nil
+  s.dirty = true
 end
 
 -- A finished shredder leaves the barracks door. Returns false when there is
@@ -236,6 +249,7 @@ function M.drop_group(key)
     if record then record.group = nil end
   end
   s.groups[key] = nil
+  s.dirty = true
 end
 
 -- Runs in the division's own slice, right after the roster refresh, so it
@@ -258,6 +272,7 @@ function M.update_group(player_index, n)
   if not group then
     group = {key = key, player_index = player_index, n = n, members = {}}
     s.groups[key] = group
+    s.dirty = true
   end
   group.force_index, group.surface_index, group.updated = player.force.index, surface_index, game.tick
   local home = group.home
@@ -282,8 +297,19 @@ local function go_home(record)
   record.homeward = true
 end
 
+-- The split reads a shredder's position only when it may move it: in the
+-- pool, or in a group over its share.
+local LAZY = {__index = function(item, key)
+  if key ~= 'position' then return nil end
+  local position = item.entity.position
+  rawset(item, 'position', position)
+  return position
+end}
+
 -- The even split, per force and surface. Reads only group records the
--- division slices keep current, so it walks no roster.
+-- division slices keep current, so it walks no roster, and runs only after
+-- a shredder or group came, went or changed hands: a parked army costs
+-- nothing here.
 function M.rebalance()
   local s = M.state()
   local tick = game.tick
@@ -292,6 +318,7 @@ function M.rebalance()
     if tick - (group.updated or 0) > M.STALE then keys[#keys + 1] = key end
   end
   for _, key in ipairs(keys) do M.drop_group(key) end
+  if s.dirty == false then return end
   local buckets, present = {}, {}
   local function bucket(force_index, surface_index)
     local k = force_index .. ':' .. surface_index
@@ -318,10 +345,10 @@ function M.rebalance()
     if not e.valid then
       M.unregister(id)
     else
-      present[e.force_index .. ':' .. e.surface_index] = true
+      present[record.force_index .. ':' .. record.surface_index] = true
       if READY[record.state] and not record.shadow then
-        local b = bucket(e.force_index, e.surface_index)
-        local item = {id = id, position = e.position}
+        local b = bucket(record.force_index, record.surface_index)
+        local item = setmetatable({id = id, entity = e}, LAZY)
         local entry = record.group and b.by_key[record.group]
         if entry then
           entry.members[#entry.members + 1] = item
@@ -354,6 +381,8 @@ function M.rebalance()
       end
     end
   end
+  -- The moves above only settle this split's own changes.
+  s.dirty = false
 end
 
 
@@ -563,6 +592,7 @@ function M.release(player_index)
     if record then record.shadow = nil end
   end
   s.shadows[player_index] = nil
+  s.dirty = true
 end
 
 -- Up to SHADOW_SIZE ready shredders within reach: from the largest group

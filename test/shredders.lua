@@ -288,9 +288,11 @@ return function(ctx)
     building()
     engine()
     division(1, 100)
-    local e, record = shredder(0, 0)
+    local e = game.surfaces[1].create_entity{name = names.shredder, position = {x = 0, y = 0},
+      force = ctx.players()[1].force}
     local moon = {index = 2}
     e.surface, e.surface_index = moon, 2
+    local record = shredders.register(e)
     shredders.tick()
     assert(record.group == nil and e.command == nil, 'shredder ordered across surfaces')
   end)
@@ -575,5 +577,40 @@ return function(ctx)
     player.character = nil
     shredders.watch()
     assert(storage.shredders.shadows[1] == nil)
+  end)
+
+  test('shredders: an unchanged army skips the split without touching its entities', function()
+    building()
+    engine()
+    division(1, 100)
+    local e = shredder(0, 0)
+    shredders.tick()
+    shredders.on_command_completed(e.unit_number, defines.behavior_result.success)
+    local reads = ctx.count_reads(e, 'position')
+    game.tick = game.tick + 60
+    shredders.tick(shredders.REBALANCE_PHASE)
+    assert(reads.n == 0, 'the split read ' .. reads.n .. ' positions with nothing changed')
+    local f, record = shredder(0, 5)
+    game.tick = game.tick + 60
+    shredders.tick(shredders.REBALANCE_PHASE)
+    assert(record.group == '1:1', 'a new shredder waited for an unrelated change')
+  end)
+
+  test('shredders: a split after a change reads positions only of shredders it may move', function()
+    building()
+    engine()
+    division(1, 100)
+    local e = shredder(0, 0)
+    shredders.tick()
+    shredders.on_command_completed(e.unit_number, defines.behavior_result.success)
+    local reads = ctx.count_reads(e, 'position')
+    -- The fake computes force_index in its metatable; pin it for the counter.
+    rawset(e, 'force_index', e.force_index)
+    local forces = ctx.count_reads(e, 'force_index')
+    local _, record = shredder(0, 5)
+    game.tick = game.tick + 60
+    shredders.tick(shredders.REBALANCE_PHASE)
+    assert(record.group == '1:1', 'new shredder not assigned')
+    assert(reads.n == 0 and forces.n == 0, 'the split read a settled shredder ' .. reads.n .. ' + ' .. forces.n .. ' times')
   end)
 end

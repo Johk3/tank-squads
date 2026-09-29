@@ -1341,6 +1341,6 @@ require('test.transition'){test = test, soldier = soldier, building = building, 
 require('test.shredder_geometry'){test = test}
 require('test.shredders'){test = test, soldier = soldier, building = building,
   handlers = function() return handlers end, players = function() return players end,
-  draws = function() return draws end}
+  draws = function() return draws end, count_reads = count_reads}
 print(string.format("%d passed, %d failed", passed, failed))
 assert(failed == 0, "regression tests failed")
