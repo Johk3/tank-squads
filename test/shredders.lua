@@ -139,4 +139,159 @@ return function(ctx)
     shredders.tick()
     shredders.tick(3)
   end)
+
+  -- A division of soldiers at x on the player's force, with a barracks at
+  -- the origin as its home.
+  local function division(n, x, count, player)
+    local members = {}
+    for i = 1, count or 2 do members[i] = soldier(nil, nil, x, i) end
+    divisions.assign(player or 1, n, members)
+    return members
+  end
+
+  local function commands(e)
+    local calls = {n = 0}
+    local set = e.commandable.set_command
+    e.commandable.set_command = function(command) calls.n = calls.n + 1; set(command) end
+    return calls
+  end
+
+  test('shredders: a group parks 60 tiles behind its division toward home', function()
+    building()
+    engine()
+    division(1, 100)
+    local e, record = shredder(0, 0)
+    shredders.tick()
+    local group = storage.shredders.groups['1:1']
+    assert(group, 'no group for division 1')
+    -- Centre (100, 1.5), home (0, 0): 60 tiles toward home is about (40.0, 0.6).
+    assert(math.abs(group.point.x - 40) < 0.1 and math.abs(group.point.y - 0.6) < 0.1, 'backline not toward home')
+    assert(record.group == '1:1' and e.command.type == defines.command.go_to_location, 'shredder not sent')
+    assert(e.command.distraction == defines.distraction.none, 'shredder can be distracted on its way')
+  end)
+
+  test('shredders: parked shredders get no new orders until the division moves 20 tiles', function()
+    building()
+    engine()
+    local members = division(1, 100)
+    local e, record = shredder(0, 0)
+    shredders.tick()
+    shredders.on_command_completed(e.unit_number, defines.behavior_result.success)
+    assert(record.state == 'parked' and e.command.type == defines.command.stop, 'shredder did not park')
+    local calls = commands(e)
+    for _ = 1, 5 do game.tick = game.tick + 60; shredders.tick() end
+    assert(calls.n == 0, calls.n .. ' orders while parked')
+    for _, m in ipairs(members) do m.position = {x = 180, y = m.position.y} end
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(calls.n == 1 and record.state == 'moving', 'no order after the division moved')
+  end)
+
+  test('shredders: shredders split evenly between divisions', function()
+    building()
+    engine()
+    division(1, 100)
+    division(2, -100)
+    for i = 1, 4 do shredder(0, i) end
+    shredders.tick()
+    local groups = storage.shredders.groups
+    assert(#groups['1:1'].members == 2 and #groups['1:2'].members == 2, 'uneven split')
+  end)
+
+  test('shredders: charging shredders stay with their group through a rebalance', function()
+    building()
+    engine()
+    division(1, 100)
+    local _, a = shredder(0, 1)
+    local _, b = shredder(0, 2)
+    shredders.tick()
+    a.state = 'charging'
+    division(2, -100)
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(a.group == '1:1', 'a charging shredder was moved')
+    assert(b.group == '1:1' or b.group == '1:2')
+  end)
+
+  test('shredders: a disbanded division releases its shredders to the rally point', function()
+    local b = building()
+    engine()
+    division(1, 100)
+    assert(shredders.deploy(b, {x = 7, y = 8}))
+    shredders.tick()
+    local _, record = next(storage.shredders.units)
+    assert(record.group == '1:1')
+    divisions.assign(1, 1, {})
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(storage.shredders.groups['1:1'] == nil, 'group kept for an empty division')
+    assert(record.group == nil and record.entity.command.destination.x == 7, 'shredder did not go to the rally point')
+  end)
+
+  test('shredders: a group whose division slot vanished is dropped', function()
+    building()
+    engine()
+    division(1, 100)
+    shredder(0, 0)
+    shredders.tick()
+    storage.divisions[1] = nil
+    game.tick = game.tick + 200
+    shredders.tick()
+    assert(storage.shredders.groups['1:1'] == nil, 'stale group kept')
+  end)
+
+  test('shredders: a headquarters-only division gets no shredders', function()
+    building()
+    engine()
+    local hq = soldier(nil, nil, 100, 0)
+    hq.name = names.headquarters
+    divisions.assign(1, 1, {hq})
+    shredder(0, 0)
+    shredders.tick()
+    assert(storage.shredders.groups['1:1'] == nil, 'unarmed division counted')
+  end)
+
+  test('shredders: groups update only in their division phase and split in phase 5', function()
+    building()
+    engine()
+    division(1, 100)
+    shredder(0, 0)
+    local phase = divisions.phase(1, 1)
+    local other = (phase + 1) % divisions.PHASES
+    if other == shredders.REBALANCE_PHASE then other = (other + 1) % divisions.PHASES end
+    shredders.tick(other)
+    assert(storage.shredders.groups['1:1'] == nil, 'group updated outside its phase')
+    shredders.tick(phase)
+    assert(storage.shredders.groups['1:1'], 'group not updated in its phase')
+    shredders.tick(shredders.REBALANCE_PHASE)
+    assert(#storage.shredders.groups['1:1'].members == 1, 'no split in the rebalance phase')
+  end)
+
+  test('shredders: shredders only serve divisions of their own force', function()
+    building()
+    engine()
+    local rival = {index = 3, name = 'rival', is_enemy = function() return false end}
+    game.forces[#game.forces + 1] = rival
+    ctx.players()[2] = {index = 2, force = rival, surface = game.surfaces[1], force_index = 3,
+      set_shortcut_toggled = function() end}
+    local members = {}
+    for i = 1, 2 do members[i] = soldier(rival, nil, -100, i) end
+    divisions.assign(2, 1, members)
+    division(1, 100)
+    for i = 1, 2 do shredder(0, i) end
+    shredders.tick()
+    assert(storage.shredders.groups['2:1'] and #storage.shredders.groups['2:1'].members == 0, 'rival division took shredders')
+    assert(#storage.shredders.groups['1:1'].members == 2)
+  end)
+
+  test('shredders: a shredder on another surface stays out of the split', function()
+    building()
+    engine()
+    division(1, 100)
+    local e, record = shredder(0, 0)
+    local moon = {index = 2}
+    e.surface, e.surface_index = moon, 2
+    shredders.tick()
+    assert(record.group == nil and e.command == nil, 'shredder ordered across surfaces')
+  end)
 end

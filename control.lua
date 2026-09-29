@@ -244,6 +244,7 @@ script.on_event(defines.events.on_ai_command_completed, function(event)
   -- A finished distraction (a fight on the way) is reported on its own; the
   -- engine then resumes the original command, whose completion follows.
   if event.was_distracted then return end
+  if shredders.on_command_completed(event.unit_number, event.result) then return end
   headquarters.on_command_completed(event.unit_number)
   if combat.on_command_completed(event.unit_number, event.result) then return end
   if scout.on_command_completed(event.unit_number, event.result) then return end
@@ -398,6 +399,7 @@ script.on_nth_tick(PHASE_TICKS, function(event)
   patrol.tick(phase)
   escort.tick(phase)
   commands.tick(phase)
+  shredders.tick(phase)
   vision.tick(phase, divisions.PHASES)
   weapons.tick(phase, divisions.PHASES)
   headquarters.tick(phase, divisions.PHASES)
