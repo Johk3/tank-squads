@@ -77,6 +77,14 @@ function M.unregister(unit_number)
   storage.veterans[unit_number] = nil
 end
 
+-- Set by control.lua to scripts/transition.lua's roll, which needs modules
+-- that already require this one.
+M.on_promoted = nil
+
+local function apply_speed(entity, record)
+  entity.speed = entity.prototype.speed * (1 + ranks.bonus(record.rank).speed)
+end
+
 -- Moves a service record to the unit that replaces its soldier, keeping
 -- the name, XP, kills and rank.
 function M.transfer(old_id, entity)
@@ -85,16 +93,8 @@ function M.transfer(old_id, entity)
   storage.veterans[old_id] = nil
   storage.veterans[entity.unit_number] = record
   record.kind = entity.name
-  if record.rank and record.rank > 0 then entity.speed = entity.prototype.speed * (1 + ranks.bonus(record.rank).speed) end
+  if record.rank and record.rank > 0 then apply_speed(entity, record) end
   return record
-end
-
--- Set by control.lua to scripts/transition.lua's roll, which needs modules
--- that already require this one.
-M.on_promoted = nil
-
-local function apply_speed(entity, record)
-  entity.speed = entity.prototype.speed * (1 + ranks.bonus(record.rank).speed)
 end
 
 local function promote(entity, record, rank)
