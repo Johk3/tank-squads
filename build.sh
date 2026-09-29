@@ -8,12 +8,15 @@ TMP_OUT="$OUT.tmp"
 STAGE="$(mktemp -d)"
 DEST="$STAGE/tank-squads_$VERSION"
 mkdir -p "$DEST" "$ROOT/dist"
-# thumbnail.png is the mod portal's and in-game mod list's picture.
-for f in info.json thumbnail.png data.lua settings.lua control.lua changelog.txt README.md LICENSE prototypes scripts locale graphics; do
-  cp -r "$ROOT/$f" "$DEST/"
-done
-# Local development notes stay out of the release.
-rm -f "$DEST/graphics/README.md"
+# thumbnail.png is the mod portal's and in-game mod list's picture. Only
+# files git tracks are packaged, so local notes and untracked artwork never
+# reach the release: commit before building.
+git -C "$ROOT" ls-files -z -- info.json thumbnail.png data.lua settings.lua control.lua changelog.txt \
+    README.md LICENSE prototypes scripts locale graphics |
+  while IFS= read -r -d '' f; do
+    mkdir -p "$DEST/$(dirname "$f")"
+    cp "$ROOT/$f" "$DEST/$f"
+  done
 
 # This host has no `zip` binary, so build the archive with python3's zipfile
 # module (already used by this script's own self-check below and by
@@ -45,6 +48,9 @@ tops = {n.split('/')[0] for n in z.namelist()}
 assert tops == {'tank-squads_$VERSION'}, tops
 assert any(n.endswith('info.json') for n in z.namelist())
 assert 'tank-squads_$VERSION/thumbnail.png' in z.namelist(), 'thumbnail.png missing'
+notes = [n for n in z.namelist() if (n.endswith('.md') and n != 'tank-squads_$VERSION/README.md')
+         or '/docs/' in n]
+assert not notes, f'local notes in the package: {notes}'
 print('package ok')
 "
 
