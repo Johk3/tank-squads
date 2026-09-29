@@ -47,6 +47,8 @@ return function(ctx)
     local tank, target, _, launched = setup()
     soldier(nil, nil, 50, 0).type = 'unit'
     assert(fire(tank, target, 10) == nuclear.FALLBACK and launched[1].name == nuclear.FALLBACK)
+    -- Aimed at the entity, so the hit reports it and the rank bonus lands.
+    assert(launched[1].target == target, 'fallback not aimed at the target entity')
   end)
 
   test('nuclear: an allied force near the target is protected too', function()

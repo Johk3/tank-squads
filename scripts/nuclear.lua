@@ -52,8 +52,11 @@ function M.on_trigger(event)
   if record.next_launch and event.tick < record.next_launch then return nil end
   local surface, position = source.surface, target.position
   local name = M.clear(surface, position, source.force) and M.NUKE or M.FALLBACK
+  -- The nuke lands on the spot. The rocket follows the target, so its hit
+  -- names the target and the rank bonus lands.
+  local aim = name == M.FALLBACK and target or position
   surface.create_entity{name = name, position = source.position, force = source.force,
-    source = source, cause = source, target = position, speed = M.SPEED}
+    source = source, cause = source, target = aim, speed = M.SPEED}
   surface.play_sound{path = "tank-squad-nuke-launch", position = source.position}
   record.next_launch = event.tick + M.reload(record.rank or 0)
   weapons.recoil(record, event.tick)
