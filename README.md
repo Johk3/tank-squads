@@ -52,7 +52,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 - The flame tank has 90% fire resistance, and its flames leave no fires on the ground.
 - Electric and nuclear tanks cannot be trained. Each time a carrier is promoted it has a small chance, 1% at Trained rising to 8% at Legend, to be rebuilt as one of them, keeping its name, experience, rank, division and orders.
 - The electric tank's plasma ball deals 120 electric damage to its target and 180 to every enemy within 6 tiles. Laser damage research applies.
-- The nuclear tank's tactical nuke destroys almost everything within 14 tiles, without craters or fires. It never fires one while its own or allied units or buildings are within 17 tiles of the target, and fires a plain rocket instead. The blast only hurts enemies. It reloads in 20 seconds, down to 6 seconds at Legend. Rocket damage research applies.
+- The nuclear tank's tactical nuke destroys almost everything within 14 tiles, without craters or fires. It never fires one while its own or allied units or buildings are within 17 tiles of the target, and fires a plain rocket instead. The blast only hurts enemies. It reloads in 20 seconds, down to 6 seconds at Legend. Rocket damage research does not change the nuke.
 
 ### Mobile headquarters
 
@@ -138,13 +138,13 @@ All of these are map settings and can be changed during a game (*Settings → Mo
 
 Tank Squads soldiers are native `unit` entities, the same type as biters. Movement, pathfinding, targeting and damage run in the engine's C++. The mod's scripts only react to events and run one light sweep per second, spread across ten slices. There is no `on_tick` handler.
 
-In testing, 200 carriers in constant combat cost about **0.01 ms per tick** of script time.
+In testing, 200 carriers in constant combat cost about **0.02 ms per tick** of script time.
 
 Veteran ranks add no per-tick work. Kills are counted from enemy deaths only, a Recruit's shots cost no extra engine calls, and names and ranks are shown on a card while you point at a unit rather than drawn over every tank.
 
 A mobile headquarters' camp moves only when it parks, because the engine takes a few milliseconds to move a roboport with such a large reach. Its once-a-second sweep is otherwise light.
 
-Electric and nuclear tanks add one script call per impact or launch, and Elite and Legend regeneration runs in the existing once-a-second sweep.
+An electric tank adds two script calls per shot, one as it fires and one on impact. A nuclear tank adds one script call per second while a target is in range. Elite and Legend regeneration runs in the existing once-a-second sweep.
 
 ---
 
