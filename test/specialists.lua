@@ -4,6 +4,7 @@ return function(ctx)
   local barracks = require('scripts.barracks')
   local weapons = require('scripts.weapons')
   local patrol = require('scripts.patrol')
+  local names = require('scripts.names')
 
   test('upgrade unlocks specialists only for forces with existing research', function()
     dofile('control.lua')
@@ -61,5 +62,56 @@ return function(ctx)
     assert(not record.target and record.gun.use_target_orientation)
     weapons.unregister(a.unit_number)
     assert(not record.gun.valid)
+  end)
+
+  for _, case in ipairs({{tier = 2, animation = 'tank-squad-red-gun'}, {tier = 3, animation = 'tank-squad-green-gun'}}) do
+    test('tier ' .. case.tier .. ' carrier draws its own untinted animated gun and recoils per shot', function()
+      local a, enemy = soldier(), soldier('enemy')
+      a.name = 'tank-squad-soldier-' .. case.tier
+      local record = weapons.register(a)
+      assert(record.gun.args.animation == case.animation, 'gun ' .. tostring(record.gun.args.animation))
+      assert(record.gun.args.tint == nil, 'painted gun is tinted')
+      weapons.on_shot{effect_id = 'tank-squad-shot', source_entity = a, target_entity = enemy, tick = 100}
+      assert(record.gun.animation_speed == 1 and record.gun.animation_offset == -100, 'no recoil on shot')
+      weapons.on_shot{effect_id = 'tank-squad-shot', source_entity = a, target_entity = enemy, tick = 112}
+      assert(record.gun.animation_offset == -112, 'second shot did not restart the flash')
+      game.tick = 200
+      weapons.tick()
+      assert(record.gun.animation_speed == 0 and record.gun.animation_offset == 0, 'gun not settled at rest')
+    end)
+  end
+
+  test('tier 1 carrier keeps its tinted static gun', function()
+    local a = soldier()
+    local record = weapons.register(a)
+    assert(record.gun.args.sprite == 'tank-squad-chaingun' and record.gun.args.tint ~= nil)
+  end)
+
+  test('configuration change turns old tier 2 and 3 guns into animations', function()
+    dofile('control.lua')
+    local a = soldier()
+    a.name = 'tank-squad-soldier-2'
+    storage.weapons = {}
+    local old = {valid = true, type = 'sprite', args = {sprite = 'tank-squad-chaingun'}}
+    old.destroy = function() old.valid = false end
+    storage.weapons[a.unit_number] = {entity = a, gun = old, rank = 0}
+    -- Only the soldier-name query finds the carrier; barracks, headquarters
+    -- and headquarters-helper queries find nothing. Matched by identity, not
+    -- just by shape, since headquarters.reconcile() also queries by a list.
+    a.surface.find_entities_filtered = function(query)
+      if query.name == names.soldier_names then return {a} end
+      return {}
+    end
+    game.forces = {}
+    ctx.handlers().configuration_changed{}
+    assert(not old.valid, 'old sprite gun kept')
+    assert(storage.weapons[a.unit_number].gun.args.animation == 'tank-squad-red-gun', 'no animation after migration')
+  end)
+
+  test('appearance: gun sequences start and end at rest and flash in between', function()
+    local appearance = require('scripts.appearance')
+    local sequence = appearance.gun_sequence{{2, 3}, {3, 3}, {4, 3}}
+    assert(#sequence == 128 and sequence[1] == 1 and sequence[2] == 2 and sequence[4] == 2
+      and sequence[5] == 3 and sequence[8] == 4 and sequence[11] == 1 and sequence[128] == 1)
   end)
 end

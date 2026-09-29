@@ -114,13 +114,16 @@ local function reset()
   settings = {global = {}}
   for _, d in ipairs(require("scripts.config").DEFINITIONS) do settings.global[d.name] = {value = d.default} end
   settings.global[require("scripts.config").VISION] = {value = true}
-  local function draw(args)
-    local obj = {valid = true, args = args}
-    obj.destroy = function() obj.valid = false end
-    draws[#draws + 1] = obj
-    return obj
+  local function draw(kind)
+    return function(args)
+      local obj = {valid = true, args = args, type = kind}
+      obj.destroy = function() obj.valid = false end
+      draws[#draws + 1] = obj
+      return obj
+    end
   end
-  rendering = {draw_circle = draw, draw_animation = draw, draw_line = draw, draw_text = draw, draw_sprite = draw}
+  rendering = {draw_circle = draw("circle"), draw_animation = draw("animation"), draw_line = draw("line"),
+    draw_text = draw("text"), draw_sprite = draw("sprite")}
   event_filters = {}
   script = {on_event = function(event, handler, filters) handlers[event] = handler; event_filters[event] = filters end,
     on_nth_tick = function(period, handler) handlers.nth_tick = {period = period, handler = handler} end, on_init = function() end,
@@ -1103,12 +1106,18 @@ test("custom vehicles keep combat balance and add harmless native tracers", func
   end
   dofile("prototypes/soldier.lua")
   local damage = {6, 10, 16}
+  -- Tier 1 shares the plain chaingun hull; tiers 2 and 3 have their own painted hulls.
+  local chassis = {
+    "__tank-squads__/graphics/chaingun-chassis.png",
+    "__tank-squads__/graphics/tank-variants/red/chassis.png",
+    "__tank-squads__/graphics/tank-variants/green/chassis.png",
+  }
   for tier = 1, 3 do
     local unit = data.raw.unit[names.soldier_names[tier]]
     assert(unit.type == "unit" and unit.max_health == 300 + tier * 100, "vehicle no longer compatible")
     local attack = unit.attack_parameters
     assert(attack.range == 20 and attack.cooldown == 12 and attack.ammo_category == "bullet", "combat stats changed")
-    assert(unit.run_animation.filename == "__tank-squads__/graphics/chaingun-chassis.png", "old tank artwork retained")
+    assert(unit.run_animation.filename == chassis[tier], "old tank artwork retained")
     local actual_damage, tracer, aiming, sparks = 0, false, false, nil
     for _, action in ipairs(attack.ammo_type.action) do
       local delivery = action.action_delivery

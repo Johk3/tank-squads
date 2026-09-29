@@ -137,6 +137,9 @@ script.on_configuration_changed(function()
       force.recipes['tank-squad-train-flame'].enabled = true
     end
   end
+  -- Tier 2 and 3 guns from older versions are tinted sprites; drop them so
+  -- the registration below draws their painted animations.
+  weapons.migrate()
   -- Recover producers missed by older versions' clone/revive handling.
   -- register() is idempotent and preserves existing inventories and timers.
   for _, surface in pairs(game.surfaces) do

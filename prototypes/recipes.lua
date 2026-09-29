@@ -27,13 +27,19 @@ local AMMO_BY_TIER = {
   "uranium-rounds-magazine",
 }
 
+local RECRUIT_ICONS = {
+  "__tank-squads__/graphics/chaingun-icon.png",
+  "__tank-squads__/graphics/tank-variants/red/icon.png",
+  "__tank-squads__/graphics/tank-variants/green/icon.png",
+}
+
 local training = {}
 for tier = 1, 3 do
   local recruit = "tank-squad-recruit-" .. tier
   table.insert(training, {
     type = "item",
     name = recruit,
-    icon = "__tank-squads__/graphics/chaingun-icon.png",
+    icon = RECRUIT_ICONS[tier],
     icon_size = 1254,
     -- The recruit exists only to carry a finished craft from the engine to
     -- scripts/barracks.lua, which converts it into a soldier entity. It is

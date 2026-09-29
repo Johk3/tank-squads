@@ -1,5 +1,5 @@
 -- Shared by prototypes and runtime overlays; contains no runtime API access.
-return {
+local M = {
   chassis_scale = 0.45,
   gun_scale = 0.09,
   gun_pivot_pixels = 48,
@@ -11,6 +11,15 @@ return {
     ["tank-squad-flame"] = {
       sprite = "tank-squad-flame-gun", scale = 0.095,
       pivot_pixels = 155, aim_timeout = 60,
+    },
+    -- Painted variant guns: 627 px frames, rest, flash, casing, recovery.
+    ["tank-squad-soldier-2"] = {
+      animation = "tank-squad-red-gun", scale = 0.20,
+      pivot_pixels = 87, aim_timeout = 60, recoil_ticks = 12,
+    },
+    ["tank-squad-soldier-3"] = {
+      animation = "tank-squad-green-gun", scale = 0.25,
+      pivot_pixels = 87, aim_timeout = 60, recoil_ticks = 12,
     },
   },
   headquarters = {
@@ -27,3 +36,17 @@ return {
     {r = 0.3, g = 0.8, b = 0.35, a = 1},
   },
 }
+
+-- A 128-entry frame sequence: one rest frame, then each {frame, count}
+-- step, then rest. A frozen gun (speed 0, offset 0) shows entry 1, the
+-- rest frame, and the sweep freezes a gun long before the sequence loops.
+function M.gun_sequence(steps)
+  local sequence = {1}
+  for _, step in ipairs(steps) do
+    for _ = 1, step[2] do sequence[#sequence + 1] = step[1] end
+  end
+  while #sequence < 128 do sequence[#sequence + 1] = 1 end
+  return sequence
+end
+
+return M

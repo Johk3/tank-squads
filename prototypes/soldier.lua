@@ -2,11 +2,11 @@ local util = require("util")
 local appearance = require("scripts.appearance")
 local colors = appearance.tier_colors
 
-local function chassis_animation(tint)
+local function chassis_animation(filename, tint)
   -- The generated atlas is 1254px square. Sixteen 313px cells occupy the
   -- first 1252px; the final two transparent pixels are unused padding.
   return {
-    filename = "__tank-squads__/graphics/chaingun-chassis.png",
+    filename = filename,
     width = 313, height = 313, line_length = 4,
     direction_count = 16, frame_count = 1, scale = appearance.chassis_scale, tint = tint,
   }
@@ -14,11 +14,11 @@ end
 
 local TRACER_PROBABILITY = 0.5
 
-local function soldier(suffix, hp, damage, tint)
+local function soldier(suffix, hp, damage, art)
   return {
     type = "unit",
     name = "tank-squad-soldier-" .. suffix,
-    icon = "__tank-squads__/graphics/chaingun-icon.png",
+    icon = art.icon,
     icon_size = 1254,
     flags = {"placeable-player", "placeable-off-grid", "not-repairable", "get-by-unit-number"},
     max_health = hp,
@@ -36,7 +36,7 @@ local function soldier(suffix, hp, damage, tint)
     min_pursue_time = 10 * 60,
     max_pursue_distance = 50,
     ai_settings = {allow_try_return_to_spawner = false, do_separation = true},
-    run_animation = chassis_animation(tint),
+    run_animation = chassis_animation(art.chassis, art.tint),
     attack_parameters = {
       type = "projectile",
       range = 20,
@@ -76,7 +76,7 @@ local function soldier(suffix, hp, damage, tint)
           },
         },
       },
-      animation = chassis_animation(tint),
+      animation = chassis_animation(art.chassis, art.tint),
     },
   }
 end
@@ -99,7 +99,25 @@ data:extend{
       width = 3, height = 50, scale = 1.2, draw_as_glow = true,
     },
   },
-  soldier("1", 400, 6, colors[1]),
-  soldier("2", 500, 10, colors[2]),
-  soldier("3", 600, 16, colors[3]),
+  {
+    type = "animation", name = "tank-squad-red-gun",
+    filename = "__tank-squads__/graphics/tank-variants/red/attack.png",
+    width = 627, height = 627, frame_count = 4, line_length = 2,
+    frame_sequence = appearance.gun_sequence{{2, 3}, {3, 3}, {4, 3}},
+    scale = appearance.weapons["tank-squad-soldier-2"].scale,
+  },
+  {
+    type = "animation", name = "tank-squad-green-gun",
+    filename = "__tank-squads__/graphics/tank-variants/green/attack.png",
+    width = 627, height = 627, frame_count = 4, line_length = 2,
+    frame_sequence = appearance.gun_sequence{{2, 3}, {3, 3}, {4, 3}},
+    scale = appearance.weapons["tank-squad-soldier-3"].scale,
+  },
+  soldier("1", 400, 6, {chassis = "__tank-squads__/graphics/chaingun-chassis.png",
+    icon = "__tank-squads__/graphics/chaingun-icon.png", tint = colors[1]}),
+  -- Tiers 2 and 3 have their own painted hulls, so no tint.
+  soldier("2", 500, 10, {chassis = "__tank-squads__/graphics/tank-variants/red/chassis.png",
+    icon = "__tank-squads__/graphics/tank-variants/red/icon.png"}),
+  soldier("3", 600, 16, {chassis = "__tank-squads__/graphics/tank-variants/green/chassis.png",
+    icon = "__tank-squads__/graphics/tank-variants/green/icon.png"}),
 }

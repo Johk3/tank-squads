@@ -28,7 +28,9 @@ function M.register(entity)
     orientation_target = entity, use_target_orientation = true,
     -- Each generated weapon has its own measured bearing offset.
     oriented_offset = {0, offset},
-    tint = colors[names.soldier_set[entity.name]], render_layer = "higher-object-above",
+    -- Painted guns carry their own colours; only the shared gun is tinted.
+    tint = not visual and colors[names.soldier_set[entity.name]] or nil,
+    render_layer = "higher-object-above",
   }
   local gun
   if visual and visual.animation then
@@ -39,7 +41,8 @@ function M.register(entity)
     gun = rendering.draw_sprite(args)
   end
   record = {entity = entity, gun = gun, aim_timeout = visual and visual.aim_timeout or 60,
-    recoil_ticks = visual and visual.recoil_ticks, rank = rank}
+    recoil_ticks = visual and visual.recoil_ticks, recoil_speed = visual and visual.animation_speed,
+    scripted_recoil = visual and visual.scripted_recoil, rank = rank}
   storage.weapons[entity.unit_number] = record
   local index = storage.weapon_slices
   if index then index.slices[entity.unit_number % index.phases][entity.unit_number] = true end
@@ -58,6 +61,17 @@ function M.unregister(unit_number)
   if index then index.slices[unit_number % index.phases][unit_number] = nil end
 end
 
+-- Plays the gun's attack sequence from its first frame. The sweep freezes
+-- it on the rest frame once recoil_ticks have passed since the last shot.
+function M.recoil(record, tick)
+  if not (record.recoil_ticks and record.gun.valid) then return end
+  local speed = record.recoil_speed or 1
+  record.gun.animation_speed = speed
+  record.gun.animation_offset = -tick * speed
+  record.recoiling = true
+  record.last_shot = tick
+end
+
 -- Returns the shooter's gun record when it has one, for the rank bonus.
 -- The weapon's native attack supplies the actual target. Once assigned, the
 -- renderer follows both entities and rotates the gun without Lua position or
@@ -67,11 +81,7 @@ function M.on_shot(event)
   local source, target = event.source_entity, event.target_entity
   if not (source and source.valid and target and target.valid) then return end
   local record = storage.weapons and storage.weapons[source.unit_number]
-  if record and record.gun.valid and record.recoil_ticks then
-    record.gun.animation_speed = 1
-    record.gun.animation_offset = -event.tick
-    record.recoiling = true
-  end
+  if record and not record.scripted_recoil then M.recoil(record, event.tick) end
   -- Sustained fire: the gun already tracks this target.
   if record and record.target == target and record.gun.valid then
     record.last_shot = event.tick
@@ -80,11 +90,7 @@ function M.on_shot(event)
   if source.surface_index ~= target.surface_index then return record end
   if not (record and record.gun.valid) then record = M.register(source) end
   if not record then return end
-  if record.recoil_ticks and not record.recoiling then
-    record.gun.animation_speed = 1
-    record.gun.animation_offset = -event.tick
-    record.recoiling = true
-  end
+  if not (record.scripted_recoil or record.recoiling) then M.recoil(record, event.tick) end
   if record.target ~= target then
     record.gun.orientation_target = target
     record.gun.use_target_orientation = false
@@ -154,6 +160,17 @@ function M.tick(phase, phases)
     local record = registry[id]
     -- check() may unregister this soldier, which only clears its own entry.
     if record then check(id, record) else slice[id] = nil end
+  end
+end
+
+-- Saves from before a unit had its own gun animation hold a static sprite.
+-- register() reuses valid render objects, so drop those to be redrawn.
+function M.migrate()
+  for _, record in pairs(storage.weapons or {}) do
+    local visual = record.entity.valid and appearance.weapons[record.entity.name]
+    if visual and visual.animation and record.gun.valid and record.gun.type ~= "animation" then
+      record.gun.destroy()
+    end
   end
 end
 
