@@ -14,6 +14,22 @@ local M = {}
 local WINDOW = "tank_squads_veterans"
 local ICON = 24
 
+-- Electric and nuclear tanks are rare, so their rows are coloured and
+-- tagged, and their numbers head each division and the window.
+M.SPECIAL = {
+  ["tank-squad-electric"] = {key = "electric", color = {r = 0.35, g = 0.85, b = 1.0}},
+  ["tank-squad-nuclear"] = {key = "nuclear", color = {r = 0.95, g = 0.8, b = 0.3}},
+}
+
+function M.count_special(ranked)
+  local counts = {electric = 0, nuclear = 0}
+  for _, entry in ipairs(ranked) do
+    local special = M.SPECIAL[entry.record.kind]
+    if special then counts[special.key] = counts[special.key] + 1 end
+  end
+  return counts
+end
+
 -- The division's soldiers, most XP first. Kills break ties, then the unit
 -- number, so the order never depends on table order.
 function M.ranked(members)
@@ -30,8 +46,8 @@ function M.ranked(members)
   return ranked
 end
 
-local function icon(parent, sprite)
-  local widget = parent.add{type = "sprite", sprite = sprite}
+local function icon(parent, sprite, name)
+  local widget = parent.add{type = "sprite", sprite = sprite, name = name}
   widget.style.width, widget.style.height = ICON, ICON
   widget.style.stretch_image_to_widget_size = true
   return widget
@@ -48,6 +64,8 @@ local function build(player)
     caption = {"tank-squads.veterans-title"}}
   if frame.force_auto_center then frame.force_auto_center() end
   local body = frame.add{type = "flow", name = "body", direction = "vertical"}
+  local summary = body.add{type = "label", name = "summary", style = "caption_label"}
+  local totals = {electric = 0, nuclear = 0}
   local pane = body.add{type = "scroll-pane", name = "pane"}
   pane.style.maximal_height = 480
   local list = pane.add{type = "flow", name = "list", direction = "vertical"}
@@ -64,12 +82,27 @@ local function build(player)
       if sprite then icon(header, sprite) end
       header.add{type = "label", style = "caption_label",
         caption = {"tank-squads.veterans-division", n, {"tank-squads.division-name-" .. n}, #record.members}}
+      local counts = M.count_special(ranked)
+      totals.electric, totals.nuclear = totals.electric + counts.electric, totals.nuclear + counts.nuclear
+      if counts.electric + counts.nuclear > 0 then
+        header.add{type = "label", name = "special",
+          caption = {"tank-squads.veterans-division-special", counts.electric, counts.nuclear}}
+      end
       for _, entry in ipairs(ranked) do
         local soldier = entry.record
-        local row = list.add{type = "flow", name = "unit_" .. entry.id, direction = "horizontal"}
+        local special = M.SPECIAL[soldier.kind]
+        local row = list.add{type = "flow", name = "unit_" .. entry.id, direction = "horizontal",
+          tooltip = special and {"tank-squads.veterans-kind-" .. special.key .. "-help"} or nil}
         row.style.vertical_align = "center"
-        row.add{type = "checkbox", name = "pick", state = false, caption = unit_names.localised(soldier)}
+        local pick = row.add{type = "checkbox", name = "pick", state = false, caption = unit_names.localised(soldier)}
+        if special then pick.style.font_color = special.color end
+        if soldier.kind then icon(row, "entity/" .. soldier.kind, "kind_icon") end
         icon(row, ranks.sprite(soldier.rank))
+        if special then
+          local tag = row.add{type = "label", name = "special", caption = {"tank-squads.veterans-kind-" .. special.key}}
+          tag.style.font = "default-bold"
+          tag.style.font_color = special.color
+        end
         row.add{type = "label", caption = {"tank-squads.veterans-row", {"tank-squads.rank-" .. soldier.rank},
           math.floor(soldier.xp), soldier.kills}}
         units[#units + 1] = entry.id
@@ -77,6 +110,8 @@ local function build(player)
     end
   end
   if #units == 0 then list.add{type = "label", name = "empty", caption = {"tank-squads.veterans-empty"}} end
+  summary.visible = totals.electric + totals.nuclear > 0
+  summary.caption = {"tank-squads.veterans-special", totals.electric, totals.nuclear}
   local actions = body.add{type = "flow", name = "actions", direction = "horizontal"}
   actions.add{type = "button", name = "select_picked", caption = {"tank-squads.veterans-select"},
     tooltip = {"tank-squads.veterans-select-help"}, tags = {tank_squads_veterans = "select"}}

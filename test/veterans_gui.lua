@@ -84,4 +84,51 @@ return function(ctx)
     ctx.handlers().on_gui_click{player_index = 1, element = frame.body.actions.close}
     assert(not frame.valid, 'close button')
   end)
+
+  local function special(name, xp)
+    local e = soldier()
+    e.name = name
+    local record = veterans.register(e)
+    record.xp, record.kills = xp, 0
+    return e
+  end
+
+  test('veterans window: special tanks stand out with icon, colour, tag and counts', function()
+    local player = setup()
+    local volt, nuke, plain = special('tank-squad-electric', 600), special('tank-squad-nuclear', 500), veteran(700, 1)
+    divisions.assign(1, 4, {volt, nuke, plain})
+    divisions.assign(1, 6, {special('tank-squad-electric', 10)})
+    gui.toggle(1)
+    local frame = player.gui.screen.tank_squads_veterans
+    local list = frame.body.pane.list
+    local row = list['unit_' .. volt.unit_number]
+    assert(row.kind_icon.sprite == 'entity/tank-squad-electric', 'no unit icon')
+    assert(row.pick.style.font_color and row.pick.style.font_color.b > 0.9, 'electric name not cyan')
+    assert(row.special.caption[1] == 'tank-squads.veterans-kind-electric', 'no electric tag')
+    assert(row.tooltip[1] == 'tank-squads.veterans-kind-electric-help')
+    local nuke_row = list['unit_' .. nuke.unit_number]
+    assert(nuke_row.special.caption[1] == 'tank-squads.veterans-kind-nuclear')
+    local plain_row = list['unit_' .. plain.unit_number]
+    assert(plain_row.kind_icon.sprite == 'entity/tank-squad-soldier-1' and plain_row.special == nil
+      and plain_row.pick.style.font_color == nil, 'plain carrier marked special')
+    assert(list.division_4.special.caption[1] == 'tank-squads.veterans-division-special'
+      and list.division_4.special.caption[2] == 1 and list.division_4.special.caption[3] == 1)
+    assert(frame.body.summary.visible and frame.body.summary.caption[2] == 2 and frame.body.summary.caption[3] == 1)
+  end)
+
+  test('veterans window: no special tanks, no summary and no header counts', function()
+    local player = setup()
+    divisions.assign(1, 1, {veteran(5, 0)})
+    gui.toggle(1)
+    local frame = player.gui.screen.tank_squads_veterans
+    assert(frame.body.summary.visible == false and frame.body.pane.list.division_1.special == nil)
+  end)
+
+  test('veterans window: every kind has its GUI strings', function()
+    local text = io.open('locale/en/tank-squads.cfg'):read('*a')
+    for _, key in ipairs({'veterans-kind-electric', 'veterans-kind-nuclear', 'veterans-kind-electric-help',
+        'veterans-kind-nuclear-help', 'veterans-division-special', 'veterans-special'}) do
+      assert(text:find('\n' .. key:gsub('%-', '%%-') .. '='), 'missing ' .. key)
+    end
+  end)
 end
