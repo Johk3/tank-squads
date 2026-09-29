@@ -8,6 +8,7 @@ local weapons = require("scripts.weapons")
 local divisions = require("scripts.divisions")
 local patrol = require("scripts.patrol")
 local commands = require("scripts.commands")
+local scout = require("scripts.scout")
 local reinforcements = require("scripts.reinforcements")
 local unit_names = require("scripts.unit_names")
 
@@ -55,6 +56,9 @@ function M.swap(old, kind)
   local old_id, new_id = old.unit_number, new.unit_number
   local player_index, n, division = divisions.owner(old_id)
   local record = veterans.transfer(old_id, new)
+  -- A scout team keeps the soldier's place, or it would read the swap as a
+  -- death and call for help.
+  if division then scout.replace(division, old_id, new) end
   -- The same clean-up as a death, in the same order (see control.lua).
   weapons.unregister(old_id)
   divisions.forget(old_id)

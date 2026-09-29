@@ -88,6 +88,8 @@ local function rejoin(team, soldier)
 end
 
 function M.join(state, soldier)
+  -- A rebuilt soldier already holds its place (M.replace).
+  if state.team_of[soldier.unit_number] then return true end
   local best
   for id = 1, state.team_count do
     local team = state.teams[id]
@@ -103,6 +105,27 @@ function M.join(state, soldier)
   team.members[#team.members + 1] = soldier.unit_number
   state.team_of[soldier.unit_number] = best
   rejoin(team, soldier)
+  return true
+end
+
+-- A soldier rebuilt as another unit keeps its team, and its place in a
+-- convoy, under the new unit number, so the team does not read it as a
+-- death. Like a joiner, it takes no slot in the hop in progress and walks
+-- to the team. Returns true when the soldier was in a team.
+function M.replace(state, old_id, soldier)
+  local id = state.team_of and state.team_of[old_id]
+  local team = id and state.teams[id]
+  if not team then return false end
+  local new_id = soldier.unit_number
+  for i, unit in ipairs(team.members) do
+    if unit == old_id then team.members[i] = new_id end
+  end
+  state.team_of[old_id], state.team_of[new_id] = nil, id
+  local hop = team.hop
+  if hop then hop.pending[old_id], hop.front[old_id], hop.failed[old_id] = nil, nil, nil end
+  if team.chase then team.chase[old_id] = nil end
+  if team.withdraw then team.withdraw.resend[old_id] = nil end
+  if not retreat.replace(team, old_id, new_id) then rejoin(team, soldier) end
   return true
 end
 

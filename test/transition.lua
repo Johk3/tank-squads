@@ -6,6 +6,7 @@ return function(ctx)
   local divisions = require('scripts.divisions')
   local patrol = require('scripts.patrol')
   local barracks = require('scripts.barracks')
+  local scout = require('scripts.scout')
 
   local function with_rolls(values, run)
     local i, old = 0, transition.random
@@ -92,6 +93,43 @@ return function(ctx)
     local old_id = old.unit_number
     local new = assert(transition.swap(old, 'tank-squad-nuclear'))
     assert(own.recruits[1] == new.unit_number, 'quota still counts ' .. tostring(own.recruits[1]) .. ' not ' .. old_id)
+  end)
+
+  test('transition: a rebuilt scout keeps its team place and raises no alarm', function()
+    local old = swappable()
+    local list = {old, soldier(nil, nil, 2, 0), soldier(nil, nil, 4, 0)}
+    for i = 2, 3 do weapons.register(list[i]) end
+    divisions.assign(1, 4, list)
+    assert(scout.set(1, 4, true), 'scout mode did not start')
+    scout.tick()
+    local state = divisions.record(1, 4).scout
+    local id = state.team_of[old.unit_number]
+    local team = state.teams[id]
+    assert(team and team.hop, 'the team did not set out')
+    local old_id = old.unit_number
+    local new = assert(transition.swap(old, 'tank-squad-electric'))
+    assert(state.team_of[old_id] == nil and state.team_of[new.unit_number] == id, 'team index not renamed')
+    local places = 0
+    for _, unit in ipairs(team.members) do
+      assert(unit ~= old_id, 'the old unit number is still in the team')
+      if unit == new.unit_number then places = places + 1 end
+    end
+    assert(places == 1, 'the new tank holds ' .. places .. ' places')
+    assert(not team.hop.pending[old_id] and not team.hop.front[old_id], 'the hop still waits for the old tank')
+    assert(new.command and new.command.destination, 'the new tank has no order')
+    scout.tick()
+    assert(not team.call and not (team.hop and team.hop.fallback), 'the rebuild was read as a death')
+  end)
+
+  test('transition: a rebuilt soldier away healing keeps its convoy place', function()
+    local retreat = require('scripts.retreat')
+    local state = {retreat = {next_id = 2, convoys = {[1] = {injured = {[5] = true}, guards = {}, resend = {}}},
+      away = {[5] = 1}, cooldown = {[5] = 100}}}
+    assert(retreat.replace(state, 5, 9), 'an away soldier was not reported away')
+    local r, convoy = state.retreat, state.retreat.convoys[1]
+    assert(r.away[5] == nil and r.away[9] == 1 and r.cooldown[5] == nil and r.cooldown[9] == 100, 'away marks not renamed')
+    assert(convoy.injured[9] and not convoy.injured[5] and convoy.resend[9], 'convoy does not send the new unit')
+    assert(not retreat.replace(state, 7, 8), 'a soldier at hand was reported away')
   end)
 
   test('transition: a tank in no division swaps without joining one', function()

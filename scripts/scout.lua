@@ -189,6 +189,14 @@ function M.join(record, soldier)
   return true
 end
 
+-- A soldier rebuilt as another unit keeps its team place. Returns true when
+-- it had one.
+function M.replace(record, old_id, soldier)
+  local state = record.mode == "scout" and record.scout
+  if not (state and state.teams) then return false end
+  return teams.replace(state, old_id, soldier)
+end
+
 function M.target(state)
   return state.teams and teams.target(state) or nil
 end

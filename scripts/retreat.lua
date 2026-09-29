@@ -403,6 +403,24 @@ function M.on_command_completed(state, unit_number, result)
   convoy.resend[unit_number] = true
 end
 
+-- A soldier rebuilt as another unit keeps its place in its convoy and its
+-- cooldown. Returns true when it is away; its convoy sends the new unit on
+-- at the next sweep.
+function M.replace(state, old_id, new_id)
+  local r = state.retreat
+  if not r then return false end
+  if r.cooldown[old_id] then r.cooldown[new_id], r.cooldown[old_id] = r.cooldown[old_id], nil end
+  local id = r.away[old_id]
+  local convoy = id and r.convoys[id]
+  if not convoy then return false end
+  r.away[old_id], r.away[new_id] = nil, id
+  for _, set in ipairs({convoy.injured, convoy.guards}) do
+    if set[old_id] then set[old_id], set[new_id] = nil, true end
+  end
+  convoy.resend[old_id], convoy.resend[new_id] = nil, true
+  return true
+end
+
 function M.is_away(state, unit_number)
   local r = state.retreat
   return r ~= nil and r.away[unit_number] ~= nil
