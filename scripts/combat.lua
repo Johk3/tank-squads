@@ -58,6 +58,7 @@ local function resumable(command)
   end
   return true
 end
+M.resumable = resumable
 
 -- The command to run after an interruption. An attack whose target died
 -- would have completed. A plain stop never completes, so the owner of the

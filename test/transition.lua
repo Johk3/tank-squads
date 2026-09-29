@@ -140,6 +140,20 @@ return function(ctx)
     assert(divisions.owner(new.unit_number) == nil)
   end)
 
+  test('transition: a tank in no division keeps its order', function()
+    local old = swappable()
+    local order = {type = defines.command.go_to_location, destination = {x = 30, y = 0}}
+    old.commandable.command = order
+    local new = assert(transition.swap(old, 'tank-squad-nuclear'))
+    assert(new.command == order, 'the rebuilt tank lost its order')
+    -- A fight's interrupted order is the one to carry over.
+    local fighter = swappable()
+    fighter.commandable.command = {type = defines.command.compound, commands = {}}
+    storage.combat = {[fighter.unit_number] = {target = soldier('enemy'), resume = order}}
+    new = assert(transition.swap(fighter, 'tank-squad-electric'))
+    assert(new.command == order, 'the rebuilt tank did not resume its order')
+  end)
+
   test('transition: promotion rolls through control and tells the force', function()
     dofile('control.lua')
     local old = swappable()
