@@ -99,6 +99,8 @@ return function(ctx)
     local old = swappable()
     local list = {old, soldier(nil, nil, 2, 0), soldier(nil, nil, 4, 0)}
     for i = 2, 3 do weapons.register(list[i]) end
+    -- A wounded carrier weighs more in the team's health once rebuilt.
+    old.health = 200
     divisions.assign(1, 4, list)
     assert(scout.set(1, 4, true), 'scout mode did not start')
     scout.tick()

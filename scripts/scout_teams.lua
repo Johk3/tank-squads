@@ -121,6 +121,9 @@ function M.replace(state, old_id, soldier)
     if unit == old_id then team.members[i] = new_id end
   end
   state.team_of[old_id], state.team_of[new_id] = nil, id
+  -- The new unit's health weighs differently in the team's ratio, which is
+  -- no fight: the team measures from a fresh peak.
+  team.peak = nil
   local hop = team.hop
   if hop then hop.pending[old_id], hop.front[old_id], hop.failed[old_id] = nil, nil, nil end
   if team.chase then team.chase[old_id] = nil end
