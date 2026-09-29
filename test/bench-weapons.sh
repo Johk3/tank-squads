@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Isolated native combat benchmark. Usage: bash test/bench-weapons.sh [count] [idle|fire] [carrier|mixed|siege|flame] [xp]
+# Isolated native combat benchmark. Usage: bash test/bench-weapons.sh [count] [idle|fire] [carrier|mixed|siege|flame|red|green|electric|nuclear] [xp]
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 COUNT="${1:-200}"
@@ -8,7 +8,7 @@ COMPOSITION="${3:-carrier}"
 XP="${4:-0}"
 [[ "$COUNT" =~ ^[0-9]+$ ]] && (( COUNT >= 1 && COUNT <= 1000 )) || exit 2
 [[ "$MODE" == idle || "$MODE" == fire ]] || exit 2
-[[ "$COMPOSITION" == carrier || "$COMPOSITION" == mixed || "$COMPOSITION" == siege || "$COMPOSITION" == flame ]] || exit 2
+[[ "$COMPOSITION" == carrier || "$COMPOSITION" == mixed || "$COMPOSITION" == siege || "$COMPOSITION" == flame || "$COMPOSITION" == red || "$COMPOSITION" == green || "$COMPOSITION" == electric || "$COMPOSITION" == nuclear ]] || exit 2
 [[ "$XP" =~ ^[0-9]+$ ]] || exit 2
 setup_sandbox
 trap stop_server EXIT
@@ -29,15 +29,15 @@ local f = game.forces['weapon-benchmark'] or game.create_force('weapon-benchmark
 f.set_cease_fire('enemy', '$MODE' == 'idle')
 -- Targets must stay attackable (units skip indestructible entities) yet
 -- survive the whole run: zero out every specialist's ammunition damage.
-for _, category in pairs{'bullet', 'cannon-shell', 'flamethrower'} do f.set_ammo_damage_modifier(category, -1) end
+for _, category in pairs{'bullet', 'cannon-shell', 'flamethrower', 'laser', 'rocket'} do f.set_ammo_damage_modifier(category, -1) end
 f.set_gun_speed_modifier('bullet', 0)
 local count = 0
 for i = 1, $COUNT do
   local y = i * 4 - $COUNT * 2
   local kind = '$COMPOSITION'
   if kind == 'mixed' then kind = ({'carrier','siege','flame'})[(i-1)%3+1] end
-  local unit = kind == 'carrier' and 'tank-squad-soldier-1' or 'tank-squad-' .. kind
-  local distance = kind == 'siege' and 35 or kind == 'flame' and 8 or 12
+  local unit = ({carrier = 'tank-squad-soldier-1', red = 'tank-squad-soldier-2', green = 'tank-squad-soldier-3'})[kind] or 'tank-squad-' .. kind
+  local distance = ({siege = 35, flame = 8, electric = 16, nuclear = 30})[kind] or 12
   local a = s.create_entity{name = unit, position = {0, y}, force = f, raise_built = true}
   local target = s.create_entity{name = 'tank', position = {distance, y}, force = 'enemy'}
   if not (a and target and storage.weapons[a.unit_number]) then error('benchmark spawn failed') end

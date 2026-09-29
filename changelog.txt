@@ -1,4 +1,16 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.29.0
+Date: 2026-09-29
+  Features:
+    - Two new ranks after Veteran. Elite (4,000 XP) gives +130% speed, +700% damage, takes 90% less damage and regenerates 1% of its health each second. Legend (15,000 XP) gives +160% speed, +1,100% damage, takes 93% less damage and regenerates 2% each second.
+    - Piercing and uranium carriers have their own red and green hulls and rotary guns, with a muzzle flash on every shot.
+    - Each carrier promotion has a small chance, from 1% at Trained to 8% at Legend, to rebuild the carrier as a rare Electric Tank or Nuclear Tank. It keeps its name, experience, rank, division and orders.
+    - The Electric Tank fires plasma balls that burst on the target and shock every enemy within 6 tiles, with arcs to up to six of them.
+    - The Nuclear Tank launches tactical nukes at targets up to 52 tiles away. Before each launch it checks the blast radius and fires a plain rocket instead while friends are near the target. The blast never hurts friends. Higher ranks reload faster.
+    - The soldier list shows each unit's icon, and marks and counts electric and nuclear tanks.
+  Changes:
+    - A large rank bonus is now dealt in at most four hits per shot.
+---------------------------------------------------------------------------------------------------
 Version: 0.28.0
 Date: 2026-09-28
   Features:

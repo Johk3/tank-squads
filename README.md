@@ -8,7 +8,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 
 ## Features
 
-- **Three kinds of tanks.** Fast chaingun carriers in three ammunition tiers, a long-range siege tank with an oversized cannon, and a heavily armored flame tank.
+- **Five kinds of tanks.** Fast chaingun carriers in three ammunition tiers, a long-range siege tank with an oversized cannon, a heavily armored flame tank, and two rare tanks a carrier may become on promotion: the electric tank and the nuclear tank.
 - **Mobile headquarters.** A huge, slow, unarmed command vehicle. It heals nearby soldiers, and wherever it parks it sets up camp with a far-reaching roboport and solar decks that power a nearby grid. It keeps the map live around itself like any tank.
 - **Barracks.** A 3x3 military bunker that trains soldiers like an assembler trains items. It needs no power, heals nearby soldiers, and plays a door animation when a new tank rolls out.
 - **RTS controls.** Drag-select with the command tool, alt-drag to move or attack, and use **Ctrl + 1–9** / **Alt + 1–9** to assign and recall up to nine divisions. **Ctrl + Shift + 1–9** adds the selection to a division without touching its other soldiers.
@@ -19,7 +19,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 - **Healing retreat.** Badly damaged escort, scout and patrol soldiers drive back to the nearest barracks or mobile headquarters in guarded convoys, heal, and return to their post. A scout team that takes too much damage pulls back together.
 - **Automatic reinforcements.** Link a barracks to a division and set how many of its soldiers it keeps there. It replaces its losses automatically and pauses when its quota is full. Each barracks has its own division and quota, so several barracks with different recipes can feed one division.
 - **Division insignias.** Divisions 1–9 each carry their own insignia: Iron Vanguard, Ashguard, Stormbreakers, Pathfinders, Siege Hammers, Night Watch, Dust Wolves, Steel Serpents and Last Bastion. It flies over the division, shows on the map and heads its row in the division window. Your whole team sees it.
-- **Veterans.** Every unit has its own name. Soldiers earn experience from their kills, weighted by how tough the enemy was, and rise from Recruit to Trained, Seasoned and Veteran. Each rank makes a soldier faster, hit harder and shrug off more damage. Point at a unit to see its name, rank, experience and kills.
+- **Veterans.** Every unit has its own name. Soldiers earn experience from their kills, weighted by how tough the enemy was, and rise from Recruit to Trained, Seasoned, Veteran, Elite and Legend. Each rank makes a soldier faster, hit harder and shrug off more damage. Point at a unit to see its name, rank, experience and kills.
 - **Map vision.** Soldiers keep the map live around themselves, so you can watch fights from the map view without radars.
 - **Multiplayer ready.** Selections, divisions, route overlays and labels are private to each player. Everything is per force.
 
@@ -43,11 +43,16 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 | Chaingun Carrier Mk3 | 600 | 20 | fast | 15 steel, 20 gears, 10 uranium magazines | 10 s |
 | Siege Tank | 900 | 52 | slow | 40 steel, 30 gears, 10 cannon shells | 30 s |
 | Flame Tank | 2,400 | 10 | slowest | 60 steel, 40 gears, 10 flamethrower ammo | 30 s |
+| Electric Tank | 1,400 | 24 | medium | promotion only | — |
+| Nuclear Tank | 1,600 | 52 | slow | promotion only | — |
 
 - The ammunition is used up during training. Soldiers never run out of ammo in the field.
 - Your normal weapon research applies: bullet damage for carriers, cannon research for siege tanks, and flamethrower research for flame tanks.
 - The siege tank outranges every worm, including behemoths.
 - The flame tank has 90% fire resistance, and its flames leave no fires on the ground.
+- Electric and nuclear tanks cannot be trained. Each time a carrier is promoted it has a small chance, 1% at Trained rising to 8% at Legend, to be rebuilt as one of them, keeping its name, experience, rank, division and orders.
+- The electric tank's plasma ball deals 120 electric damage to its target and 180 to every enemy within 6 tiles. Laser damage research applies.
+- The nuclear tank's tactical nuke destroys almost everything within 14 tiles, without craters or fires. It never fires one while its own or allied units or buildings are within 17 tiles of the target, and fires a plain rocket instead. The blast only hurts enemies. It reloads in 20 seconds, down to 6 seconds at Legend. Rocket damage research applies.
 
 ### Mobile headquarters
 
@@ -68,6 +73,8 @@ Research **Mobile headquarters** (automation to utility science), then choose **
 | Trained | 50 | +30% | +100% | −65% |
 | Seasoned | 250 | +60% | +200% | −75% |
 | Veteran | 1000 | +100% | +400% | −85% |
+| Elite | 4000 | +130% | +700% | −90%, regenerates 1%/s |
+| Legend | 15000 | +160% | +1100% | −93%, regenerates 2%/s |
 
 A kill is worth a tenth of the enemy's maximum health in experience: a small biter gives 1.5, a behemoth 300. A siege tank's extra damage lands with its shell. A killing blow is never reduced, and a soldier's record ends with it. The mobile headquarters has a name but no rank. Point at a unit to see its card.
 
@@ -136,6 +143,8 @@ In testing, 200 carriers in constant combat cost about **0.01 ms per tick** of s
 Veteran ranks add no per-tick work. Kills are counted from enemy deaths only, a Recruit's shots cost no extra engine calls, and names and ranks are shown on a card while you point at a unit rather than drawn over every tank.
 
 A mobile headquarters' camp moves only when it parks, because the engine takes a few milliseconds to move a roboport with such a large reach. Its once-a-second sweep is otherwise light.
+
+Electric and nuclear tanks add one script call per impact or launch, and Elite and Legend regeneration runs in the existing once-a-second sweep.
 
 ---
 
