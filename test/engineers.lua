@@ -154,4 +154,54 @@ return function(ctx)
     assert(output[names.constructor_recruit] == 0, 'constructor recruit stayed in the barracks')
     assert(require('scripts.engineers.constructor').count(1) == 1, 'no constructor deployed')
   end)
+
+  test('engineers: nest score counts worms by size and spawners as two', function()
+    local threat = require('scripts.engineers.threat')
+    assert(threat.structure{name = 'small-worm-turret', type = 'turret'} == 1)
+    assert(threat.structure{name = 'behemoth-worm-turret', type = 'turret'} == 8)
+    assert(threat.structure{name = 'biter-spawner', type = 'unit-spawner'} == 2)
+    assert(threat.structure{name = 'modded-worm', type = 'turret', max_health = 1000} == 4)
+    assert(threat.structure{name = 'tiny-worm', type = 'turret', max_health = 10} == 1)
+    local score = threat.nest{{name = 'medium-worm-turret', type = 'turret'},
+      {name = 'spitter-spawner', type = 'unit-spawner'}}
+    assert(score == 4 and threat.needed(score) == 6)
+  end)
+
+  test('engineers: soldier strength by kind and rank', function()
+    local threat = require('scripts.engineers.threat')
+    assert(threat.strength('tank-squad-soldier-1', 0) == 1)
+    assert(threat.strength('tank-squad-siege', 2) == 2.25)
+    assert(threat.strength('tank-squad-nuclear', 4) == 6)
+    assert(threat.strength('tank-squad-flame', nil) == 1.5)
+  end)
+
+  test('engineers: pick takes the nearest until strong enough, else nothing', function()
+    local threat = require('scripts.engineers.threat')
+    local c = {{id = 1, strength = 1, d = 50}, {id = 2, strength = 3, d = 10}, {id = 3, strength = 1, d = 20},
+      {id = 4, strength = 1, d = 20}}
+    local picked, total = threat.pick(c, 4)
+    assert(#picked == 2 and picked[1].id == 2 and picked[2].id == 3 and total == 4)
+    assert(threat.pick(c, 7) == nil, 'picked while short')
+    assert(threat.pick(c, 0) == nil, 'picked for no threat')
+  end)
+
+  test('engineers: a patrol keeps one soldier per 64 tiles, at least two', function()
+    local threat = require('scripts.engineers.threat')
+    assert(threat.patrol_keep(0) == 2 and threat.patrol_keep(128) == 2 and threat.patrol_keep(200) == 4)
+    local soldiers = {{id = 1, strength = 3}, {id = 2, strength = 1}, {id = 3, strength = 1.5}, {id = 4, strength = 1}}
+    local spare = threat.surplus(soldiers, 2)
+    assert(#spare == 2 and spare[1].id == 2 and spare[2].id == 4, 'surplus is not the weakest')
+    assert(#threat.surplus(soldiers, 4) == 0 and #threat.surplus(soldiers, 9) == 0)
+  end)
+
+  test('engineers: loans record, recall and finish', function()
+    local loans = require('scripts.engineers.loans')
+    assert(not loans.on_loan(7) and loans.finish(7) == nil)
+    loans.lend(7, {task_force = 1, player_index = 1, n = 2, back = {x = 1, y = 2}})
+    assert(loans.on_loan(7) and loans.get(7).n == 2)
+    loans.recall({{valid = true, unit_number = 7}})
+    assert(not loans.on_loan(7))
+    loans.lend(8, {task_force = 1})
+    assert(loans.finish(8).task_force == 1 and not loans.on_loan(8))
+  end)
 end
