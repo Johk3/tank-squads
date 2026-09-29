@@ -1329,5 +1329,6 @@ require('test.electric'){test = test, soldier = soldier, draws = function() retu
   players = function() return players end}
 require('test.nuclear'){test = test, soldier = soldier, players = function() return players end}
 require('test.transition'){test = test, soldier = soldier, building = building, players = function() return players end}
+require('test.shredder_geometry'){test = test}
 print(string.format("%d passed, %d failed", passed, failed))
 assert(failed == 0, "regression tests failed")
