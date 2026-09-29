@@ -3,6 +3,8 @@ local M = {
   chassis_scale = 0.45,
   gun_scale = 0.09,
   gun_pivot_pixels = 48,
+  -- The electric link row is drawn at this scale and stretched along x.
+  electric = {link_scale = 0.5},
   weapons = {
     ["tank-squad-siege"] = {
       animation = "tank-squad-siege-gun", scale = 0.36,
@@ -20,6 +22,17 @@ local M = {
     ["tank-squad-soldier-3"] = {
       animation = "tank-squad-green-gun", scale = 0.25,
       pivot_pixels = 87, aim_timeout = 60, recoil_ticks = 12,
+    },
+    ["tank-squad-electric"] = {
+      animation = "tank-squad-electric-gun", scale = 0.20,
+      pivot_pixels = 87, aim_timeout = 90, recoil_ticks = 16,
+    },
+    -- The launcher smokes for five seconds after a launch, at a quarter
+    -- frame per tick. nuclear.lua starts it only when a rocket leaves.
+    ["tank-squad-nuclear"] = {
+      animation = "tank-squad-nuclear-gun", scale = 0.17,
+      pivot_pixels = 102, aim_timeout = 360, recoil_ticks = 360,
+      animation_speed = 0.25, scripted_recoil = true,
     },
   },
   headquarters = {

@@ -3,6 +3,10 @@ local names = {
   flag = "tank-squad-rally-flag",
   soldier_names = {"tank-squad-soldier-1", "tank-squad-soldier-2", "tank-squad-soldier-3", "tank-squad-siege", "tank-squad-flame"},
   soldier_set = {},
+  -- Tanks a chaingunner can become on promotion. They have no recipe, so
+  -- they come after the headquarters in unit_names and keep the recruit
+  -- indices unchanged.
+  promoted_names = {"tank-squad-electric", "tank-squad-nuclear"},
   headquarters = "tank-squad-headquarters",
   -- Every unit a player can select and command: the armed soldiers above,
   -- then the unarmed headquarters. recruit_names[i] trains unit_names[i].
@@ -15,12 +19,15 @@ local names = {
   max_division = 9,
 }
 
+local trainable = #names.soldier_names
+for _, name in ipairs(names.promoted_names) do names.soldier_names[#names.soldier_names + 1] = name end
 for tier, name in pairs(names.soldier_names) do
   names.soldier_set[name] = tier
 end
 
-for _, name in ipairs(names.soldier_names) do names.unit_names[#names.unit_names + 1] = name end
+for i = 1, trainable do names.unit_names[#names.unit_names + 1] = names.soldier_names[i] end
 names.unit_names[#names.unit_names + 1] = names.headquarters
+for _, name in ipairs(names.promoted_names) do names.unit_names[#names.unit_names + 1] = name end
 for tier, name in pairs(names.unit_names) do
   names.unit_set[name] = tier
 end

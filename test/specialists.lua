@@ -114,4 +114,33 @@ return function(ctx)
     assert(#sequence == 128 and sequence[1] == 1 and sequence[2] == 2 and sequence[4] == 2
       and sequence[5] == 3 and sequence[8] == 4 and sequence[11] == 1 and sequence[128] == 1)
   end)
+
+  test('names: promoted tanks are soldiers and units but never recruits', function()
+    assert(names.promoted_names[1] == 'tank-squad-electric' and names.promoted_names[2] == 'tank-squad-nuclear')
+    assert(names.soldier_set['tank-squad-electric'] and names.soldier_set['tank-squad-nuclear'])
+    assert(names.unit_set['tank-squad-electric'] and names.unit_set['tank-squad-nuclear'])
+    assert(#names.recruit_names == 6, 'recruit list changed')
+    -- recruit-1 trains soldier-1, recruit-siege trains siege, and so on.
+    for i, recruit in ipairs(names.recruit_names) do
+      local unit = names.unit_names[i]
+      assert((recruit:gsub('recruit', 'soldier')) == unit or (recruit:gsub('recruit%-', '')) == unit,
+        recruit .. ' no longer trains ' .. tostring(unit))
+    end
+    assert(names.unit_names[6] == names.headquarters)
+  end)
+
+  test('assault: the nuclear tank fires in the barrage like a siege tank', function()
+    local assault = require('scripts.assault')
+    assert(assault.kind('tank-squad-nuclear') == 'siege' and assault.kind('tank-squad-electric') == 'carrier')
+  end)
+
+  for _, case in ipairs({{name = 'tank-squad-electric', animation = 'tank-squad-electric-gun'},
+      {name = 'tank-squad-nuclear', animation = 'tank-squad-nuclear-gun'}}) do
+    test(case.name .. ' draws its own gun', function()
+      local a = soldier()
+      a.name = case.name
+      local record = weapons.register(a)
+      assert(record.gun.args.animation == case.animation and record.gun.args.tint == nil)
+    end)
+  end
 end

@@ -30,7 +30,7 @@ M.NO_KILL_TIMEOUT = 5 * 3600
 -- waypoints at most this far apart, so its path never cuts across the nest.
 M.WAYPOINT_ARC = math.pi / 4
 
-local KINDS = {['tank-squad-siege'] = 'siege', ['tank-squad-flame'] = 'flame'}
+local KINDS = {['tank-squad-siege'] = 'siege', ['tank-squad-flame'] = 'flame', ['tank-squad-nuclear'] = 'siege'}
 
 function M.kind(name)
   return KINDS[name] or 'carrier'
