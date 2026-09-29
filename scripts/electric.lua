@@ -11,10 +11,13 @@ local TARGETS = {"unit", "unit-spawner", "turret", "character", "car", "spider-v
 -- Length in tiles of one link frame at its drawn scale.
 local LINK_TILES = 313 * appearance.electric.link_scale / 32
 
+-- Returns true when it drew an arc; false for the target sitting on the
+-- contact point itself (the impact's own aim point, found by the same
+-- radius search), which gets no arc and must not eat one of the six slots.
 local function arc(surface, from, to)
   local dx, dy = to.x - from.x, to.y - from.y
   local length = math.sqrt(dx * dx + dy * dy)
-  if length < 0.1 then return end
+  if length < 0.1 then return false end
   -- The link is drawn east-west. Orientation 0 is north and 0.25 is east,
   -- so a vector's orientation minus a quarter turn lays the link along it.
   local orientation = (math.atan2(dx, -dy) / (2 * math.pi) - 0.25) % 1
@@ -22,6 +25,7 @@ local function arc(surface, from, to)
     target = {x = from.x + dx / 2, y = from.y + dy / 2}, orientation = orientation,
     x_scale = length / LINK_TILES, y_scale = 1, time_to_live = M.TTL, animation_speed = 1,
     render_layer = "air-object"}
+  return true
 end
 
 -- Returns the number of arcs drawn, or nil for another mod's effect.
@@ -35,11 +39,14 @@ function M.on_hit(event)
   local force, drawn = source.force, 0
   for _, other in pairs(game.forces) do
     if force.is_enemy(other) then
+      -- One extra slot covers the primary target at the contact point,
+      -- which the search finds but arc() skips, so it must not shrink the
+      -- budget of real arcs still available.
       local found = surface.find_entities_filtered{position = from, radius = M.RADIUS, force = other,
-        type = TARGETS, limit = M.ARCS - drawn}
+        type = TARGETS, limit = M.ARCS - drawn + 1}
       for _, e in pairs(found) do
-        arc(surface, from, e.position)
-        drawn = drawn + 1
+        if arc(surface, from, e.position) then drawn = drawn + 1 end
+        if drawn >= M.ARCS then break end
       end
       if drawn >= M.ARCS then break end
     end
