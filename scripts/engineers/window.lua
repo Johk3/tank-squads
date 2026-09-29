@@ -59,6 +59,8 @@ local function build(player)
     caption = {'tank-squads.engineers-constructors'}})
   body.add{type = 'table', name = 'list', column_count = 3, tags = {}}
   fixed(body.add{type = 'label', name = 'ghosts', tags = {}})
+  body.add{type = 'button', name = 'close', caption = {'tank-squads.escort-close'},
+    tags = {tank_squads_engineers = 'close'}}
   return frame
 end
 
@@ -128,6 +130,10 @@ end
 function M.click(event)
   local element = event.element
   if not (element and element.valid) then return false end
+  if element.tags.tank_squads_engineers == 'close' then
+    M.close(event.player_index)
+    return true
+  end
   local id = element.tags.tank_squads_constructor
   if not id then return false end
   local s = state.peek()

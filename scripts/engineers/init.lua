@@ -30,7 +30,15 @@ function M.slow_sweep(update_panel)
   local s = state.peek()
   if not s then return end
   window.refresh_all()
-  if not next(s.constructors) then return end
+  if not next(s.constructors) then
+    -- The last constructor is gone: panels are judged once more.
+    if s.shown then
+      s.shown = nil
+      for _, player in pairs(game.connected_players) do update_panel(player.index) end
+    end
+    return
+  end
+  s.shown = true
   for _, player in pairs(game.connected_players) do
     if not (storage.divisions and storage.divisions[player.index]) and constructor.count(player.force_index) > 0 then
       update_panel(player.index)
