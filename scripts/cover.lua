@@ -23,6 +23,7 @@
 local combat = require("scripts.combat")
 local divisions = require("scripts.divisions")
 local geometry = require("scripts.escort_geometry")
+local loans = require("scripts.engineers.loans")
 local retreat = require("scripts.retreat")
 local shredders = require("scripts.shredders")
 local unit_names = require("scripts.unit_names")
@@ -192,9 +193,9 @@ local function job_changed(s, key, player_index, n, record)
   return changed
 end
 
--- A nest assault or scouting commands the whole division.
+-- A nest assault, scouting or an engineer escort commands the whole division.
 local function whole_division(record)
-  if record.mode == "scout" then return true end
+  if record.mode == "scout" or record.mode == "engineer" then return true end
   if record.order and record.order.assault then return true end
   return record.mode == "escort" and record.escort ~= nil and record.escort.assault ~= nil
 end
@@ -408,7 +409,7 @@ local function sweep(s, player_index, n, record)
     local id = e.unit_number
     local veteran = id and veterans[id]
     local rank = veteran and veteran.rank
-    if rank and not (job and retreat.is_away(job, id)) then
+    if rank and not (job and retreat.is_away(job, id)) and not loans.on_loan(id) then
       by_id[id] = e
       if rank >= M.RANK then
         vips[#vips + 1] = {entity = e, id = id, rank = rank, xp = veteran.xp or 0}

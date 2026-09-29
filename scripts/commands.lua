@@ -3,6 +3,7 @@ local combat = require("scripts.combat")
 local divisions = require("scripts.divisions")
 local names = require("scripts.names")
 local patrol = require("scripts.patrol")
+local loans = require("scripts.engineers.loans")
 
 local M = {}
 
@@ -133,6 +134,8 @@ function M.order(player_index, area, surface)
     if soldier.surface_index == surface_index then table.insert(on_surface, soldier) end
   end
   if #on_surface == 0 then return nil end
+  -- Soldiers the player orders leave any task force they were lent to.
+  loans.recall(on_surface)
   if n == 0 then divisions.release_for_order(player_index, on_surface) end
   patrol.clear(player_index, n)
   local record = divisions.record(player_index, n)

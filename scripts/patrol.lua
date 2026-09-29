@@ -7,6 +7,7 @@ local patrol_geometry = require("scripts.patrol_geometry")
 local retreat = require("scripts.retreat")
 local config = require("scripts.config")
 local cover = require("scripts.cover")
+local loans = require("scripts.engineers.loans")
 
 local M = {}
 
@@ -118,8 +119,9 @@ local function assign(player_index, n, r, all)
   for _, soldier in pairs(members) do
     -- A soldier away healing or guarding, or held by its veteran's cover,
     -- has no post until it rejoins.
+    -- A soldier lent to a task force has no post until it comes back.
     if soldier.surface_index == r.surface_index and not retreat.is_away(r, soldier.unit_number)
-        and not cover.held(soldier.unit_number) then
+        and not cover.held(soldier.unit_number) and not loans.on_loan(soldier.unit_number) then
       keyed[#keyed + 1] = {entity = soldier, id = soldier.unit_number, position = soldier.position,
         hq = soldier.name == names.headquarters}
     end
@@ -298,7 +300,10 @@ end
 local function retreat_members(player_index, n, r)
   local out = {}
   for _, e in ipairs(divisions.cached(player_index, n)) do
-    if e.valid and e.surface_index == r.surface_index and e.name ~= names.headquarters then out[#out + 1] = e end
+    if e.valid and e.surface_index == r.surface_index and e.name ~= names.headquarters
+        and not loans.on_loan(e.unit_number) then
+      out[#out + 1] = e
+    end
   end
   return out
 end

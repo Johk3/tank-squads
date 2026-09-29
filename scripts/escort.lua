@@ -120,16 +120,15 @@ function M.forget_ward(player_index)
   end
 end
 
--- Returns the ward's character when the ward is available (same surface,
--- inside the leash), and whether the anchor moved this sweep. ward is the
--- player object drive() already fetched this sweep to validate the escort.
-function M.track(state, members, ward, step)
-  local character = ward and ward.character
-  if not (character and character.valid and character.surface_index == state.surface_index) then
+-- Returns the followed entity when it is available (valid, same surface,
+-- inside the leash), and whether the anchor moved this sweep. A player's
+-- escort follows its character; an engineer team follows its constructor.
+function M.follow(state, members, entity, step)
+  if not (entity and entity.valid and entity.surface_index == state.surface_index) then
     state.history, state.available = {}, false
     return nil, false
   end
-  local position = character.position
+  local position = entity.position
   geometry.push(state.history, position, M.SETTLE_SWEEPS)
   local reference = state.anchor or geometry.centroid(members)
   if geometry.distance(position, reference) > M.LEASH then
@@ -146,7 +145,13 @@ function M.track(state, members, ward, step)
     state.anchor = {x = position.x, y = position.y}
     moved = true
   end
-  return character, moved
+  return entity, moved
+end
+
+-- The ward's character when available. ward is the player object drive()
+-- already fetched this sweep to validate the escort.
+function M.track(state, members, ward, step)
+  return M.follow(state, members, ward and ward.character, step)
 end
 
 local formations = {}
@@ -193,6 +198,7 @@ local function player_characters()
   end
   return out
 end
+M.player_characters = player_characters
 
 -- The threat zone is the circle around the ward joined with the same circle
 -- around the ring's centre, so an enemy inside the formation is fought even

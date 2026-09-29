@@ -277,7 +277,9 @@ local function fill(player_index, n, entities)
   return #M.get(player_index, n)
 end
 
-local AUTOMATED = {patrol = true, scout = true, escort = true}
+-- Engineer divisions escort constructors: an order to their soldiers takes
+-- them out, as for the other jobs.
+local AUTOMATED = {patrol = true, scout = true, escort = true, engineer = true}
 
 -- Before the drag selection is ordered, its soldiers leave the player's
 -- patrolling, scouting and escorting divisions, whose next leg would undo

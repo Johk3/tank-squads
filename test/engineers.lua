@@ -400,4 +400,134 @@ return function(ctx)
     assert(crane.place(record) == 0 and #record.cluster == 0)
     assert(storage.engineers.blocked[g.unit_number] == game.tick + ghosts.BLOCK)
   end)
+
+  test('engineers: the split deals strongest first and caps each team', function()
+    local teams = require('scripts.engineers.teams')
+    local soldiers = {{id = 1, strength = 3}, {id = 2, strength = 3}, {id = 3, strength = 1.5},
+      {id = 4, strength = 1}, {id = 5, strength = 1}}
+    local split = teams.split(soldiers, {10, 20}, {}, 8)
+    assert(#split[10] == 3 and #split[20] == 2)
+    assert(split[10][1] == 1 and split[20][1] == 2 and split[10][2] == 3, 'not dealt strongest first')
+    local many = {}
+    for i = 1, 20 do many[i] = {id = i, strength = 1} end
+    split = teams.split(many, {10, 20}, {}, 8)
+    assert(#split[10] == 8 and #split[20] == 8, 'cap ignored')
+    split = teams.split({{id = 1, strength = 1}}, {10, 20, 30}, {}, 8)
+    assert(#split[10] + #split[20] + #split[30] == 1)
+    assert(next(teams.split(soldiers, {}, {}, 8)) == nil)
+  end)
+
+  test('engineers: the split keeps soldiers in their team', function()
+    local teams = require('scripts.engineers.teams')
+    local soldiers = {{id = 1, strength = 3}, {id = 2, strength = 3}, {id = 3, strength = 1}, {id = 4, strength = 1}}
+    local split = teams.split(soldiers, {10, 20}, {[1] = 20, [2] = 20, [3] = 10}, 8)
+    assert(split[20][1] == 1 and split[20][2] == 2 and split[10][1] == 3 and split[10][2] == 4)
+  end)
+
+  test('engineers: marking a division puts it in the pool until another order', function()
+    local E = ctx.engineers
+    E.engine()
+    local divisions = require('scripts.divisions')
+    local teams = require('scripts.engineers.teams')
+    local commands = require('scripts.commands')
+    local a, b = soldier(), soldier()
+    divisions.assign(1, 2, {a, b})
+    assert(teams.set_pool(1, 2, true))
+    local record = divisions.record(1, 2)
+    assert(record.mode == 'engineer' and a.command.type == defines.command.stop)
+    assert(not teams.set_pool(1, 5, true), 'an empty division joined the pool')
+    commands.order(1, {left_top = {x = 10, y = 10}, right_bottom = {x = 12, y = 12}}, game.surfaces[1])
+    assert(record.mode == 'idle', 'an order left the division in the pool')
+  end)
+
+  test('engineers: a drag order takes soldiers out of the pool', function()
+    local E = ctx.engineers
+    E.engine()
+    local divisions = require('scripts.divisions')
+    local a, b = soldier(), soldier()
+    divisions.assign(1, 2, {a, b})
+    require('scripts.engineers.teams').set_pool(1, 2, true)
+    divisions.select_area(1, {a})
+    divisions.release_for_order(1, {a})
+    assert(divisions.size(1, 2) == 1, 'the pool division kept a soldier the player ordered')
+  end)
+
+  test('engineers: pool soldiers split into teams that ring their constructors', function()
+    local E = ctx.engineers
+    E.engine()
+    local divisions = require('scripts.divisions')
+    local teams = require('scripts.engineers.teams')
+    local constructor = require('scripts.engineers.constructor')
+    local soldiers = {}
+    for i = 1, 5 do soldiers[i] = soldier(nil, nil, i, 0) end
+    divisions.assign(1, 3, soldiers)
+    teams.set_pool(1, 3, true)
+    local c1 = constructor.register(E.constructor_entity(40, 0))
+    local c2 = constructor.register(E.constructor_entity(-40, 0))
+    teams.refresh()
+    local s = storage.engineers
+    assert(#s.teams[c1.id].members == 3 and #s.teams[c2.id].members == 2)
+    for _, e in ipairs(soldiers) do assert(s.team_of[e.unit_number], 'a pool soldier has no team') end
+    teams.tick()
+    assert(teams.present(c1.id) == 3 and teams.present(c2.id) == 2)
+    assert(teams.on_command_completed(soldiers[1].unit_number, defines.behavior_result.success))
+    assert(not teams.on_command_completed(c1.id, defines.behavior_result.success))
+    constructor.unregister(c2.id)
+    teams.refresh()
+    assert(s.teams[c2.id] == nil and #s.teams[c1.id].members == 5, 'soldiers of a gone constructor not dealt again')
+  end)
+
+  test('engineers: a patrol gives no post to a soldier on loan', function()
+    local E = ctx.engineers
+    E.engine()
+    local divisions = require('scripts.divisions')
+    local patrol = require('scripts.patrol')
+    local loans = require('scripts.engineers.loans')
+    local a, b, c = soldier(nil, nil, 0, 0), soldier(nil, nil, 5, 0), soldier(nil, nil, 10, 0)
+    divisions.assign(1, 4, {a, b, c})
+    patrol.add_waypoint(1, 4, {x = 0, y = 0}, game.surfaces[1])
+    patrol.add_waypoint(1, 4, {x = 100, y = 0}, game.surfaces[1])
+    patrol.start(1, 4)
+    local r = divisions.record(1, 4).patrol
+    assert(r.posts[c.unit_number])
+    loans.lend(c.unit_number, {task_force = 1, player_index = 1, n = 4})
+    r.dirty = true
+    patrol.tick()
+    assert(r.posts[c.unit_number] == nil and r.posts[a.unit_number], 'a loaned soldier kept its post')
+    loans.finish(c.unit_number)
+    r.dirty = true
+    patrol.tick()
+    assert(r.posts[c.unit_number], 'a returned soldier got no post')
+  end)
+
+  test('engineers: an order to lent soldiers takes them back', function()
+    local E = ctx.engineers
+    E.engine()
+    local divisions = require('scripts.divisions')
+    local loans = require('scripts.engineers.loans')
+    local a = soldier()
+    divisions.assign(1, 2, {a})
+    loans.lend(a.unit_number, {task_force = 9})
+    require('scripts.commands').order(1, {left_top = {x = 10, y = 10}, right_bottom = {x = 12, y = 12}},
+      game.surfaces[1])
+    assert(not loans.on_loan(a.unit_number))
+  end)
+  test('engineers: the split leaves soldiers the player ordered alone', function()
+    local E = ctx.engineers
+    E.engine()
+    local divisions = require('scripts.divisions')
+    local teams = require('scripts.engineers.teams')
+    local a, b = soldier(nil, nil, 0, 0), soldier(nil, nil, 2, 0)
+    divisions.assign(1, 3, {a, b})
+    teams.set_pool(1, 3, true)
+    local c = require('scripts.engineers.constructor').register(E.constructor_entity(40, 0))
+    teams.refresh()
+    assert(#storage.engineers.teams[c.id].members == 2)
+    require('scripts.commands').order(1, {left_top = {x = 10, y = 10}, right_bottom = {x = 12, y = 12}},
+      game.surfaces[1])
+    local ordered = a.command
+    teams.refresh()
+    assert(#storage.engineers.teams[c.id].members == 0 and not storage.engineers.team_of[a.unit_number])
+    assert(a.command == ordered, 'the split halted a soldier the player ordered')
+  end)
 end
