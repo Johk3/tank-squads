@@ -12,6 +12,7 @@ data:extend{
       {type = "unlock-recipe", recipe = "tank-squad-train-3"},
       {type = "unlock-recipe", recipe = "tank-squad-train-siege"},
       {type = "unlock-recipe", recipe = "tank-squad-train-flame"},
+      {type = "unlock-recipe", recipe = "tank-squad-train-shredder"},
     },
     prerequisites = {"military-science-pack"},
     unit = {

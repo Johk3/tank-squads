@@ -43,6 +43,24 @@ local M = {
     -- that bearing on the chassis' rear pedestal, about 4 tiles back.
     dish_offset = 1.65,
   },
+  -- Shredder. The charge sheet is drawn north-facing on top of an invisible
+  -- charging unit and turned toward the target; its scale matches its hull
+  -- to the directional sheet. The offsets put the hull centre, not the
+  -- frame centre, on the unit: the charge frames carry exhaust room below
+  -- the hull, and frames 3 and 4 sit 34 source pixels higher than 1 and 2.
+  shredder = {
+    chassis_scale = 0.45,
+    charge_scale = 0.206,
+    arm_offset = 0.203,
+    boost_offset = 0.421,
+    -- The reticle ring is about 210 px across: about 2.3 tiles here.
+    lock_scale = 0.35,
+    -- The breakup frames show the whole vehicle at hull size; the burst,
+    -- about 237 px across, covers the 8-tile shrapnel radius.
+    breakup_scale = 0.4,
+    burst_scale = 2.0,
+    shard_scale = 0.2,
+  },
   tier_colors = {
     {r = 0.9, g = 0.8, b = 0.2, a = 1},
     {r = 0.85, g = 0.25, b = 0.2, a = 1},

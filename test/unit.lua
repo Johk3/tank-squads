@@ -1292,6 +1292,14 @@ test("large transfers reconcile each affected patrol only once", function()
   assert(divisions.size(1,1)==1 and divisions.size(1,2)==2000)
 end)
 
+test("shredders stay out of every soldier, unit and recruit list", function()
+  for _, name in ipairs(names.shredder_names) do
+    assert(not names.soldier_set[name] and not names.unit_set[name], name .. " is selectable")
+  end
+  assert(not names.recruit_set[names.shredder_recruit], "shredder recruit shifts the recruit indices")
+  assert(#names.recruit_names == 6 and names.unit_names[6] == names.headquarters, "recruit indices moved")
+end)
+
 require('test.specialists'){test=test, soldier=soldier, building=building, handlers=function() return handlers end}
 require('test.config'){test = test}
 require('test.retreat'){test = test, soldier = soldier, building = building, count_reads = count_reads}

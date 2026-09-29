@@ -102,6 +102,12 @@ def main():
                 x, y = (cell % 4) * 313, (cell // 4) * 313
                 clear_pixels = sum(row[x:x + 313].count(0) for row in alpha[y:y + 313])
                 assert 313 * 313 * 0.1 < clear_pixels < 313 * 313 * 0.9, f"Invalid variant hull direction {cell} in {relative}"
+        elif path.parent.parent.name == "tank-variants" and path.name == "charge.png":
+            assert (width, height) == (1254, 1254), "Charge sheet size differs from prototype"
+            for cell in range(4):
+                x, y = (cell % 2) * 627, (cell // 2) * 627
+                count = sum(row[x:x + 627].count(0) for row in alpha[y:y + 627])
+                assert 627 * 627 * 0.1 < count < 627 * 627 * 0.99, f"Invalid charge frame {cell} in {relative}"
         elif path.parent.parent.name == "tank-variants" and path.name == "attack.png":
             assert (width, height) == (1254, 1254), "Variant gun sheet size differs from prototype"
             for cell in range(4):
