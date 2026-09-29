@@ -573,6 +573,17 @@ local function striking(group, units)
   return false
 end
 
+-- A veteran of the division calls for help: the group strikes the enemies
+-- around the position unless a strike is under way. Returns the number
+-- sent and the group's backline, or 0 and nil without a group there.
+function M.call(player_index, n, surface, position, force)
+  local s = storage.shredders
+  local group = s and s.groups[player_index .. ':' .. n]
+  if not group or #group.members == 0 or group.surface_index ~= surface.index then return 0, nil end
+  if striking(group, s.units) then return 0, group.point end
+  return M.strike(group.members, surface, position, force, M.STRIKE_RADIUS), group.point
+end
+
 -- Runs before divisions.forget, while the division still lists the dying
 -- soldier. Distress: half the size at the window's start lost within the
 -- window, or the last soldier. Returns the number of shredders sent.

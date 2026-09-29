@@ -22,8 +22,10 @@ local veterans_gui = require("scripts.veterans_gui")
 local reinforcements = require("scripts.reinforcements")
 local transition = require("scripts.transition")
 local shredders = require("scripts.shredders")
+local cover = require("scripts.cover")
 
 veterans.on_promoted = transition.roll
+cover.assign_job = reinforcements.assign_job
 
 local function on_built(event)
   local entity = event.entity
@@ -239,6 +241,7 @@ script.on_event(defines.events.on_entity_died, function(event)
     divisions.forget(entity.unit_number)
     patrol.forget(entity.unit_number)
     commands.forget(entity.unit_number)
+    cover.forget(entity.unit_number)
   elseif entity.name == names.headquarters then
     headquarters.unregister(entity.unit_number)
     -- Same order as for soldiers above.
@@ -259,6 +262,7 @@ script.on_event(defines.events.on_ai_command_completed, function(event)
   if shredders.on_command_completed(event.unit_number, event.result) then return end
   headquarters.on_command_completed(event.unit_number)
   if combat.on_command_completed(event.unit_number, event.result) then return end
+  if cover.on_command_completed(event.unit_number) then return end
   if scout.on_command_completed(event.unit_number, event.result) then return end
   if escort.on_command_completed(event.unit_number, event.result) then return end
   if commands.on_command_completed(event.unit_number, event.result) then return end
@@ -406,6 +410,7 @@ local PHASE_TICKS = 60 / divisions.PHASES
 script.on_nth_tick(PHASE_TICKS, function(event)
   local phase = (event.tick / PHASE_TICKS) % divisions.PHASES
   divisions.refresh(phase)
+  cover.tick(phase)
   barracks.tick(phase)
   scout.tick(phase)
   patrol.tick(phase)
@@ -482,6 +487,7 @@ remote.add_interface("tank-squads", {
   vision_tick = function() vision.tick(nil, divisions.PHASES) end,
   headquarters_tick = function() headquarters.tick(nil, divisions.PHASES) end,
   shredders_tick = function() shredders.tick() end,
+  cover_tick = function() cover.tick() end,
   shredders_strike = function(ids, surface_index, position, force_name, radius)
     return shredders.strike(ids, game.surfaces[surface_index], position, game.forces[force_name], radius)
   end,

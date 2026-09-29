@@ -8,6 +8,7 @@ local render = require("scripts.render")
 local config = require("scripts.config")
 local retreat = require("scripts.retreat")
 local assault = require("scripts.assault")
+local cover = require("scripts.cover")
 
 local M = {}
 
@@ -442,6 +443,8 @@ local function drive(owner_index, n, record, characters, cfg, shape)
       end,
     })
     if retreated then state.members_dirty = true end
+    -- Covers, helpers and a veteran falling back take no part either.
+    present = cover.free(present)
     if #present > 0 then
       local character, moved = M.track(state, present, ward, cfg.step)
       if state.members_dirty then

@@ -6,6 +6,7 @@ local geometry = require("scripts.escort_geometry")
 local patrol_geometry = require("scripts.patrol_geometry")
 local retreat = require("scripts.retreat")
 local config = require("scripts.config")
+local cover = require("scripts.cover")
 
 local M = {}
 
@@ -115,8 +116,10 @@ local function assign(player_index, n, r, all)
   if not r.surface_index and members[1] then r.surface_index = members[1].surface_index end
   local keyed = {}
   for _, soldier in pairs(members) do
-    -- A soldier away healing or guarding has no post until it rejoins.
-    if soldier.surface_index == r.surface_index and not retreat.is_away(r, soldier.unit_number) then
+    -- A soldier away healing or guarding, or held by its veteran's cover,
+    -- has no post until it rejoins.
+    if soldier.surface_index == r.surface_index and not retreat.is_away(r, soldier.unit_number)
+        and not cover.held(soldier.unit_number) then
       keyed[#keyed + 1] = {entity = soldier, id = soldier.unit_number, position = soldier.position,
         hq = soldier.name == names.headquarters}
     end
@@ -339,7 +342,7 @@ function M.tick(phase)
     if not r.retry then return end
     local tick = game.tick
     for id, due in pairs(r.retry) do
-      if retreat.is_away(r, id) then
+      if retreat.is_away(r, id) or cover.held(id) then
         r.retry[id] = nil
       elseif tick >= due then
         r.retry[id] = nil
@@ -398,7 +401,8 @@ function M.on_damaged(event)
   for _, soldier in ipairs(divisions.cached(player_index, n)) do
     local id = soldier.unit_number
     if id ~= victim and r.posts[id] and soldier.surface_index == surface_index
-      and soldier.name ~= names.headquarters and not busy(r, id) and not retreat.is_away(r, id) then
+      and soldier.name ~= names.headquarters and not busy(r, id) and not retreat.is_away(r, id)
+      and not cover.held(id) then
       local d = geometry.distance_squared(soldier.position, position)
       if d <= reach then candidates[#candidates + 1] = {soldier = soldier, id = id, d = d} end
     end

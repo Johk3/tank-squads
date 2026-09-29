@@ -75,16 +75,26 @@ end})
 -- "team" .. id, and the surface label stays only for soldiers outside every
 -- team, such as the headquarters. A team that merges or ends loses its key,
 -- so its label goes with it on the next call.
+-- The flag holder is the highest-ranking soldier. On a tie the current
+-- holder keeps the flag, else the first listed soldier takes it.
 function M.markers(player_index, n, record, entities)
   record.render.markers = record.render.markers or {}
-  local markers, leaders = record.render.markers, {}
+  local markers, leaders, best = record.render.markers, {}, {}
   local scout = record.mode == "scout" and record.scout
   local teams = scout and scout.teams
   local team_of = teams and scout.team_of
+  local veterans = storage.veterans or {}
   for _, entity in ipairs(entities) do
-    local id = team_of and team_of[entity.unit_number]
-    local key = id and teams[id] and team_keys[id] or entity.surface_index
-    if not leaders[key] then leaders[key] = entity end
+    local id = entity.unit_number
+    local team = team_of and team_of[id]
+    local key = team and teams[team] and team_keys[team] or entity.surface_index
+    local veteran = veterans[id]
+    local rank = veteran and veteran.rank or -1
+    local top = best[key]
+    local holder = markers[key] and markers[key].unit_number == id
+    if not top or rank > top or (rank == top and holder) then
+      leaders[key], best[key] = entity, rank
+    end
   end
   for key, marker in pairs(markers) do
     local leader = leaders[key]

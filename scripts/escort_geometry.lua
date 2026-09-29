@@ -20,6 +20,15 @@ function M.centroid(entities)
   return {x = x / #entities, y = y / #entities}
 end
 
+function M.centroid_points(points)
+  local x, y = 0, 0
+  for _, p in ipairs(points) do
+    x = x + p.x
+    y = y + p.y
+  end
+  return {x = x / #points, y = y / #points}
+end
+
 function M.push(history, position, keep)
   history[#history + 1] = {x = position.x, y = position.y}
   while #history > keep do table.remove(history, 1) end

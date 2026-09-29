@@ -12,6 +12,7 @@ local scout = require("scripts.scout")
 local reinforcements = require("scripts.reinforcements")
 local unit_names = require("scripts.unit_names")
 local combat = require("scripts.combat")
+local cover = require("scripts.cover")
 
 local M = {}
 
@@ -69,6 +70,7 @@ function M.swap(old, kind)
   divisions.forget(old_id)
   patrol.forget(old_id)
   commands.forget(old_id)
+  cover.forget(old_id)
   weapons.register(new)
   if division then
     reinforcements.replace(division, old_id, new_id)

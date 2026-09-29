@@ -91,6 +91,14 @@ Research **Mobile headquarters** (automation to utility science), then choose **
 
 A kill is worth a tenth of the enemy's maximum health in experience: a small biter gives 1.5, a behemoth 300. A siege tank's extra damage lands with its shell. A killing blow is never reduced, and a soldier's record ends with it. The mobile headquarters has a name but no rank. Point at a unit to see its card.
 
+The highest-ranking soldier carries the division's insignia.
+
+Veterans, Elites and Legends are protected by their division:
+
+- **Cover:** two to five lower-ranked soldiers within 32 tiles walk at the veteran's sides, and stay out of the division's escort formation or patrol posts while they do. The division's soldiers are shared out between its veterans, highest rank first. A small or spread-out division gives no cover.
+- **Call for help:** a veteran without cover that sees ten or more enemies within 40 tiles calls the nearest soldiers of its division and the division's shredders to attack them. The veteran falls back behind them, or to the shredders' backline when nobody can come, and returns to its job once the fight is over.
+- Scouting and nest assaults use every soldier, so nobody covers then. A new order ends a call for help, and cover forms again under the new order.
+
 ---
 
 ## Controls
@@ -153,7 +161,7 @@ Tank Squads soldiers are native `unit` entities, the same type as biters. Moveme
 
 In testing, 200 carriers in constant combat cost about **0.02 ms per tick** of script time.
 
-Veteran ranks add no per-tick work. Kills are counted from enemy deaths only, a Recruit's shots cost no extra engine calls, and names and ranks are shown on a card while you point at a unit rather than drawn over every tank.
+Veteran ranks add no per-tick work. Cover adds one read per soldier per second for a division without veterans. A covered veteran costs one position read per second, and its covers are sent again only when the veteran has moved 4 tiles. Kills are counted from enemy deaths only, a Recruit's shots cost no extra engine calls, and names and ranks are shown on a card while you point at a unit rather than drawn over every tank.
 
 A mobile headquarters' camp moves only when it parks, because the engine takes a few milliseconds to move a roboport with such a large reach. Its once-a-second sweep is otherwise light.
 
