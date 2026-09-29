@@ -10,6 +10,7 @@ if not t then
   local f = game.forces['nuke-case'] or game.create_force('nuke-case')
   local tank = assert(s.create_entity{name = 'tank-squad-nuclear', position = {0, 0}, force = f, raise_built = true})
   local target = assert(s.create_entity{name = 'medium-worm-turret', position = {40, 0}, force = 'enemy'})
+  target.active = false
   local friend = assert(s.create_entity{name = 'tank-squad-soldier-1', position = {50, 0}, force = f, raise_built = true})
   friend.active = false
   tank.commandable.set_command{type = defines.command.attack, target = target, distraction = defines.distraction.none}
