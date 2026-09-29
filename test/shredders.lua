@@ -294,4 +294,155 @@ return function(ctx)
     shredders.tick()
     assert(record.group == nil and e.command == nil, 'shredder ordered across surfaces')
   end)
+
+  -- A division of four at x = 100 with two grouped shredders, a big enemy
+  -- and a small one near the division.
+  local function battle()
+    building()
+    local _, enemy = engine()
+    local members = division(1, 100, 4)
+    shredder(0, 1)
+    shredder(0, 2)
+    shredders.tick()
+    local big = enemy_unit(enemy, 110, 0, 3000)
+    local small = enemy_unit(enemy, 105, 0, 400)
+    return members, big, small, enemy
+  end
+
+  -- What control.lua does for a dying soldier.
+  local function die(e)
+    local sent = shredders.on_soldier_died(e)
+    divisions.forget(e.unit_number)
+    e.valid = false
+    return sent
+  end
+
+  local function records()
+    local out = {}
+    for _, r in pairs(storage.shredders.units) do out[#out + 1] = r end
+    table.sort(out, function(x, y) return x.id < y.id end)
+    return out
+  end
+
+  test('shredders: half a division lost within 30 s sends its shredders, strongest first', function()
+    local members, big, small = battle()
+    assert(die(members[1]) == 0, 'one loss of four sent shredders')
+    assert(die(members[2]) == 2, 'half the division lost, no strike')
+    local targets = {}
+    for _, r in ipairs(records()) do
+      assert(r.state == 'igniting' and r.entity.name == names.shredder_charging, 'shredder did not ignite')
+      assert(r.entity.command.type == defines.command.stop and r.entity.command.ticks_to_wait == shredders.IGNITION)
+      targets[r.target] = true
+    end
+    assert(targets[big] and targets[small], 'targets not spread')
+    assert(storage.shredders.locks[big.unit_number] == 1 and storage.shredders.locks[small.unit_number] == 1)
+    assert(#storage.shredders.groups['1:1'].members == 2, 'group lost its charging shredders')
+  end)
+
+  test('shredders: more shredders than enemies wrap to the strongest', function()
+    building()
+    local _, enemy = engine()
+    local members = division(1, 100, 1)
+    for i = 1, 3 do shredder(0, i) end
+    shredders.tick()
+    local big = enemy_unit(enemy, 110, 0, 3000)
+    enemy_unit(enemy, 105, 0, 400)
+    assert(die(members[1]) == 3, 'last soldier lost, not every shredder sent')
+    assert(storage.shredders.locks[big.unit_number] == 2, 'extra shredder not on the strongest')
+  end)
+
+  test('shredders: losses older than 30 s start a new window', function()
+    local members = battle()
+    die(members[1])
+    game.tick = game.tick + shredders.WINDOW + 1
+    assert(die(members[2]) == 0, 'old loss counted')
+  end)
+
+  test('shredders: a striking group ignores more distress', function()
+    local members = battle()
+    die(members[1])
+    die(members[2])
+    assert(die(members[3]) == 0, 'striking group sent again')
+  end)
+
+  test('shredders: no enemy near the distress point sends nobody', function()
+    building()
+    engine()
+    local members = division(1, 100, 1)
+    shredder(0, 1)
+    shredders.tick()
+    assert(die(members[1]) == 0)
+    assert(records()[1].state ~= 'igniting')
+  end)
+
+  test('shredders: ignition ends in a charge drawn toward the target', function()
+    local members = battle()
+    die(members[1]); die(members[2])
+    local r = records()[1]
+    local target = r.target
+    shredders.on_command_completed(r.id, defines.behavior_result.success)
+    assert(r.state == 'charging', 'no charge after ignition')
+    assert(r.entity.command.type == defines.command.attack and r.entity.command.target == target)
+    assert(r.entity.command.distraction == defines.distraction.none)
+    local body = r.renders.body
+    assert(body.valid and body.args.animation == 'tank-squad-shredder-boost' and body.args.orientation_target == target)
+    assert(r.renders.lock.valid and r.renders.lock.args.target == target, 'no lock reticle on the target')
+  end)
+
+  test('shredders: a target lost during the charge passes to the least locked enemy', function()
+    local members, big, _, enemy = battle()
+    local medium = enemy_unit(enemy, 108, 3, 300)
+    die(members[1]); die(members[2])
+    local r
+    for _, x in ipairs(records()) do if x.target == big then r = x end end
+    shredders.on_command_completed(r.id, 0)
+    big.valid = false
+    shredders.on_command_completed(r.id, defines.behavior_result.fail)
+    assert(r.target == medium, 'retarget did not pick the least locked enemy')
+    assert(storage.shredders.locks[big.unit_number] == nil and storage.shredders.locks[medium.unit_number] == 1)
+    assert(r.entity.command.type == defines.command.attack and r.entity.command.target == medium)
+  end)
+
+  test('shredders: with no enemy left a shredder stands down and rejoins the split', function()
+    local members, big, small = battle()
+    die(members[1]); die(members[2])
+    local r = records()[1]
+    big.valid, small.valid = false, false
+    shredders.on_command_completed(r.id, defines.behavior_result.fail)
+    assert(r.entity.name == names.shredder and r.state == 'parked', 'shredder did not stand down')
+    assert(r.group == nil and next(r.renders) == nil, 'stood-down shredder kept its group or drawings')
+    shredders.tick()
+    assert(r.group == '1:1', 'stood-down shredder not reassigned')
+  end)
+
+  test('shredders: the crash draws the breakup and removes the shredder next slice', function()
+    local members, big = battle()
+    die(members[1]); die(members[2])
+    local r
+    for _, x in ipairs(records()) do if x.target == big then r = x end end
+    shredders.on_command_completed(r.id, 0)
+    local entity = r.entity
+    assert(shredders.on_trigger{effect_id = shredders.EFFECT, source_entity = entity, target_entity = big,
+      target_position = big.position} == true)
+    assert(r.state == 'spent' and entity.active == false, 'crashed shredder still active')
+    assert(storage.shredders.locks[big.unit_number] == nil, 'lock kept after the crash')
+    local breakup
+    for _, d in ipairs(ctx.draws()) do if d.args.animation == 'tank-squad-shredder-breakup' then breakup = d end end
+    assert(breakup and breakup.args.time_to_live == shredders.BREAKUP_TICKS, 'no breakup drawn')
+    assert(not r.renders.body, 'charge drawing kept')
+    shredders.tick(1)
+    assert(not entity.valid and storage.shredders.units[r.id] == nil, 'crashed shredder not removed')
+  end)
+
+  test('shredders: control sends shredders when a division soldier dies', function()
+    building()
+    local _, enemy = engine()
+    dofile('control.lua')
+    local members = division(1, 100, 1)
+    shredder(0, 1)
+    shredders.tick()
+    enemy_unit(enemy, 110, 0, 3000)
+    ctx.handlers()[defines.events.on_entity_died]{entity = members[1]}
+    assert(records()[1].state == 'igniting', 'soldier death did not reach the shredders')
+  end)
 end

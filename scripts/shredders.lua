@@ -16,6 +16,7 @@
 local names = require('scripts.names')
 local divisions = require('scripts.divisions')
 local geometry = require('scripts.shredder_geometry')
+local appearance = require('scripts.appearance')
 
 local M = {}
 
@@ -26,6 +27,12 @@ M.DRIFT = 20
 -- A group its division slice has not refreshed for this long lost its slot.
 M.STALE = 120
 local READY = {parked = true, moving = true}
+M.WINDOW = 30 * 60
+M.STRIKE_RADIUS, M.TARGET_LIMIT = 40, 50
+M.IGNITION = 20
+M.BREAKUP_TICKS = 8
+local TARGETS = {'unit', 'unit-spawner', 'turret'}
+local LOOK = appearance.shredder
 
 function M.state()
   local s = storage.shredders
@@ -85,6 +92,68 @@ local function park(record)
   record.entity.commandable.set_command{type = defines.command.stop, distraction = defines.distraction.none}
 end
 
+local function enemies_of(force)
+  local out = {}
+  for _, other in pairs(game.forces) do
+    if other ~= force and force.is_enemy(other) then out[#out + 1] = other end
+  end
+  return out
+end
+
+local function lock(record, target)
+  unlock(record)
+  record.target, record.target_position = target, target.position
+  record.lock_id = target.unit_number
+  if record.lock_id then
+    local locks = M.state().locks
+    locks[record.lock_id] = (locks[record.lock_id] or 0) + 1
+  end
+end
+
+-- Rendering uses the absolute tick; the offset starts each drawing on its
+-- first frame, as the barracks door does.
+local function draw(record, key, args, speed)
+  local old = record.renders[key]
+  if old and old.valid then old.destroy() end
+  args.animation_speed, args.animation_offset = speed, -game.tick * speed
+  record.renders[key] = rendering.draw_animation(args)
+end
+
+-- The charge sheet rides on the invisible charging unit, turned toward the
+-- target; the reticle sits on the target for the shredder's force only.
+local function draw_body(record, animation, offset, speed)
+  local entity = record.entity
+  draw(record, 'body', {animation = animation, target = entity, surface = entity.surface,
+    orientation_target = record.target, oriented_offset = {0, offset}, render_layer = 'object'}, speed)
+end
+
+local function draw_lock(record)
+  local target = record.target
+  draw(record, 'lock', {animation = 'tank-squad-shredder-lock', target = target, surface = target.surface,
+    render_layer = 'higher-object-above', forces = {record.entity.force}}, 0.5)
+end
+
+-- Replaces the entity with the other shredder prototype in place. The
+-- record follows the new unit number, in its group or shadow too.
+local function swap(record, name)
+  local old = record.entity
+  if old.name == name then return old end
+  local s = M.state()
+  local new = old.surface.create_entity{name = name, position = old.position, force = old.force}
+  if not new then return nil end
+  new.health = old.health / old.max_health * new.max_health
+  old.destroy()
+  local old_id = record.id
+  s.units[old_id], s.doomed[old_id] = nil, nil
+  record.entity, record.id = new, new.unit_number
+  s.units[record.id] = record
+  local holder = (record.group and s.groups[record.group]) or (record.shadow and s.shadows[record.shadow])
+  if holder then
+    for i, id in ipairs(holder.members) do if id == old_id then holder.members[i] = record.id end end
+  end
+  return new
+end
+
 -- record = {entity, id, state, group, shadow, home_position, homeward,
 --   target, target_position, lock_id, renders}. state is 'parked',
 -- 'moving', 'igniting', 'charging' or 'spent'.
@@ -123,7 +192,6 @@ function M.deploy(barracks_entity, rally)
 end
 
 
-function M.on_soldier_died(entity) return 0 end
 
 function M.on_damaged(event)
   local entity = event.entity
@@ -131,13 +199,9 @@ function M.on_damaged(event)
 end
 
 
-function M.on_trigger(event)
-  return event.effect_id == M.EFFECT
-end
 
 function M.release(player_index) end
 
-function M.strike(ids, surface, position, force, radius) return 0 end
 
 -- Nearest own barracks or headquarters on the surface, or nil.
 function M.home(surface_index, force_index, position)
@@ -292,8 +356,6 @@ function M.rebalance()
   end
 end
 
--- Crashed shredders leave in the next slice; see M.on_trigger.
-function M.reap() end
 
 -- Shadows follow players in danger; see M.watch_player.
 function M.watch(phase) end
@@ -311,11 +373,172 @@ function M.tick(phase)
   M.watch(phase)
 end
 
+-- Enemies within the radius, strongest first, then nearest.
+function M.targets(surface, position, force, radius)
+  local ranked = {}
+  for _, other in ipairs(enemies_of(force)) do
+    if #ranked >= M.TARGET_LIMIT then break end
+    for _, e in pairs(surface.find_entities_filtered{position = position, radius = radius, force = other,
+      type = TARGETS, limit = M.TARGET_LIMIT - #ranked}) do
+      ranked[#ranked + 1] = {entity = e, health = e.max_health, d = geometry.distance2(e.position, position),
+        id = e.unit_number or 0}
+    end
+  end
+  table.sort(ranked, function(a, b)
+    if a.health ~= b.health then return a.health > b.health end
+    if a.d ~= b.d then return a.d < b.d end
+    return a.id < b.id
+  end)
+  return ranked
+end
+
+-- Puts the shredder back on its wheels, out of any group; the next
+-- rebalance gives it a post.
+function M.stand_down(record)
+  unlock(record)
+  clear_renders(record)
+  leave(record)
+  if not swap(record, M.PARKED) then return end
+  park(record)
+end
+
+function M.launch(record)
+  local target = record.target
+  if not (target and target.valid) then return M.retarget(record) end
+  local entity = record.entity
+  record.state = 'charging'
+  draw_body(record, 'tank-squad-shredder-boost', LOOK.boost_offset, 0.5)
+  entity.commandable.set_command{type = defines.command.attack, target = target,
+    distraction = defines.distraction.none}
+  entity.surface.play_sound{path = 'tank-squad-shredder-boost-sound', position = entity.position}
+  return true
+end
+
+-- A new enemy near the old target's last position: the least locked, then
+-- the strongest.
+function M.retarget(record)
+  local around = record.target_position or record.entity.position
+  unlock(record)
+  local entity = record.entity
+  local locks, best, best_locks = M.state().locks, nil, nil
+  for _, r in ipairs(M.targets(entity.surface, around, entity.force, M.STRIKE_RADIUS)) do
+    local n = locks[r.entity.unit_number] or 0
+    if not best_locks or n < best_locks then best, best_locks = r.entity, n end
+  end
+  if not best then M.stand_down(record); return false end
+  lock(record, best)
+  draw_lock(record)
+  return M.launch(record)
+end
+
+-- With ignition the shredder first stands lit and aimed for IGNITION ticks;
+-- without, it charges at once.
+function M.charge(record, target, ignite)
+  if not swap(record, M.CHARGING) then return false end
+  lock(record, target)
+  draw_lock(record)
+  if not ignite then return M.launch(record) end
+  local entity = record.entity
+  record.state = 'igniting'
+  draw_body(record, 'tank-squad-shredder-arm', LOOK.arm_offset, 1)
+  entity.commandable.set_command{type = defines.command.stop, ticks_to_wait = M.IGNITION,
+    distraction = defines.distraction.none}
+  entity.surface.play_sound{path = 'tank-squad-shredder-lock-sound', position = entity.position}
+  return true
+end
+
+-- Sends every ready shredder in the list at the enemies around the
+-- position, one enemy each, strongest first. Returns the number sent.
+function M.strike(ids, surface, position, force, radius)
+  local s = storage.shredders
+  if not (s and surface and force) then return 0 end
+  local ranked = M.targets(surface, position, force, radius or M.STRIKE_RADIUS)
+  if #ranked == 0 then return 0 end
+  local ready = {}
+  for _, id in ipairs(ids) do
+    local record = s.units[id]
+    if record and READY[record.state] and record.entity.valid then ready[#ready + 1] = record end
+  end
+  local sent = 0
+  for i, record in ipairs(ready) do
+    if M.charge(record, ranked[(i - 1) % #ranked + 1].entity, true) then sent = sent + 1 end
+  end
+  return sent
+end
+
+local function striking(group, units)
+  for _, id in ipairs(group.members) do
+    local record = units[id]
+    if record and (record.state == 'igniting' or record.state == 'charging') then return true end
+  end
+  return false
+end
+
+-- Runs before divisions.forget, while the division still lists the dying
+-- soldier. Distress: half the size at the window's start lost within the
+-- window, or the last soldier. Returns the number of shredders sent.
+function M.on_soldier_died(entity)
+  local s = storage.shredders
+  if not s then return 0 end
+  local player_index, n, division = divisions.owner(entity.unit_number)
+  if not division or n == 0 then return 0 end
+  local group = s.groups[player_index .. ':' .. n]
+  if not group or #group.members == 0 then return 0 end
+  local tick, size = game.tick, #division.members
+  local window = group.window
+  if not window or tick - window.start > M.WINDOW then
+    window = {start = tick, size = size, losses = 0}
+    group.window = window
+  end
+  window.losses = window.losses + 1
+  if window.losses * 2 < window.size and size > 1 then return 0 end
+  if striking(group, s.units) then return 0 end
+  local sent = M.strike(group.members, entity.surface, entity.position, entity.force, M.STRIKE_RADIUS)
+  if sent > 0 then group.window = nil end
+  return sent
+end
+
+-- The crash. The engine deals the ram damage and the shrapnel; this draws
+-- the breakup turned along the charge and retires the shredder. The engine
+-- is still running the crash's trigger, so the entity goes in the next
+-- slice; it is invisible and inactive until then.
+function M.on_trigger(event)
+  if event.effect_id ~= M.EFFECT then return false end
+  local source, s = event.source_entity, storage.shredders
+  local record = source and source.valid and s and s.units[source.unit_number]
+  if not record or record.state == 'spent' then return true end
+  local from = source.position
+  local to = event.target_position or (record.target and record.target.valid and record.target.position) or from
+  local dx, dy = to.x - from.x, to.y - from.y
+  rendering.draw_animation{animation = 'tank-squad-shredder-breakup', target = from, surface = source.surface,
+    orientation = (math.atan2(dx, -dy) / (2 * math.pi)) % 1, render_layer = 'object',
+    time_to_live = M.BREAKUP_TICKS, animation_speed = 0.25, animation_offset = -game.tick * 0.25}
+  unlock(record)
+  clear_renders(record)
+  leave(record)
+  record.state = 'spent'
+  source.active = false
+  s.doomed[record.id] = true
+  return true
+end
+
+function M.reap()
+  local s = storage.shredders
+  if not (s and next(s.doomed)) then return end
+  for id in pairs(s.doomed) do
+    local record = s.units[id]
+    if record and record.entity.valid then record.entity.destroy() end
+    s.units[id], s.doomed[id] = nil, nil
+  end
+end
+
 function M.on_command_completed(unit_number, result)
   local s = storage.shredders
   local record = s and s.units[unit_number]
   if not record then return false end
-  if record.state == 'moving' then park(record) end
+  if record.state == 'moving' then park(record)
+  elseif record.state == 'igniting' then M.launch(record)
+  elseif record.state == 'charging' then M.retarget(record) end
   return true
 end
 

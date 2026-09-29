@@ -68,6 +68,7 @@ script.on_event(defines.events.on_robot_built_entity, on_built, filters)
 script.on_event(defines.events.script_raised_built, on_built, filters)
 script.on_event(defines.events.script_raised_revive, on_built, filters)
 script.on_event(defines.events.on_script_trigger_effect, function(event)
+  if shredders.on_trigger(event) then return end
   local shooter = weapons.on_shot(event)
   combat.on_shot(event)
   veterans.on_shot(event, shooter)
@@ -216,6 +217,8 @@ script.on_event(defines.events.on_entity_died, function(event)
   if entity.name == names.barracks then
     barracks.unregister(entity.unit_number)
   elseif names.soldier_set[entity.name] then
+    -- Before divisions.forget: the loss window reads the division roster.
+    shredders.on_soldier_died(entity)
     weapons.unregister(entity.unit_number)
     -- Order matters: the dying entity is still .valid during on_entity_died,
     -- so divisions.forget must run first to drop it from storage.divisions
