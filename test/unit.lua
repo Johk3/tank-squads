@@ -45,7 +45,8 @@ local function gui_element(args)
 end
 
 local function reset()
-  storage = {}
+  -- Promotions in unrelated tests must not turn carriers into special tanks.
+  storage = {transition_override = false}
   entities, players, draws, handlers = {}, {}, {}, {}
   defines = {behavior_result = {success = 0, fail = 1}, inventory = {chest = 1}, command = {go_to_location = 1, attack_area = 2}, distraction = {by_enemy = 1}, events = {}}
   local events = {"on_built_entity", "on_robot_built_entity", "script_raised_built", "script_raised_revive", "on_entity_cloned", "on_entity_died", "on_ai_command_completed", "on_player_selected_area", "on_player_alt_selected_area", "on_lua_shortcut", "on_player_removed", "on_player_changed_force", "on_gui_click", "on_script_trigger_effect", "script_raised_destroy", "on_entity_spawned", "on_entity_damaged", "on_gui_opened", "on_gui_closed", "on_runtime_mod_setting_changed", "on_pre_player_mined_item", "on_robot_pre_mined", "on_selected_entity_changed"}
@@ -110,6 +111,7 @@ local function reset()
   players[1].force_index = 1
   players[1].flying = {}
   players[1].create_local_flying_text = function(args) players[1].flying[#players[1].flying + 1] = args end
+  players[1].play_sound = function() end
   force.connected_players = {players[1]}
   force.get_ammo_damage_modifier = function() return 0 end
   charted_lookup = charted
@@ -1318,5 +1320,6 @@ require('test.veterans_gui'){test = test, soldier = soldier, gui_element = gui_e
 require('test.electric'){test = test, soldier = soldier, draws = function() return draws end,
   players = function() return players end}
 require('test.nuclear'){test = test, soldier = soldier, players = function() return players end}
+require('test.transition'){test = test, soldier = soldier, building = building, players = function() return players end}
 print(string.format("%d passed, %d failed", passed, failed))
 assert(failed == 0, "regression tests failed")

@@ -95,6 +95,15 @@ function M.sync_production(b)
   return needed
 end
 
+-- Gives a soldier new to the division the division's current job: its
+-- patrol lane, its scout team, its escort, or its last order.
+function M.assign_job(record, soldier)
+  if patrol.join(record, soldier) then return true end
+  if scout.join(record, soldier) then return true end
+  if record.mode == 'escort' then return escort.join(record, soldier) end
+  return commands.join(record, soldier)
+end
+
 function M.join(b, soldier)
   local binding = b.reinforcement
   if not binding then return false end
@@ -104,10 +113,18 @@ function M.join(b, soldier)
   -- detach survivors, or restart their combat/pathfinding commands.
   divisions.add_member(binding.player_index, binding.division, soldier.unit_number, soldier)
   own.recruits[#own.recruits + 1] = soldier.unit_number
-  if patrol.join(record, soldier) then return true end
-  if scout.join(record, soldier) then return true end
-  if record.mode == 'escort' then return escort.join(record, soldier) end
-  return commands.join(record, soldier)
+  return M.assign_job(record, soldier)
+end
+
+-- A soldier rebuilt as another unit keeps its place in every quota.
+function M.replace(record, old_id, new_id)
+  for _, own in pairs(record.reinforcement_sources or {}) do
+    if type(own) == 'table' then
+      for i, id in ipairs(own.recruits) do
+        if id == old_id then own.recruits[i] = new_id end
+      end
+    end
+  end
 end
 
 -- Saves from before 0.18.0 hold one target per division, shared by all its

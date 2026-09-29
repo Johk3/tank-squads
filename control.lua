@@ -20,6 +20,9 @@ local nuclear = require("scripts.nuclear")
 local unit_card = require("scripts.unit_card")
 local veterans_gui = require("scripts.veterans_gui")
 local reinforcements = require("scripts.reinforcements")
+local transition = require("scripts.transition")
+
+veterans.on_promoted = transition.roll
 
 local function on_built(event)
   local entity = event.entity
@@ -389,6 +392,11 @@ script.on_nth_tick(PHASE_TICKS, function(event)
 end)
 
 remote.add_interface("tank-squads", {
+  -- Tests: false stops rebuilds, a unit name forces that unit, nil rolls.
+  transition_override = function(value)
+    storage.transition_override = value
+    return value
+  end,
   veteran_add_xp = function(unit_number, amount)
     local entity = game.get_entity_by_unit_number(unit_number)
     local record = veterans.get(unit_number)

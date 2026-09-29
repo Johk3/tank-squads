@@ -5,6 +5,7 @@
 -- storage.veterans[unit_number] = {
 --   adjective, noun  - name word indices (scripts/unit_names.lua)
 --   xp, kills, rank  - soldiers only; the headquarters has none
+--   kind             - the unit's prototype name, for the soldier list
 -- }
 -- The hover card (scripts/unit_card.lua) shows the record. Nothing is drawn
 -- over the units: a render object per unit costs the engine work every tick.
@@ -57,8 +58,13 @@ end
 function M.register(entity)
   storage.veterans = storage.veterans or {}
   local record = storage.veterans[entity.unit_number]
-  if record then return record end
+  if record then
+    -- Records from before 0.29.0 have no kind.
+    record.kind = record.kind or entity.name
+    return record
+  end
   record = unit_names.draw()
+  record.kind = entity.name
   if names.soldier_set[entity.name] then record.xp, record.kills, record.rank = 0, 0, 0 end
   storage.veterans[entity.unit_number] = record
   return record
@@ -70,6 +76,22 @@ function M.unregister(unit_number)
   unit_names.release(record)
   storage.veterans[unit_number] = nil
 end
+
+-- Moves a service record to the unit that replaces its soldier, keeping
+-- the name, XP, kills and rank.
+function M.transfer(old_id, entity)
+  local record = M.get(old_id)
+  if not record then return nil end
+  storage.veterans[old_id] = nil
+  storage.veterans[entity.unit_number] = record
+  record.kind = entity.name
+  if record.rank and record.rank > 0 then entity.speed = entity.prototype.speed * (1 + ranks.bonus(record.rank).speed) end
+  return record
+end
+
+-- Set by control.lua to scripts/transition.lua's roll, which needs modules
+-- that already require this one.
+M.on_promoted = nil
 
 local function apply_speed(entity, record)
   entity.speed = entity.prototype.speed * (1 + ranks.bonus(record.rank).speed)
@@ -84,6 +106,7 @@ local function promote(entity, record, rank)
   for _, player in pairs(entity.force.connected_players) do
     player.create_local_flying_text{text = text, position = entity.position, surface = entity.surface}
   end
+  if M.on_promoted then M.on_promoted(entity, record, rank) end
 end
 
 function M.add_xp(entity, record, amount)
