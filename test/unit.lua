@@ -1317,5 +1317,6 @@ require('test.veterans_gui'){test = test, soldier = soldier, gui_element = gui_e
   handlers = function() return handlers end, players = function() return players end}
 require('test.electric'){test = test, soldier = soldier, draws = function() return draws end,
   players = function() return players end}
+require('test.nuclear'){test = test, soldier = soldier, players = function() return players end}
 print(string.format("%d passed, %d failed", passed, failed))
 assert(failed == 0, "regression tests failed")
