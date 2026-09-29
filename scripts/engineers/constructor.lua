@@ -6,7 +6,7 @@
 --
 -- record = {entity, id, force_index, surface_index, state, since, said,
 --   cluster, centre, fails, retries, crane, release_tick, done_tick,
---   released, paused_since, calm_since, task_force, task_force_result}
+--   released, paused_since, calm_since, task_force, task_force_result, home}
 -- state is 'waiting', 'seeking', 'moving', 'building', 'paused',
 -- 'task_force', 'healing' or 'idle'.
 local names = require('scripts.names')
@@ -223,13 +223,31 @@ function M.check(record, cfg)
     if home then
       M.reset(record)
       set(record, 'healing')
+      record.home = home.unit_number
       go(record, home.position, M.HOME_RADIUS)
       state.get().dirty = true
       return
     end
   end
   if record.state == 'healing' then
-    if entity.health < entity.max_health then return end
+    if entity.health < entity.max_health then
+      local home = M.home(record, false)
+      if home then
+        -- Only a barracks heals it. A new nearest barracks, or a trip that
+        -- stalled away from it, gets a fresh order.
+        local p, h = entity.position, home.position
+        local dx, dy = p.x - h.x, p.y - h.y
+        local away = dx * dx + dy * dy > M.HOME_RADIUS * M.HOME_RADIUS
+        if home.unit_number ~= record.home or (away and tick - record.since > M.MOVE_LIMIT) then
+          set(record, 'healing')
+          record.home = home.unit_number
+          go(record, h, M.HOME_RADIUS)
+        end
+        return
+      end
+      -- No barracks is left to heal it: it works on hurt.
+    end
+    record.home = nil
     M.reset(record)
     state.get().dirty = true
   end

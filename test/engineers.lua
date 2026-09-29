@@ -1002,4 +1002,63 @@ return function(ctx)
     assert(storage.engineers.team_of[s1.unit_number] == nil and next(storage.engineers.teams) == nil,
       'the team outlived its constructor')
   end)
+
+  test('engineers: a constructor whose barracks is gone stops healing and works on', function()
+    local b = ctx.building()
+    ctx.engineers.engine()
+    b.position = {x = -50, y = 0}
+    local constructor = require('scripts.engineers.constructor')
+    local record = working()
+    record.entity.health = 100
+    constructor.tick()
+    assert(record.state == 'healing')
+    b.valid = false
+    game.tick = game.tick + 60
+    constructor.tick()
+    assert(record.state == 'idle', 'healed forever without a barracks: ' .. record.state)
+    game.tick = game.tick + 60
+    constructor.tick()
+    assert(record.state == 'idle', 'went back to healing without a barracks')
+  end)
+
+  test('engineers: a healing constructor stuck away from its barracks is sent again', function()
+    local b = ctx.building()
+    ctx.engineers.engine()
+    b.position = {x = -50, y = 0}
+    local constructor = require('scripts.engineers.constructor')
+    local record = working()
+    record.entity.health = 100
+    constructor.tick()
+    local started = game.tick
+    record.entity.command = nil
+    game.tick = started + 60
+    constructor.tick()
+    assert(record.entity.command == nil, 'ordered again while still on its way')
+    game.tick = started + constructor.MOVE_LIMIT + 1
+    constructor.tick()
+    local command = record.entity.command
+    assert(record.state == 'healing' and command and command.destination.x == -50, 'never sent again')
+    assert(record.since == game.tick, 'the trip timer was not restarted')
+    record.entity.command = nil
+    record.entity.position = {x = -45, y = 0}
+    game.tick = game.tick + constructor.MOVE_LIMIT + 1
+    constructor.tick()
+    assert(record.entity.command == nil, 'ordered again beside its barracks')
+  end)
+
+  test('engineers: a healing constructor turns to the next barracks when its own is gone', function()
+    local b1 = ctx.building()
+    local b2 = ctx.building()
+    ctx.engineers.engine()
+    b1.position, b2.position = {x = -50, y = 0}, {x = 90, y = 0}
+    local constructor = require('scripts.engineers.constructor')
+    local record = working()
+    record.entity.health = 100
+    constructor.tick()
+    assert(record.entity.command.destination.x == -50)
+    b1.valid = false
+    game.tick = game.tick + 60
+    constructor.tick()
+    assert(record.state == 'healing' and record.entity.command.destination.x == 90, 'kept heading to a lost barracks')
+  end)
 end
