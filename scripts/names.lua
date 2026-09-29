@@ -13,6 +13,12 @@ local names = {
   shredder_charging = "tank-squad-shredder-charging",
   shredder_recruit = "tank-squad-recruit-shredder",
   shredder_recipe = "tank-squad-train-shredder",
+  -- The wall-laying constructor. Like shredders it never joins a division
+  -- and takes no orders, so it stays out of the lists below.
+  constructor = "tank-squad-constructor",
+  constructor_recruit = "tank-squad-recruit-constructor",
+  constructor_recipe = "tank-squad-train-constructor",
+  constructor_crane = "tank-squad-constructor-crane",
   headquarters = "tank-squad-headquarters",
   -- Every unit a player can select and command: the armed soldiers above,
   -- then the unarmed headquarters. recruit_names[i] trains unit_names[i].

@@ -5,6 +5,7 @@ local reinforcements = require('scripts.reinforcements')
 local divisions = require('scripts.divisions')
 local headquarters = require('scripts.headquarters')
 local shredders = require('scripts.shredders')
+local engineers = require('scripts.engineers.init')
 
 local M = {}
 
@@ -111,10 +112,11 @@ local function rally_position(b)
   return b.entity.position
 end
 
--- Shredders are no soldiers, but the barracks repairs them too.
+-- Shredders and constructors are no soldiers, but the barracks repairs them too.
 local HEALED = {}
 for _, name in ipairs(names.unit_names) do HEALED[#HEALED + 1] = name end
 for _, name in ipairs(names.shredder_names) do HEALED[#HEALED + 1] = name end
+HEALED[#HEALED + 1] = names.constructor
 
 local function heal_nearby(b)
   local surface = b.entity.surface
@@ -166,6 +168,18 @@ local function deploy_shredders(b, output, budget)
   return deployed
 end
 
+-- Constructors never join a division either.
+local function deploy_constructors(b, output, budget)
+  local deployed = 0
+  while deployed < budget and output.get_item_count(names.constructor_recruit) > 0 do
+    if not engineers.deploy(b.entity) then break end
+    output.remove{name = names.constructor_recruit, count = 1}
+    animate_deploy(b)
+    deployed = deployed + 1
+  end
+  return deployed
+end
+
 -- Mining hands the output inventory to the player, where a recruit item can
 -- never become a soldier. Deploy every buffered recruit first: a linked
 -- barracks fills its own quota in its division, and the rest walk to the
@@ -182,6 +196,7 @@ function M.evacuate(entity)
     end
   end
   deploy_shredders(b, output, math.huge)
+  deploy_constructors(b, output, math.huge)
 end
 
 -- A linked barracks runs in its division's phase, right after that
@@ -227,6 +242,7 @@ function M.tick(phase)
           end
         end
         deployed = deployed + deploy_shredders(b, output, DEPLOYS_PER_SWEEP - deployed)
+        deployed = deployed + deploy_constructors(b, output, DEPLOYS_PER_SWEEP - deployed)
       end
     end
   end

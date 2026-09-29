@@ -84,13 +84,14 @@ def main():
                 x, y = (cell % 4) * 384, (cell // 4) * 512
                 count = sum(row[x:x + 384].count(0) for row in alpha[y:y + 512])
                 assert count > 384 * 512 * 0.1, f"Frame {cell} lacks transparency"
-        elif path.name in {"chaingun-chassis.png", "siege-chassis.png", "flame-chassis.png", "headquarters-chassis.png"}:
+        elif path.name in {"chaingun-chassis.png", "siege-chassis.png", "flame-chassis.png", "headquarters-chassis.png",
+                           "construction-chassis.png"}:
             assert (width, height) == (1254, 1254), "Chassis atlas size differs from prototype"
             for cell in range(16):
                 x, y = (cell % 4) * 313, (cell // 4) * 313
                 clear_pixels = sum(row[x:x + 313].count(0) for row in alpha[y:y + 313])
                 assert 313 * 313 * 0.1 < clear_pixels < 313 * 313 * 0.9, f"Invalid chassis direction {cell}"
-        elif path.name == "siege-gun.png":
+        elif path.name in {"siege-gun.png", "construction-arm.png"}:
             assert (width, height) == (1254, 1254), "Recoil atlas differs from prototype"
             for cell in range(4):
                 x, y = (cell % 2) * 627, (cell // 2) * 627

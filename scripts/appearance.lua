@@ -61,6 +61,12 @@ local M = {
     burst_scale = 2.0,
     shard_scale = 0.2,
   },
+  -- Constructor. The hull is drawn a little larger than a carrier's, about
+  -- siege-tank size. The crane frame's mounting centre sits crane_base
+  -- source pixels below the frame centre; scripts/engineers/crane.lua
+  -- offsets the frame so that point stays on the hull. Calibrate both in
+  -- the engine check.
+  constructor = {chassis_scale = 0.5, crane_scale = 0.16, crane_base = 162},
   tier_colors = {
     {r = 0.9, g = 0.8, b = 0.2, a = 1},
     {r = 0.85, g = 0.25, b = 0.2, a = 1},

@@ -23,6 +23,7 @@ local reinforcements = require("scripts.reinforcements")
 local transition = require("scripts.transition")
 local shredders = require("scripts.shredders")
 local cover = require("scripts.cover")
+local engineers = require("scripts.engineers.init")
 
 veterans.on_promoted = transition.roll
 cover.assign_job = reinforcements.assign_job
@@ -37,6 +38,8 @@ local function on_built(event)
     headquarters.register(entity)
   elseif entity and entity.valid and names.shredder_set[entity.name] then
     shredders.register(entity)
+  elseif entity and entity.valid and entity.name == names.constructor then
+    engineers.register(entity)
   end
 end
 
@@ -54,6 +57,7 @@ for _, name in ipairs(names.shredder_names) do
   shredder_filters[#shredder_filters + 1] = {filter = "name", name = name}
   filters[#filters + 1] = {filter = "name", name = name}
 end
+filters[#filters + 1] = {filter = "name", name = names.constructor}
 local unit_filters = {{filter = "name", name = names.headquarters}}
 for _, filter in ipairs(soldier_filters) do unit_filters[#unit_filters + 1] = filter end
 for _, filter in ipairs(shredder_filters) do unit_filters[#unit_filters + 1] = filter end
@@ -64,6 +68,10 @@ for _, filter in ipairs(unit_filters) do damaged_filters[#damaged_filters + 1] =
 for _, kind in ipairs({"character", "car", "spider-vehicle"}) do
   damaged_filters[#damaged_filters + 1] = {filter = "type", type = kind}
 end
+-- Constructors are destroyed by script like other units, but take no part
+-- in the damage handlers, so they join unit_filters only after
+-- damaged_filters copied it.
+unit_filters[#unit_filters + 1] = {filter = "name", name = names.constructor}
 local clone_filters = {}
 for _, filter in ipairs(filters) do clone_filters[#clone_filters + 1] = filter end
 for _, name in ipairs(headquarters.HELPER_NAMES) do clone_filters[#clone_filters + 1] = {filter = "name", name = name} end
@@ -106,6 +114,8 @@ script.on_event(defines.events.script_raised_destroy, function(event)
     headquarters.unregister(entity.unit_number)
   elseif entity and entity.valid and names.shredder_set[entity.name] then
     shredders.unregister(entity.unit_number)
+  elseif entity and entity.valid and entity.name == names.constructor then
+    engineers.unregister(entity.unit_number)
   end
 end, unit_filters)
 script.on_event(defines.events.on_entity_cloned, function(event)
@@ -168,6 +178,8 @@ script.on_configuration_changed(function()
       force.recipes['tank-squad-train-flame'].enabled = true
       local shredder = force.recipes[names.shredder_recipe]
       if shredder then shredder.enabled = true end
+      local constructor = force.recipes[names.constructor_recipe]
+      if constructor then constructor.enabled = true end
     end
   end
   -- Tier 2 and 3 guns from older versions are tinted sprites; drop them so
@@ -184,6 +196,9 @@ script.on_configuration_changed(function()
     end
     for _, entity in pairs(surface.find_entities_filtered{name = names.shredder_names}) do
       shredders.register(entity)
+    end
+    for _, entity in pairs(surface.find_entities_filtered{name = names.constructor}) do
+      engineers.register(entity)
     end
   end
   headquarters.reconcile()
@@ -250,6 +265,8 @@ script.on_event(defines.events.on_entity_died, function(event)
     commands.forget(entity.unit_number)
   elseif names.shredder_set[entity.name] then
     shredders.unregister(entity.unit_number)
+  elseif entity.name == names.constructor then
+    engineers.unregister(entity.unit_number)
   else
     veterans.on_kill(event)
   end

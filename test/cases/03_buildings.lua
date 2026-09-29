@@ -9,7 +9,7 @@ local unlocks = 0
 for _, eff in pairs(tech.effects) do
   if eff.type == "unlock-recipe" then unlocks = unlocks + 1 end
 end
-if unlocks ~= 8 then error("technology unlocks " .. unlocks .. " recipes, expected 8 (barracks, rally flag, three carrier tiers, two specialists and the shredder)") end
+if unlocks ~= 9 then error("technology unlocks " .. unlocks .. " recipes, expected 9 (barracks, rally flag, three carrier tiers, two specialists the shredder and the constructor)") end
 local s = game.surfaces[1]
 local b = s.create_entity{name = "tank-squad-barracks", position = {10, 10}, force = "player"}
 if not b then error("could not place barracks") end

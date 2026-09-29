@@ -1,6 +1,7 @@
 require("prototypes.soldier")
 require("prototypes.specialists")
 require("prototypes.shredder")
+require("prototypes.constructor")
 require("prototypes.headquarters")
 require("prototypes.barracks")
 require("prototypes.flag")

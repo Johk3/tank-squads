@@ -1014,6 +1014,7 @@ test("entity events are filtered to the mod's own entities", function()
   local expected = {[names.barracks] = true}
   for _, name in ipairs(names.unit_names) do expected[name] = true end
   for _, name in ipairs(names.shredder_names) do expected[name] = true end
+  expected[names.constructor] = true
   local helpers = {}
   for _, name in ipairs(require("scripts.headquarters").HELPER_NAMES) do helpers[name] = true end
   local function check(event, allowed)
@@ -1049,6 +1050,7 @@ test("entity events are filtered to the mod's own entities", function()
   local units = {}
   for _, name in ipairs(names.unit_names) do units[name] = true end
   for _, name in ipairs(names.shredder_names) do units[name] = true end
+  units[names.constructor] = true
   check("script_raised_destroy", units)
   local filters = assert(event_filters.on_entity_damaged, "on_entity_damaged is unfiltered")
   -- Players' characters and vehicles come through for shredder shadows.
@@ -1342,6 +1344,9 @@ require('test.shredder_geometry'){test = test}
 require('test.cover'){test = test, soldier = soldier, handlers = function() return handlers end,
   players = function() return players end}
 require('test.shredders'){test = test, soldier = soldier, building = building,
+  handlers = function() return handlers end, players = function() return players end,
+  draws = function() return draws end, count_reads = count_reads}
+require('test.engineers'){test = test, soldier = soldier, building = building, gui_element = gui_element,
   handlers = function() return handlers end, players = function() return players end,
   draws = function() return draws end, count_reads = count_reads}
 print(string.format("%d passed, %d failed", passed, failed))
