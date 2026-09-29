@@ -32,14 +32,23 @@ M.MAX_HITS = 4
 -- of it as of the native damage.
 -- The siege shell copies the base cannon projectile (1000 physical) and adds
 -- its bonus when it lands. A flame attack lands three stream particles of 7
--- fire (measured against a rocket silo: 21 raw per 12-tick attack).
+-- fire (measured against a rocket silo: 21 raw per 12-tick attack). Units
+-- with `on_hit` add their bonus when that impact effect fires.
 M.BASE = {
   ["tank-squad-soldier-1"] = {amount = 6, hit = 6, type = "physical", ammo = "bullet"},
   ["tank-squad-soldier-2"] = {amount = 10, hit = 10, type = "physical", ammo = "bullet"},
   ["tank-squad-soldier-3"] = {amount = 16, hit = 16, type = "physical", ammo = "bullet"},
-  ["tank-squad-siege"] = {amount = 1000, hit = 1000, type = "physical", ammo = "cannon-shell", on_hit = true},
+  ["tank-squad-siege"] = {amount = 1000, hit = 1000, type = "physical", ammo = "cannon-shell", on_hit = M.SHELL_HIT},
   ["tank-squad-flame"] = {amount = 21, hit = 7, type = "fire", ammo = "flamethrower"},
+  -- A ball lands 120 on its target plus the 180 burst.
+  ["tank-squad-electric"] = {amount = 300, hit = 300, type = "electric", ammo = "laser", on_hit = "tank-squad-electric-hit"},
+  -- Only the fallback rocket takes a bonus (50 direct plus 100 splash); a
+  -- nuke's rank shortens its reload instead (scripts/nuclear.lua).
+  ["tank-squad-nuclear"] = {amount = 150, hit = 150, type = "explosion", ammo = "rocket", on_hit = "tank-squad-rocket-hit"},
 }
+-- Impact effects that carry a bonus, reported with the shooter as cause.
+M.HITS = {}
+for _, base in pairs(M.BASE) do if base.on_hit then M.HITS[base.on_hit] = true end end
 
 function M.get(unit_number)
   return storage.veterans and storage.veterans[unit_number]
@@ -123,7 +132,7 @@ function M.on_shot(event, shooter)
     rank = shooter and shooter.rank
     if not (rank and rank > 0) then return end
     source = event.source_entity
-  elseif id == M.SHELL_HIT then
+  elseif M.HITS[id] then
     source = event.cause_entity
     if not (source and source.valid) then return end
     local record = storage.veterans and storage.veterans[source.unit_number]
@@ -133,14 +142,14 @@ function M.on_shot(event, shooter)
     return
   end
   local base = M.BASE[source.name]
-  if not base or (base.on_hit == true) ~= (id == M.SHELL_HIT) then return end
+  if not base or base.on_hit ~= (id ~= M.SHOT and id or nil) then return end
   local target = event.target_entity
   if not (target and target.valid) then return end
   local force = source.force
   local research = 1 + force.get_ammo_damage_modifier(base.ammo)
   local amount = base.amount * ranks.bonus(rank).damage * research
-  -- A shell impact has no gun record to bank on; its bonus is large anyway.
-  if id == M.SHELL_HIT then
+  -- An impact has no gun record to bank on; its bonus is large anyway.
+  if id ~= M.SHOT then
     target.damage(amount, force, base.type, source, source)
     return
   end

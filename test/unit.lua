@@ -75,8 +75,15 @@ local function reset()
         local a, b = query.area[1], query.area[2]
         if a and (e.position.x < a[1] or e.position.x > b[1] or e.position.y < a[2] or e.position.y > b[2]) then match = false end
       end
+      if query.type then
+        local types = type(query.type) == "table" and query.type or {query.type}
+        local ok = false
+        for _, t in ipairs(types) do if e.type == t then ok = true end end
+        if not ok then match = false end
+      end
       if match and e.valid and e.surface == surface then found[#found + 1] = e end
     end
+    if query.limit then while #found > query.limit do found[#found] = nil end end
     return found
   end
   -- Counts through whichever find_entities_filtered the test installed.
@@ -1308,5 +1315,7 @@ require('test.selection'){test = test, soldier = soldier, building = building,
   handlers = function() return handlers end, players = function() return players end}
 require('test.veterans_gui'){test = test, soldier = soldier, gui_element = gui_element,
   handlers = function() return handlers end, players = function() return players end}
+require('test.electric'){test = test, soldier = soldier, draws = function() return draws end,
+  players = function() return players end}
 print(string.format("%d passed, %d failed", passed, failed))
 assert(failed == 0, "regression tests failed")

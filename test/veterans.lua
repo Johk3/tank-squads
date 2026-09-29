@@ -320,4 +320,16 @@ return function(ctx)
     weapons.tick()
     assert(legend.health == 400, 'regen overheals: ' .. legend.health)
   end)
+
+  test('bonuses: an electric tank adds its bonus when the ball lands', function()
+    local tank = ranked('tank-squad-electric', 1)
+    local target = ctx.soldier('enemy')
+    veterans.on_shot({effect_id = 'tank-squad-shot', source_entity = tank, target_entity = target}, {rank = 1})
+    assert(#target.damaged == 0, 'electric bonus landed on firing')
+    veterans.on_shot{effect_id = 'tank-squad-electric-hit', cause_entity = tank, target_entity = target}
+    assert(#target.damaged == 1 and math.abs(target.damaged[1].amount - 300) < 1e-9
+      and target.damaged[1].type == 'electric', 'electric bonus ' .. tostring(target.damaged[1] and target.damaged[1].amount))
+    veterans.on_shot{effect_id = 'tank-squad-shell-hit', cause_entity = tank, target_entity = target}
+    assert(#target.damaged == 1, 'a shell hit event gave an electric tank a bonus')
+  end)
 end
