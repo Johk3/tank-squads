@@ -49,7 +49,7 @@ local function reset()
   storage = {transition_override = false}
   entities, players, draws, handlers = {}, {}, {}, {}
   defines = {behavior_result = {success = 0, fail = 1}, inventory = {chest = 1}, command = {go_to_location = 1, attack_area = 2}, distraction = {by_enemy = 1}, events = {}}
-  local events = {"on_built_entity", "on_robot_built_entity", "script_raised_built", "script_raised_revive", "on_entity_cloned", "on_entity_died", "on_ai_command_completed", "on_player_selected_area", "on_player_alt_selected_area", "on_lua_shortcut", "on_player_removed", "on_player_changed_force", "on_gui_click", "on_script_trigger_effect", "script_raised_destroy", "on_entity_spawned", "on_entity_damaged", "on_gui_opened", "on_gui_closed", "on_runtime_mod_setting_changed", "on_pre_player_mined_item", "on_robot_pre_mined", "on_selected_entity_changed"}
+  local events = {"on_built_entity", "on_robot_built_entity", "script_raised_built", "script_raised_revive", "on_entity_cloned", "on_entity_died", "on_ai_command_completed", "on_player_selected_area", "on_player_alt_selected_area", "on_lua_shortcut", "on_player_removed", "on_player_changed_force", "on_gui_click", "on_script_trigger_effect", "script_raised_destroy", "on_entity_spawned", "on_entity_damaged", "on_gui_opened", "on_gui_closed", "on_runtime_mod_setting_changed", "on_pre_player_mined_item", "on_robot_pre_mined", "on_selected_entity_changed", "on_forces_merged"}
   for _, event in ipairs(events) do defines.events[event] = event end
   surface = {index = 1}
   surface.find_nearest_enemy = function() return nil end

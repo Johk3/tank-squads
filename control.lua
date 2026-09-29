@@ -133,6 +133,7 @@ local function clear_player(event)
 end
 script.on_event(defines.events.on_player_removed, clear_player)
 script.on_event(defines.events.on_player_changed_force, clear_player)
+script.on_event(defines.events.on_forces_merged, shredders.on_forces_merged)
 
 -- Older saves could run a patrol or scout on the drag selection, which now
 -- owns nobody. The job moves to the lowest empty division; with none free

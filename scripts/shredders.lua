@@ -12,6 +12,8 @@
 --   present[force_index .. ':' .. surface_index] = true where shredders are
 --   dirty = true when a shredder or group came, went or changed hands, so
 --     the next split has work to do
+--   stranded[unit_number] = true for charging units still to swap back to
+--     parked ones: a swap that failed, or a charger found without a charge
 -- }
 -- Everything runs from events and the existing sweep slices; a parked
 -- shredder costs nothing until its division moves.
@@ -47,7 +49,8 @@ local PLAYER_TYPES = {character = true, car = true, ['spider-vehicle'] = true}
 function M.state()
   local s = storage.shredders
   if not s then
-    s = {units = {}, groups = {}, shadows = {}, locks = {}, doomed = {}, present = {}, dirty = true}
+    s = {units = {}, groups = {}, shadows = {}, locks = {}, doomed = {}, present = {}, dirty = true,
+      stranded = {}}
     storage.shredders = s
   end
   return s
@@ -171,7 +174,7 @@ end
 
 -- record = {entity, id, force_index, surface_index, state, group, shadow, home_position, homeward,
 --   target, target_position, lock_id, renders}. state is 'parked',
--- 'moving', 'igniting', 'charging' or 'spent'.
+-- 'moving', 'igniting', 'charging', 'stranded' or 'spent'.
 function M.register(entity)
   if not (entity and entity.valid and names.shredder_set[entity.name]) then return nil end
   local s = M.state()
@@ -184,6 +187,12 @@ function M.register(entity)
     force_index = entity.force_index, surface_index = entity.surface_index}
   s.units[record.id] = record
   s.dirty = true
+  -- A charger cloned or found on an upgrade has no charge left to finish.
+  if entity.name == M.CHARGING then
+    record.state = 'stranded'
+    s.stranded = s.stranded or {}
+    s.stranded[record.id] = true
+  end
   return record
 end
 
@@ -196,6 +205,7 @@ function M.unregister(unit_number)
   clear_renders(record)
   s.units[unit_number] = nil
   s.doomed[unit_number] = nil
+  if s.stranded then s.stranded[unit_number] = nil end
   s.dirty = true
 end
 
@@ -404,6 +414,7 @@ function M.tick(phase)
   local s = storage.shredders
   if not (s and next(s.units)) then return end
   M.reap()
+  M.recover()
   for player_index, pstate in pairs(storage.divisions or {}) do
     for n in pairs(pstate.slots) do
       if n ~= 0 and divisions.in_phase(player_index, n, phase) then M.update_group(player_index, n) end
@@ -439,8 +450,43 @@ function M.stand_down(record)
   unlock(record)
   clear_renders(record)
   leave(record)
-  if not swap(record, M.PARKED) then return end
-  park(record)
+  if swap(record, M.PARKED) then park(record); return end
+  -- No room for the parked unit right now: hold still and retry next slice.
+  local s = M.state()
+  record.state = 'stranded'
+  s.stranded = s.stranded or {}
+  s.stranded[record.id] = true
+  if record.entity.valid then
+    record.entity.commandable.set_command{type = defines.command.stop, distraction = defines.distraction.none}
+  end
+end
+
+-- Swaps stranded chargers back to parked units; the split then posts them.
+function M.recover()
+  local s = storage.shredders
+  if not (s and s.stranded and next(s.stranded)) then return end
+  local ids = {}
+  for id in pairs(s.stranded) do ids[#ids + 1] = id end
+  for _, id in ipairs(ids) do
+    local record = s.units[id]
+    if not (record and record.entity.valid and record.state == 'stranded') then
+      s.stranded[id] = nil
+    elseif swap(record, M.PARKED) then
+      s.stranded[id] = nil
+      park(record)
+      s.dirty = true
+    end
+  end
+end
+
+-- Entities of a merged force now belong to the destination force.
+function M.on_forces_merged(event)
+  local s = storage.shredders
+  if not s then return end
+  for _, record in pairs(s.units) do
+    if record.force_index == event.source_index then record.force_index = event.destination.index end
+  end
+  s.dirty = true
 end
 
 function M.launch(record)

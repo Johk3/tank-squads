@@ -752,4 +752,45 @@ return function(ctx)
       assert(r.state == 'charging', 'gave up while enemies were left')
     end
   end)
+
+  test('shredders: a failed swap back strands the shredder until the next slice, not for good', function()
+    local members, big, small = battle()
+    die(members[1]); die(members[2])
+    local r = records()[1]
+    big.valid, small.valid = false, false
+    local surface = game.surfaces[1]
+    local create = surface.create_entity
+    surface.create_entity = function() return nil end
+    shredders.on_command_completed(r.id, defines.behavior_result.fail)
+    assert(r.state == 'stranded' and not r.striking and r.group == nil, 'shredder stuck charging')
+    surface.create_entity = create
+    game.tick = game.tick + 6
+    shredders.tick(1)
+    assert(r.entity.name == names.shredder and r.state == 'parked', 'stranded shredder never recovered')
+  end)
+
+  test('shredders: a charging shredder found without a charge parks', function()
+    engine()
+    local e = game.surfaces[1].create_entity{name = names.shredder_charging, position = {x = 0, y = 0},
+      force = ctx.players()[1].force}
+    local record = shredders.register(e)
+    shredders.tick(1)
+    assert(record.entity.name == names.shredder and record.state == 'parked', 'invisible charger left posted')
+  end)
+
+  test('shredders: shredders of a merged force join the new force', function()
+    building()
+    engine()
+    dofile('control.lua')
+    division(1, 100)
+    local _, record = shredder(0, 0)
+    record.force_index = 7
+    shredders.tick()
+    assert(record.group == nil, 'shredder of another force joined')
+    ctx.handlers()[defines.events.on_forces_merged]{source_index = 7, source_name = 'gone',
+      destination = ctx.players()[1].force}
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(record.group == '1:1', 'merged shredder never joined the new force')
+  end)
 end
