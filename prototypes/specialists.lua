@@ -119,6 +119,9 @@ electric.resistances = {{type = 'electric', percent = 80}}
 electric.attack_parameters = {
   type = 'projectile', range = 24, cooldown = 45, ammo_category = 'laser',
   projectile_creation_distance = 1.5,
+  -- The laser turret's sound, which its beam plays.
+  sound = {category = 'weapon', filename = '__base__/sound/fight/laser-beam.ogg', volume = 0.75,
+    aggregation = {max_count = 3, remove = true, count_already_playing = true}},
   animation = electric_idle,
   ammo_type = {target_type = 'entity', action = {
     {type = 'direct', action_delivery = {type = 'instant', target_effects = {
