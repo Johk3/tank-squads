@@ -726,6 +726,49 @@ return function(ctx)
     end
   end)
 
+  test('engineers: a lent patrol soldier hit at the nest calls no patrol help', function()
+    local _, _, surface, spawner, record = nest_setup()
+    local divisions = require('scripts.divisions')
+    local patrol = require('scripts.patrol')
+    local loans = require('scripts.engineers.loans')
+    local task_force = require('scripts.engineers.task_force')
+    local walkers = {}
+    for i = 1, 6 do walkers[i] = soldier(nil, nil, 50 + i, 5) end
+    divisions.assign(1, 2, walkers)
+    patrol.add_waypoint(1, 2, {x = 50, y = 5}, surface)
+    patrol.add_waypoint(1, 2, {x = 100, y = 5}, surface)
+    patrol.start(1, 2)
+    assert(task_force.request(record, {spawner}))
+    local lent, kept = nil, {}
+    for _, w in ipairs(walkers) do
+      if loans.on_loan(w.unit_number) then lent = lent or w else kept[#kept + 1] = {w, w.command} end
+    end
+    assert(lent and #kept > 0)
+    patrol.on_damaged{entity = lent, cause = spawner}
+    local r = divisions.record(1, 2).patrol
+    assert(not (r.responders and next(r.responders)), 'a lent soldier raised the patrol alarm')
+    for _, k in ipairs(kept) do assert(k[1].command == k[2], 'a kept patrol soldier left for the nest') end
+  end)
+
+  test('engineers: soldiers of a deleted division fight on, then return to their back point', function()
+    local _, _, _, spawner, record = nest_setup()
+    local loans = require('scripts.engineers.loans')
+    local task_force = require('scripts.engineers.task_force')
+    local idle = idle_division(1, 4)
+    local back = {x = idle[3].position.x, y = idle[3].position.y}
+    local tf = task_force.request(record, {spawner})
+    storage.divisions[1] = nil
+    task_force.drive(tf)
+    assert(storage.engineers.task_forces[tf.id] and loans.on_loan(idle[3].unit_number),
+      'soldiers of a deleted division were let go at the nest')
+    spawner.valid = false
+    task_force.drive(tf)
+    assert(storage.engineers.task_forces[tf.id] == nil and not loans.on_loan(idle[3].unit_number))
+    local command = idle[3].command
+    assert(command.type == defines.command.go_to_location and command.destination.x == back.x
+      and command.destination.y == back.y, 'not sent to its back point')
+  end)
+
   test('engineers: heavy losses call the shredders of the lenders', function()
     local _, _, _, spawner, record = nest_setup()
     local task_force = require('scripts.engineers.task_force')

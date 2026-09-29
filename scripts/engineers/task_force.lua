@@ -232,12 +232,13 @@ function M.staging(tf, from)
 end
 
 -- A lender whose job changed took its soldiers back; they already follow
--- the new job.
+-- the new job. The soldiers of a lender that no longer exists stay, and
+-- return to their back point when the task force ends.
 local function recall_changed(tf)
   for key, lender in pairs(tf.lenders) do
     local pstate = storage.divisions and storage.divisions[lender.player_index]
     local record = pstate and pstate.slots[lender.n]
-    if not same_job(record, lender.job) then
+    if record and not same_job(record, lender.job) then
       for _, id in ipairs(tf.members) do
         local loan = loans.get(id)
         if loan and loan.player_index == lender.player_index and loan.n == lender.n then loans.finish(id) end

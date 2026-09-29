@@ -392,8 +392,9 @@ function M.on_damaged(event)
   local player_index, n, record = divisions.owner(entity.unit_number)
   local r = record and record.mode == "patrol" and record.patrol
   if not (r and r.posts) then return end
-  -- A convoy far from the route must not pull the patrol after it.
-  if retreat.is_away(r, entity.unit_number) then return end
+  -- A convoy far from the route, or a soldier lent to a nest task force,
+  -- must not pull the patrol after it.
+  if retreat.is_away(r, entity.unit_number) or loans.on_loan(entity.unit_number) then return end
   local tick = game.tick
   if r.alarm_tick and tick < r.alarm_tick + M.ALARM_TICKS then return end
   local cause = event.cause
