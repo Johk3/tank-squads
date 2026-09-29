@@ -1051,8 +1051,14 @@ test("entity events are filtered to the mod's own entities", function()
   for _, name in ipairs(names.shredder_names) do units[name] = true end
   check("script_raised_destroy", units)
   local filters = assert(event_filters.on_entity_damaged, "on_entity_damaged is unfiltered")
-  assert(#filters == #names.unit_names + #names.shredder_names,
+  -- Players' characters and vehicles come through for shredder shadows.
+  local named, types = 0, {}
+  for _, f in ipairs(filters) do
+    if f.filter == "name" then named = named + 1 else types[#types + 1] = f.filter .. ":" .. f.type end
+  end
+  assert(named == #names.unit_names + #names.shredder_names,
     "on_entity_damaged is not limited to soldiers, headquarters and shredders")
+  assert(table.concat(types, ",") == "type:character,type:car,type:spider-vehicle", "unexpected damage filters")
 end)
 
 test("the one-second sweep visits each division and barracks once, spread over the second", function()

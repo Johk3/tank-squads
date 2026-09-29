@@ -33,6 +33,11 @@ M.IGNITION = 20
 M.BREAKUP_TICKS = 8
 local TARGETS = {'unit', 'unit-spawner', 'turret'}
 local LOOK = appearance.shredder
+M.DANGER_UNITS, M.DANGER_RADIUS, M.NEST_RADIUS = 10, 40, 50
+M.SHADOW_SIZE, M.SHADOW_REACH, M.SHADOW_BACK, M.SHADOW_STRIKE, M.SHADOW_DRIFT = 3, 200, 40, 30, 15
+M.CALM = 10 * 60
+local NESTS = {'unit-spawner', 'turret'}
+local PLAYER_TYPES = {character = true, car = true, ['spider-vehicle'] = true}
 
 function M.state()
   local s = storage.shredders
@@ -193,14 +198,9 @@ end
 
 
 
-function M.on_damaged(event)
-  local entity = event.entity
-  return entity ~= nil and entity.valid == true and names.shredder_set[entity.name] == true
-end
 
 
 
-function M.release(player_index) end
 
 
 -- Nearest own barracks or headquarters on the surface, or nil.
@@ -357,8 +357,6 @@ function M.rebalance()
 end
 
 
--- Shadows follow players in danger; see M.watch_player.
-function M.watch(phase) end
 
 function M.tick(phase)
   local s = storage.shredders
@@ -539,6 +537,168 @@ function M.on_command_completed(unit_number, result)
   if record.state == 'moving' then park(record)
   elseif record.state == 'igniting' then M.launch(record)
   elseif record.state == 'charging' then M.retarget(record) end
+  return true
+end
+
+-- At least DANGER_UNITS enemy units within DANGER_RADIUS, or any nest or
+-- worm within NEST_RADIUS. Both searches stop at their limit.
+function M.danger(surface, position, force)
+  local units = 0
+  for _, other in ipairs(enemies_of(force)) do
+    units = units + surface.count_entities_filtered{position = position, radius = M.DANGER_RADIUS,
+      force = other, type = 'unit', limit = M.DANGER_UNITS - units}
+    if units >= M.DANGER_UNITS then return true end
+    if surface.count_entities_filtered{position = position, radius = M.NEST_RADIUS, force = other,
+      type = NESTS, limit = 1} > 0 then return true end
+  end
+  return false
+end
+
+function M.release(player_index)
+  local s = storage.shredders
+  local shadow = s and s.shadows[player_index]
+  if not shadow then return end
+  for _, id in ipairs(shadow.members) do
+    local record = s.units[id]
+    if record then record.shadow = nil end
+  end
+  s.shadows[player_index] = nil
+end
+
+-- Up to SHADOW_SIZE ready shredders within reach: from the largest group
+-- first, never a group's last one, then from the pool; nearest first.
+function M.form(player)
+  local s = M.state()
+  local position, force_index, surface_index = player.position, player.force.index, player.surface.index
+  local sizes = {}
+  for key, group in pairs(s.groups) do
+    local ready = 0
+    for _, id in ipairs(group.members) do
+      local record = s.units[id]
+      if record and READY[record.state] then ready = ready + 1 end
+    end
+    sizes[key] = ready
+  end
+  local candidates = {}
+  for _, record in pairs(s.units) do
+    local e = record.entity
+    if e.valid and not record.shadow and READY[record.state] and e.force_index == force_index
+      and e.surface_index == surface_index then
+      local d = geometry.distance2(e.position, position)
+      if d <= M.SHADOW_REACH * M.SHADOW_REACH then candidates[#candidates + 1] = {record = record, d = d} end
+    end
+  end
+  local shadow = {members = {}, surface_index = surface_index, force_index = force_index}
+  for _ = 1, M.SHADOW_SIZE do
+    local best, best_i, best_size
+    for i, c in ipairs(candidates) do
+      local size = c.record.group and sizes[c.record.group] or 0
+      if not c.record.group or size >= 2 then
+        if not best or size > best_size or (size == best_size and (c.d < best.d
+          or (c.d == best.d and c.record.id < best.record.id))) then
+          best, best_i, best_size = c, i, size
+        end
+      end
+    end
+    if not best then break end
+    local record = best.record
+    if record.group then sizes[record.group] = sizes[record.group] - 1 end
+    leave(record)
+    record.shadow = player.index
+    shadow.members[#shadow.members + 1] = record.id
+    table.remove(candidates, best_i)
+  end
+  if #shadow.members == 0 then return nil end
+  s.shadows[player.index] = shadow
+  return shadow
+end
+
+-- Keeps the shadow SHADOW_BACK tiles behind the player, toward home.
+function M.follow(shadow, surface, position, force)
+  local home = M.home(surface.index, force.index, position)
+  local point = geometry.backline(position, home and home.position, nil, M.SHADOW_BACK)
+  shadow.point = point
+  if shadow.ordered and geometry.distance2(shadow.ordered, point) <= M.SHADOW_DRIFT * M.SHADOW_DRIFT then return end
+  shadow.ordered = point
+  local units = M.state().units
+  for i, id in ipairs(shadow.members) do
+    local record = units[id]
+    if record and READY[record.state] then send(record, geometry.slot(point, i)) end
+  end
+end
+
+function M.watch_player(player)
+  local s = M.state()
+  local shadow = s.shadows[player.index]
+  if not player.character then
+    if shadow then M.release(player.index) end
+    return
+  end
+  local surface, force = player.surface, player.force
+  if shadow and (shadow.surface_index ~= surface.index or shadow.force_index ~= force.index) then
+    M.release(player.index)
+    shadow = nil
+  end
+  if not shadow and not s.present[force.index .. ':' .. surface.index] then return end
+  local position = player.position
+  if M.danger(surface, position, force) then
+    if shadow then shadow.calm_since = nil else shadow = M.form(player) end
+    if shadow then M.follow(shadow, surface, position, force) end
+  elseif shadow then
+    shadow.calm_since = shadow.calm_since or game.tick
+    if game.tick - shadow.calm_since >= M.CALM then
+      M.release(player.index)
+    else
+      M.follow(shadow, surface, position, force)
+    end
+  end
+end
+
+-- One player per slice, by player index. Shadows of players who left go.
+function M.watch(phase)
+  local s = M.state()
+  for _, player in pairs(game.connected_players) do
+    if phase == nil or player.index % divisions.PHASES == phase then M.watch_player(player) end
+  end
+  for index in pairs(s.shadows) do
+    local player = game.get_player(index)
+    if not (player and player.connected) then M.release(index) end
+  end
+end
+
+local function owner(entity)
+  if entity.type == 'character' then return entity.player end
+  local driver = entity.get_driver()
+  if not driver then return nil end
+  if driver.object_name == 'LuaPlayer' then return driver end
+  return driver.player
+end
+
+-- Returns true for shredders and for the entities of players, so
+-- control.lua keeps them away from the soldier handlers.
+function M.on_damaged(event)
+  local entity = event.entity
+  if not (entity and entity.valid) then return false end
+  local cause = event.cause
+  if names.shredder_set[entity.name] then
+    local s = storage.shredders
+    local record = s and s.units[entity.unit_number]
+    if entity.name == M.PARKED and record and READY[record.state] and cause and cause.valid
+      and cause.unit_number and entity.force.is_enemy(cause.force) then
+      M.charge(record, cause, false)
+    end
+    return true
+  end
+  if not PLAYER_TYPES[entity.type] then return false end
+  local s = storage.shredders
+  if not (s and next(s.shadows)) then return true end
+  local player = owner(entity)
+  local shadow = player and s.shadows[player.index]
+  if not shadow or shadow.spent then return true end
+  if not (cause and cause.valid and player.force.is_enemy(cause.force)) then return true end
+  if M.strike(shadow.members, entity.surface, entity.position, player.force, M.SHADOW_STRIKE) > 0 then
+    shadow.spent = true
+  end
   return true
 end
 

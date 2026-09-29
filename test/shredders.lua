@@ -445,4 +445,135 @@ return function(ctx)
     ctx.handlers()[defines.events.on_entity_died]{entity = members[1]}
     assert(records()[1].state == 'igniting', 'soldier death did not reach the shredders')
   end)
+
+  test('shredders: a parked shredder rams an enemy that hurts it', function()
+    local _, enemy = engine()
+    local e, record = shredder(0, 0)
+    local biter = enemy_unit(enemy, 3, 0, 400)
+    assert(shredders.on_damaged{entity = e, cause = biter} == true)
+    assert(record.state == 'charging' and record.target == biter, 'no self-defence ram')
+    assert(record.entity.command.type == defines.command.attack, 'ram skipped straight to nothing')
+  end)
+
+  test('shredders: damage without an enemy cause starts nothing', function()
+    engine()
+    local e, record = shredder(0, 0)
+    assert(shredders.on_damaged{entity = e} == true)
+    assert(shredders.on_damaged{entity = e, cause = soldier()} == true)
+    assert(record.state == 'moving', 'shredder rammed a friend or nothing')
+  end)
+
+  test('shredders: soldier damage stays with the soldier handlers', function()
+    engine()
+    assert(shredders.on_damaged{entity = soldier()} == false)
+  end)
+
+  -- Player 1 standing at the origin with a character, ten biters close by,
+  -- one division with three shredders and one with a single shredder.
+  local function danger()
+    building()
+    local own, enemy = engine()
+    division(1, 100)
+    division(2, -100)
+    for i = 1, 4 do shredder(0, i) end
+    shredders.tick()
+    local groups = storage.shredders.groups
+    -- Make the split three and one.
+    local moved = table.remove(groups['1:2'].members)
+    groups['1:1'].members[#groups['1:1'].members + 1] = moved
+    storage.shredders.units[moved].group = '1:1'
+    local player = ctx.players()[1]
+    player.connected = true
+    player.position = {x = 0, y = 0}
+    player.character = {valid = true, type = 'character', name = 'character', player = player,
+      position = {x = 0, y = 0}, surface = game.surfaces[1]}
+    local biters = {}
+    for i = 1, 10 do biters[i] = enemy_unit(enemy, 20, i, 15) end
+    return player, biters, enemy
+  end
+
+  test('shredders: a player in danger gets a shadow from the larger groups only', function()
+    local player = danger()
+    shredders.watch()
+    local shadow = storage.shredders.shadows[1]
+    assert(shadow and #shadow.members == 2, 'shadow should take two from the group of three')
+    for _, id in ipairs(shadow.members) do
+      local r = storage.shredders.units[id]
+      assert(r.shadow == 1 and r.group == nil, 'shadow member still in its group')
+      assert(r.entity.command.type == defines.command.go_to_location, 'shadow member not sent')
+    end
+    assert(#storage.shredders.groups['1:1'].members == 1 and #storage.shredders.groups['1:2'].members == 1)
+  end)
+
+  test('shredders: a nest nearby is danger too', function()
+    local player, biters, enemy = danger()
+    for _, b in ipairs(biters) do b.valid = false end
+    local nest = enemy_unit(enemy, 45, 0, 350)
+    nest.type = 'unit-spawner'
+    assert(shredders.danger(game.surfaces[1], player.position, player.force))
+    nest.valid = false
+    assert(not shredders.danger(game.surfaces[1], player.position, player.force))
+  end)
+
+  test('shredders: the rebalance leaves shadow members alone', function()
+    danger()
+    shredders.watch()
+    local shadow = storage.shredders.shadows[1]
+    shredders.rebalance()
+    for _, id in ipairs(shadow.members) do assert(storage.shredders.units[id].group == nil) end
+  end)
+
+  test('shredders: a hurt player sends the shadow once', function()
+    local player, biters = danger()
+    shredders.watch()
+    assert(shredders.on_damaged{entity = player.character, cause = biters[1]} == true)
+    local shadow = storage.shredders.shadows[1]
+    assert(shadow.spent, 'shadow not spent')
+    for _, id in ipairs(shadow.members) do
+      assert(storage.shredders.units[id].state == 'igniting', 'shadow member did not strike')
+    end
+  end)
+
+  -- get_driver() returns a character for a car and may return a LuaPlayer.
+  test('shredders: damage to a vehicle a player drives triggers the shadow', function()
+    local player, biters = danger()
+    shredders.watch()
+    local car = {valid = true, type = 'car', name = 'car', position = {x = 0, y = 0}, surface = game.surfaces[1],
+      get_driver = function() return player.character end}
+    assert(shredders.on_damaged{entity = car, cause = biters[1]} == true)
+    assert(storage.shredders.shadows[1].spent, 'vehicle damage ignored')
+  end)
+
+  test('shredders: a driver given as LuaPlayer is found too', function()
+    local player, biters = danger()
+    shredders.watch()
+    local spider = {valid = true, type = 'spider-vehicle', name = 'spidertron', position = {x = 0, y = 0},
+      surface = game.surfaces[1],
+      get_driver = function() return {object_name = 'LuaPlayer', index = 1, force = player.force} end}
+    shredders.on_damaged{entity = spider, cause = biters[1]}
+    assert(storage.shredders.shadows[1].spent, 'a driver given as LuaPlayer was not found')
+  end)
+
+  test('shredders: ten calm seconds release the shadow', function()
+    local player, biters = danger()
+    shredders.watch()
+    local members = storage.shredders.shadows[1].members
+    for _, b in ipairs(biters) do b.valid = false end
+    shredders.watch()
+    game.tick = game.tick + shredders.CALM - 1
+    shredders.watch()
+    assert(storage.shredders.shadows[1], 'released too early')
+    game.tick = game.tick + 1
+    shredders.watch()
+    assert(storage.shredders.shadows[1] == nil, 'shadow kept after ten calm seconds')
+    for _, id in ipairs(members) do assert(storage.shredders.units[id].shadow == nil) end
+  end)
+
+  test('shredders: a player without a character loses the shadow', function()
+    local player = danger()
+    shredders.watch()
+    player.character = nil
+    shredders.watch()
+    assert(storage.shredders.shadows[1] == nil)
+  end)
 end

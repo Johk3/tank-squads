@@ -55,6 +55,13 @@ end
 local unit_filters = {{filter = "name", name = names.headquarters}}
 for _, filter in ipairs(soldier_filters) do unit_filters[#unit_filters + 1] = filter end
 for _, filter in ipairs(shredder_filters) do unit_filters[#unit_filters + 1] = filter end
+-- Players' characters and vehicles, for shadows. shredders.on_damaged
+-- keeps them away from the soldier handlers.
+local damaged_filters = {}
+for _, filter in ipairs(unit_filters) do damaged_filters[#damaged_filters + 1] = filter end
+for _, kind in ipairs({"character", "car", "spider-vehicle"}) do
+  damaged_filters[#damaged_filters + 1] = {filter = "type", type = kind}
+end
 local clone_filters = {}
 for _, filter in ipairs(filters) do clone_filters[#clone_filters + 1] = filter end
 for _, name in ipairs(headquarters.HELPER_NAMES) do clone_filters[#clone_filters + 1] = {filter = "name", name = name} end
@@ -84,10 +91,11 @@ script.on_event(defines.events.on_pre_player_mined_item, on_pre_mined, barracks_
 script.on_event(defines.events.on_robot_pre_mined, on_pre_mined, barracks_filters)
 -- The headquarters is unarmed, but a patrol still comes to its help.
 script.on_event(defines.events.on_entity_damaged, function(event)
+  if shredders.on_damaged(event) then return end
   veterans.on_damaged(event)
   combat.on_damaged(event)
   patrol.on_damaged(event)
-end, unit_filters)
+end, damaged_filters)
 script.on_event(defines.events.script_raised_destroy, function(event)
   local entity = event.entity
   if entity and entity.valid and names.soldier_set[entity.name] then
