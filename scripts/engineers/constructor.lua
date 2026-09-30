@@ -7,11 +7,12 @@
 -- record = {entity, id, force_index, surface_index, state, since, said,
 --   cluster, centre, fails, retries, crane, release_tick, done_tick,
 --   released, paused_since, calm_since, task_force, task_force_result, home,
---   autonomous, segment, dismantle, rings_version}
+--   autonomous, segment, dismantle, rings_version, nest, draft_tick}
 -- state is 'waiting', 'seeking', 'moving', 'building', 'paused',
 -- 'task_force', 'healing' or 'idle'.
 -- An autonomous constructor builds rings (rings/rings.lua) instead of the
--- player's ghosts: tear-down first, then ring ghosts, then a new segment.
+-- player's ghosts: nests inside the rings first (rings/clearing.lua), then
+-- tear-down, then ring ghosts, then a new segment.
 local names = require('scripts.names')
 local config = require('scripts.config')
 local divisions = require('scripts.divisions')
@@ -22,6 +23,7 @@ local crane = require('scripts.engineers.crane')
 local teams = require('scripts.engineers.teams')
 local task_force = require('scripts.engineers.task_force')
 local rings = require('scripts.engineers.rings.rings')
+local clearing = require('scripts.engineers.rings.clearing')
 local combat = require('scripts.combat')
 local vision = require('scripts.vision')
 
@@ -87,7 +89,7 @@ end
 
 function M.reset(record)
   release(record)
-  record.task_force, record.task_force_result = nil, nil
+  record.task_force, record.task_force_result, record.nest = nil, nil, nil
   set(record, 'seeking')
 end
 
@@ -203,9 +205,41 @@ local function walk_to_cluster(record)
   go(record, spot, 1)
 end
 
+-- A task force already fights near the nest.
+local function busy(nest)
+  return task_force.near(nest.surface_index, nest.position) ~= nil
+end
+
+-- Sends a task force at a nest inside the rings and waits beside it. A
+-- nest gone is dropped and the next work is sought; one too strong waits
+-- clearing.BLOCK ticks.
+function M.clear(record, nest)
+  local entity = record.entity
+  local structures = M.nest(entity, nest.position)
+  if not structures then
+    clearing.drop(record.force_index, nest.id)
+    return M.seek(record)
+  end
+  record.centre = {x = nest.position.x, y = nest.position.y}
+  local tf = task_force.request(record, structures)
+  record.centre = nil
+  if tf then
+    record.task_force, record.nest = tf.id, nest.id
+    set(record, 'task_force')
+    go(record, task_force.staging(tf, entity.position), 8)
+    say(record, 'task-force')
+  else
+    clearing.block(record.force_index, nest.id)
+    set(record, 'seeking')
+    say(record, 'too-strong')
+  end
+end
+
 function M.seek(record)
   local cluster, mode
   if record.autonomous then
+    local nest = clearing.claim(record, busy)
+    if nest then return M.clear(record, nest) end
     cluster, mode = rings.claim(record, M.CLUSTER_RADIUS, M.CLUSTER_MAX)
     if not cluster then
       if mode == 'planning' then set(record, 'seeking'); return end
@@ -312,9 +346,13 @@ function M.check(record, cfg)
   if record.state == 'task_force' then
     local result = record.task_force_result
     if not result then return end
-    if result == 'broken' then ghosts.block(record.cluster, ghosts.BLOCK) end
+    if result == 'broken' then
+      ghosts.block(record.cluster, ghosts.BLOCK)
+      if record.nest then clearing.block(record.force_index, record.nest) end
+    end
     M.reset(record)
   end
+  teams.draft(record)
   if teams.present(record.id) < min_team() then
     if record.state ~= 'waiting' then
       release(record)

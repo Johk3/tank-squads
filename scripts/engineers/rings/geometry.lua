@@ -155,6 +155,18 @@ function M.side(ring, x, y)
   return d < wall and 'inside' or 'outside', M.in_band(ring, x, y)
 end
 
+-- True for a position the ring encloses, off its band.
+function M.interior(ring, x, y)
+  local where, band = M.side(ring, x, y)
+  return where == 'inside' and not band
+end
+
+-- The chunks that hold the ring's interior: x0, y0, x1, y1, inclusive.
+function M.interior_chunks(ring)
+  local cx, cy, R = ring.centre.x, ring.centre.y, ring.radius
+  return math.floor((cx - R) / 32), math.floor((cy - R) / 32), math.floor((cx + R) / 32), math.floor((cy + R) / 32)
+end
+
 -- A circle's gatehouse is an axis-aligned block at its point on the circle:
 -- gate rows run east-west near north and south, north-south near east and
 -- west. u runs along (ux, uy), depth outward along (nx, ny).

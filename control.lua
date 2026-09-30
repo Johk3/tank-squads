@@ -574,6 +574,7 @@ remote.add_interface("tank-squads", {
   engineers_ring_delete = function(force_name, n) return engineers.ring_delete(game.forces[force_name].index, n) end,
   engineers_ring_again = function(force_name, n) return engineers.ring_again(game.forces[force_name].index, n) end,
   engineers_ring_tick = function() engineers.ring_tick() end,
+  engineers_clearing_tick = function() engineers.clearing_tick() end,
   engineers_ring_reset = function(force_name) engineers.ring_reset(game.forces[force_name]) end,
   engineers_go = function(unit_number, x, y)
     local entity = game.get_entity_by_unit_number(unit_number)

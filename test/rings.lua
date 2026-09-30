@@ -96,6 +96,17 @@ return function(ctx)
     assert(select(2, geometry.side(ring, 220.5, 0.5)), 'the bulge front is not on the band')
   end)
 
+  test('rings: the interior is the enclosed area off the band', function()
+    for _, ring in ipairs({square(200), circle(200)}) do
+      assert(geometry.interior(ring, 0.5, 0.5) and geometry.interior(ring, 150.5, -20.5))
+      assert(not geometry.interior(ring, 199.5, 0.5), 'the band counted as inside')
+      assert(not geometry.interior(ring, 260.5, 0.5), 'outside counted as inside')
+    end
+    assert(geometry.interior(square(200), 180.5, 180.5) and not geometry.interior(circle(200), 180.5, 180.5))
+    local x0, y0, x1, y1 = geometry.interior_chunks(square(200))
+    assert(x0 == -7 and y0 == -7 and x1 == 6 and y1 == 6, x0 .. ',' .. y0 .. ',' .. x1 .. ',' .. y1)
+  end)
+
   test('rings: a circle frame measures along clockwise from north', function()
     local ring = circle(300)
     local side, a, d = geometry.to_frame(ring, 0.5, -299.5)
@@ -514,20 +525,25 @@ return function(ctx)
   end)
 
   -- An autonomous constructor at (x, y) with no escort needed, in a ring
-  -- world where segments scan as empty ground and no enemy is near. The
-  -- last value returned puts the replaced functions back; every test that
-  -- uses this calls it at its end.
+  -- world where segments scan as empty ground, no enemy is near and the
+  -- ring interiors count as read and clear. The last value returned puts
+  -- the replaced functions back; every test that uses this calls it at its
+  -- end.
   local function autonomous_at(x, y)
     local rings, s = ring_world()
     s.min_team = 0
     local obstacles = require('scripts.engineers.rings.obstacles')
     local layout = require('scripts.engineers.rings.layout')
+    local clearing = require('scripts.engineers.rings.clearing')
     local constructor = require('scripts.engineers.constructor')
-    local saved = {scan = obstacles.scan, enemy_near = constructor.enemy_near, plan = layout.plan}
+    local saved = {scan = obstacles.scan, enemy_near = constructor.enemy_near, plan = layout.plan,
+      holds = clearing.holds}
     obstacles.scan = function() return {bulges = {}, crossings = {}, water = {}} end
     constructor.enemy_near = function() return false end
+    clearing.holds = function() return false end
     local function restore()
       obstacles.scan, constructor.enemy_near, layout.plan = saved.scan, saved.enemy_near, saved.plan
+      clearing.holds = saved.holds
     end
     local e = ctx.soldier(nil, nil, x, y)
     e.name, e.health, e.max_health = names.constructor, 800, 800

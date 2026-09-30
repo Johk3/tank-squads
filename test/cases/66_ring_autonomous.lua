@@ -17,7 +17,10 @@ local c = s.create_entity{name = 'tank-squad-constructor', position = {-910, 100
 remote.call('tank-squads', 'engineers_set_autonomous', c.unit_number, true)
 local ok, err = pcall(function()
   local built = 0
-  for _ = 1, 400 do built = built + remote.call('tank-squads', 'engineers_build', c.unit_number) end
+  for _ = 1, 400 do
+    remote.call('tank-squads', 'engineers_clearing_tick')
+    built = built + remote.call('tank-squads', 'engineers_build', c.unit_number)
+  end
   local info = remote.call('tank-squads', 'engineers_ring_info', 'player', 1)
   assert(info, 'no ring was started')
   assert(info.built >= 1, 'no segment finished; ' .. built .. ' walls built, ' .. info.live .. ' ghosts left')

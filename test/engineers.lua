@@ -1243,4 +1243,153 @@ return function(ctx)
     assert(engineers.click({player_index = 1, element = frame.body.close}))
     assert(not frame.valid, 'close button left the window open')
   end)
+
+  -- A force with ring 1 (radius 200 round 0, 0) and an autonomous
+  -- constructor at (x, y) that needs no escort.
+  local function ring_force(x, y)
+    local E = ctx.engineers
+    local own, enemy, surface = E.engine()
+    own.get_spawn_position = function() return {x = 0, y = 0} end
+    own.printed = {}
+    own.print = function(message) own.printed[#own.printed + 1] = message end
+    local rings = require('scripts.engineers.rings.rings')
+    local fs = rings.force_state(1)
+    local ring = rings.start(fs, own, 1, surface)
+    local record = working(x, y)
+    require('scripts.engineers.constructor').set_autonomous(record.id, true)
+    return record, fs, ring, enemy
+  end
+
+  -- Runs clearing reads until one full read of the interior is done.
+  local function read_interior(fs)
+    local clearing = require('scripts.engineers.rings.clearing')
+    for _ = 1, 1000 do
+      clearing.tick()
+      if fs.clearing and fs.clearing.passes > 0 then return fs.clearing end
+    end
+    error('the interior read never finished')
+  end
+
+  local function count(t)
+    local n = 0
+    for _ in pairs(t) do n = n + 1 end
+    return n
+  end
+
+  test('engineers: the interior read finds nests inside the ring, one per nest, none outside', function()
+    local E = ctx.engineers
+    local record, fs, ring, enemy = ring_force(0, 0)
+    local clearing = require('scripts.engineers.rings.clearing')
+    E.enemy_unit(enemy, 100, 0, 'biter-spawner', 'unit-spawner', 350)
+    E.enemy_unit(enemy, 110, 6, 'medium-worm-turret', 'turret', 500)
+    E.enemy_unit(enemy, -60, -90, 'biter-spawner', 'unit-spawner', 350)
+    E.enemy_unit(enemy, 260, 0, 'biter-spawner', 'unit-spawner', 350)
+    E.enemy_unit(enemy, 50, 50)
+    local before = fs.version
+    assert(clearing.holds(fs, ring, game.tick), 'planning went ahead before the interior was read')
+    local c = read_interior(fs)
+    assert(count(c.nests) == 2, count(c.nests) .. ' nests recorded')
+    assert(fs.version > before, 'parked constructors were not woken')
+    local printed = game.forces[1].printed
+    assert(printed[#printed][1] == 'tank-squads.ring-nests' and printed[#printed][3] == 2)
+    assert(clearing.holds(fs, ring, game.tick), 'a waiting nest did not hold the ring')
+    for id in pairs(c.nests) do clearing.block(1, id) end
+    assert(not clearing.holds(fs, ring, game.tick), 'blocked nests held the ring')
+    assert(record.autonomous)
+  end)
+
+  test('engineers: the interior is read again after a while and finds new nests', function()
+    local E = ctx.engineers
+    local _, fs, ring, enemy = ring_force(0, 0)
+    local clearing = require('scripts.engineers.rings.clearing')
+    local c = read_interior(fs)
+    assert(next(c.nests) == nil and not clearing.holds(fs, ring, game.tick))
+    E.enemy_unit(enemy, -100, 40, 'biter-spawner', 'unit-spawner', 350)
+    clearing.tick()
+    assert(next(c.nests) == nil, 'read again before RESCAN')
+    game.tick = game.tick + clearing.RESCAN
+    for _ = 1, 1000 do
+      clearing.tick()
+      if c.passes > 1 then break end
+    end
+    assert(count(c.nests) == 1, 'the new nest was not found')
+  end)
+
+  test('engineers: an autonomous constructor sends a task force at a nest inside before building', function()
+    local E = ctx.engineers
+    local record, fs, _, enemy = ring_force(0, 0)
+    local constructor = require('scripts.engineers.constructor')
+    local task_force = require('scripts.engineers.task_force')
+    local spawner = E.enemy_unit(enemy, 100, 0, 'biter-spawner', 'unit-spawner', 350)
+    require('scripts.divisions').assign(1, 1, {soldier(nil, nil, 10, 0), soldier(nil, nil, 11, 0),
+      soldier(nil, nil, 12, 0)})
+    local c = read_interior(fs)
+    constructor.check(record, {retreat = 0})
+    assert(record.state == 'task_force' and record.nest and record.task_force, 'state ' .. record.state)
+    assert(record.segment == nil, 'planned a segment before clearing')
+    spawner.valid = false
+    task_force.tick()
+    game.tick = game.tick + 60
+    -- With the nest gone the constructor turns to the ring.
+    local rings = require('scripts.engineers.rings.rings')
+    local claim, asked = rings.claim, false
+    rings.claim = function() asked = true; return nil, 'planning' end
+    local ok, err = pcall(constructor.check, record, {retreat = 0})
+    rings.claim = claim
+    assert(ok, err)
+    assert(next(c.nests) == nil, 'the cleared nest stayed listed')
+    assert(asked, 'the ring was not taken up once the nest was cleared')
+  end)
+
+  test('engineers: a nest inside too strong waits and lets the ring go on', function()
+    local E = ctx.engineers
+    local record, fs, ring, enemy = ring_force(0, 0)
+    local constructor = require('scripts.engineers.constructor')
+    local clearing = require('scripts.engineers.rings.clearing')
+    E.enemy_unit(enemy, 100, 0, 'biter-spawner', 'unit-spawner', 350)
+    local c = read_interior(fs)
+    constructor.seek(record)
+    local _, nest = next(c.nests)
+    assert(nest.blocked == game.tick + clearing.BLOCK, 'the nest was not blocked')
+    assert(record.state == 'seeking' and not record.task_force)
+    assert(not clearing.holds(fs, ring, game.tick))
+  end)
+
+  test('engineers: a short team takes on soldiers in no division near its constructor', function()
+    local E = ctx.engineers
+    E.engine()
+    local teams = require('scripts.engineers.teams')
+    local loans = require('scripts.engineers.loans')
+    local divisions = require('scripts.divisions')
+    local record = require('scripts.engineers.constructor').register(E.constructor_entity(0, 0))
+    local a, b = soldier(nil, nil, 20, 0), soldier(nil, nil, 30, 0)
+    local far, owned, lent = soldier(nil, nil, 500, 0), soldier(nil, nil, 25, 0), soldier(nil, nil, 26, 0)
+    local chosen = soldier(nil, nil, 27, 0)
+    divisions.assign(1, 2, {owned})
+    divisions.assign(1, 0, {chosen})
+    loans.lend(lent.unit_number, {task_force = 1})
+    assert(teams.draft(record) == 2, 'drafted the wrong soldiers')
+    assert(loans.drafted(a.unit_number) and loans.drafted(b.unit_number))
+    assert(not loans.drafted(far.unit_number) and not loans.drafted(chosen.unit_number))
+    teams.refresh()
+    local team = storage.engineers.teams[record.id]
+    assert(team and #team.members == 2, 'draftees were not dealt into the team')
+    assert(teams.draft(record) == 0, 'drafted again before DRAFT_TICKS')
+  end)
+
+  test('engineers: a draftee leaves the team when it joins a division or the player orders it', function()
+    local E = ctx.engineers
+    E.engine()
+    local teams = require('scripts.engineers.teams')
+    local loans = require('scripts.engineers.loans')
+    local record = require('scripts.engineers.constructor').register(E.constructor_entity(0, 0))
+    local a, b = soldier(nil, nil, 20, 0), soldier(nil, nil, 30, 0)
+    teams.draft(record)
+    teams.refresh()
+    require('scripts.divisions').assign(1, 2, {a})
+    loans.recall({b})
+    teams.refresh()
+    assert(#storage.engineers.teams[record.id].members == 0, 'a draftee stayed after leaving')
+    assert(not loans.drafted(a.unit_number) and not loans.drafted(b.unit_number))
+  end)
 end

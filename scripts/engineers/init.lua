@@ -13,6 +13,7 @@ local combat = require('scripts.combat')
 local crossing = require('scripts.engineers.rings.crossing')
 local patrol = require('scripts.patrol')
 local garrison = require('scripts.engineers.rings.garrison')
+local clearing = require('scripts.engineers.rings.clearing')
 local names = require('scripts.names')
 
 local M = {}
@@ -127,6 +128,7 @@ function M.tick(phase)
   if s.rings and next(s.rings) then
     rings.tick(phase)
     garrison.tick(phase)
+    clearing.tick(phase)
   end
   if s.crossings and (phase == nil or phase == 0) then crossing.sweep() end
 end
@@ -244,5 +246,6 @@ function M.ring_reset(force)
 end
 function M.ring_again(force_index, n) return rings.again(force_index, n) end
 function M.ring_tick() rings.tick(nil) end
+function M.clearing_tick() clearing.tick(nil) end
 
 return M

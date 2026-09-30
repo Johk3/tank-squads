@@ -5,7 +5,8 @@
 -- surface.
 --
 -- storage.engineers.rings[force_index] = {settings = {shape, spacing, count,
---   surface_index, centre}, slots[n] = ring, version, mark, mark_circle}
+--   surface_index, centre}, slots[n] = ring, version, mark, mark_circle,
+--   clearing (clearing.lua)}
 -- ring = {key, n, force_index, surface_index, centre, radius, shape, state,
 --   count, segments[i], bulges, crossings[key], released[tile key], labels,
 --   gatehouses[i], announced, audit, teardown, purge_tick, garrison,
@@ -21,6 +22,7 @@ local geometry = require('scripts.engineers.rings.geometry')
 local layout = require('scripts.engineers.rings.layout')
 local obstacles = require('scripts.engineers.rings.obstacles')
 local dismantle = require('scripts.engineers.rings.dismantle')
+local clearing = require('scripts.engineers.rings.clearing')
 
 local M = {}
 
@@ -520,10 +522,11 @@ end
 -- then its own segment, swept along the ring from where it stands. Then
 -- whichever is nearer: ring ghosts no other constructor works on (a
 -- breach, a segment whose constructor left) or a new segment planned for
--- it (one per tick for all constructors). Only when no segment is left to
--- plan does it help with the segments of others, nearest first. Returns a
--- cluster and 'dismantle' or 'build', or nil and 'planning' (ask again
--- next second) or 'done' (nothing left).
+-- it (one per tick for all constructors), once no nest inside the rings
+-- waits (clearing.lua). Only when no segment is left to plan does it help
+-- with the segments of others, nearest first. Returns a cluster and
+-- 'dismantle' or 'build', or nil and 'planning' (ask again next second) or
+-- 'done' (nothing left).
 function M.claim(record, radius, max)
   local taken = dismantle.claim(record, radius, max)
   if taken then return taken, 'dismantle' end
@@ -544,7 +547,8 @@ function M.claim(record, radius, max)
     end
   end
   local skip = taken_by_others(record)
-  local ring = M.current(M.force_state(record.force_index), entity.force, entity.surface)
+  local fs = M.force_state(record.force_index)
+  local ring = M.current(fs, entity.force, entity.surface)
   if ring and ring.surface_index ~= record.surface_index then ring = nil end
   local tick, s = game.tick, state.get()
   local i = ring and M.next_segment(ring, position, tick)
@@ -567,6 +571,8 @@ function M.claim(record, radius, max)
     if not ring then return nil, 'done' end
     return nil, M.waiting(ring, tick) and 'planning' or 'done'
   end
+  -- Nests inside the rings go first (clearing.lua).
+  if clearing.holds(fs, ring, tick) then return nil, 'planning' end
   if s.plan_tick == tick then return nil, 'planning' end
   s.plan_tick = tick
   local result = M.plan_segment(ring, i, position)

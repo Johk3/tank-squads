@@ -42,6 +42,12 @@ local ok, err = pcall(function()
     q.stop(); q.divide(30)
     rcon.print({'', 'Engineers sweep, 3 autonomous constructors, 2 rings placed, run ', run, ': ', q})
   end
+  for run = 1, 3 do
+    local q = engine_game.create_profiler()
+    for _ = 1, 30 do remote.call('tank-squads', 'engineers_clearing_tick') end
+    q.stop(); q.divide(30)
+    rcon.print({'', 'Interior read, one sweep slice, run ', run, ': ', q})
+  end
   local soldiers = {}
   for i = 1, 50 do
     soldiers[i] = s.create_entity{name = 'tank-squad-soldier-1', position = {i, -3000}, force = force}

@@ -1,14 +1,18 @@
 -- Engineer escort. Divisions a player marks (mode "engineer") form the
 -- force's pool; their armed soldiers are dealt into one team per active
--- constructor, at most CAP each. A team runs the escort's defensive
--- formation with its constructor as ward, on a tighter ring, and heals
--- through retreat.lua like any escort. The split runs once per second and
--- only when the pool or the constructors changed.
+-- constructor, at most CAP each. A constructor whose team is short also
+-- takes on soldiers in no division within DRAFT_RADIUS (draftees, see
+-- loans.lua); a draftee leaves the pool when it joins a division or the
+-- player orders it. A team runs the escort's defensive formation with its
+-- constructor as ward, on a tighter ring, and heals through retreat.lua
+-- like any escort. The split runs once per second and only when the pool
+-- or the constructors changed.
 local combat = require('scripts.combat')
 local divisions = require('scripts.divisions')
 local patrol = require('scripts.patrol')
 local escort = require('scripts.escort')
 local retreat = require('scripts.retreat')
+local cover = require('scripts.cover')
 local config = require('scripts.config')
 local names = require('scripts.names')
 local loans = require('scripts.engineers.loans')
@@ -18,6 +22,8 @@ local state = require('scripts.engineers.state')
 local M = {}
 
 M.CAP = 8
+M.DRAFT_RADIUS = 100
+M.DRAFT_TICKS = 5 * 60
 -- A team rings its constructor closer than a player's escort, and meets
 -- threats within the constructor's own pause radius.
 M.RING, M.DETECT, M.STEP = 24, 80, 16
@@ -120,6 +126,15 @@ local function pool(force_index, surface_index)
       end
     end
   end
+  for id in pairs(storage.engineer_drafts or {}) do
+    local e = game.get_entity_by_unit_number(id)
+    if not (e and e.valid) or divisions.owner(id) then
+      loans.release(id)
+    elseif e.surface_index == surface_index and e.force_index == force_index then
+      local veteran = veterans[id]
+      out[#out + 1] = {id = id, strength = threat.strength(e.name, veteran and veteran.rank)}
+    end
+  end
   table.sort(out, function(a, b) return a.id < b.id end)
   return out
 end
@@ -129,7 +144,47 @@ end
 -- team no longer commands it even before the next split drops it.
 local function in_pool(id)
   local _, _, record = divisions.owner(id)
-  return record ~= nil and record.mode == 'engineer'
+  if record then return record.mode == 'engineer' end
+  return loans.drafted(id)
+end
+
+-- Soldiers in any player's drag selection: the player handles them.
+local function selected(id)
+  for _, pstate in pairs(storage.divisions or {}) do
+    local record = pstate.slots[0]
+    for _, member in ipairs(record and record.members or {}) do
+      if member == id then return true end
+    end
+  end
+  return false
+end
+
+-- Takes on soldiers in no division near a constructor whose team is short,
+-- at most once per DRAFT_TICKS. Soldiers lent, held by a cover, in a
+-- team, fighting or in a drag selection are left alone. Returns how many
+-- joined; the next split deals them.
+function M.draft(record)
+  local s = state.get()
+  local tick = game.tick
+  if record.draft_tick and tick - record.draft_tick < M.DRAFT_TICKS then return 0 end
+  record.draft_tick = tick
+  local team = s.teams[record.id]
+  local wanted = M.CAP - (team and #team.members or 0)
+  if wanted <= 0 then return 0 end
+  local entity = record.entity
+  local n = 0
+  for _, e in pairs(entity.surface.find_entities_filtered{position = entity.position, radius = M.DRAFT_RADIUS,
+      name = names.soldier_names, force = record.force_index}) do
+    local id = e.unit_number
+    if e.valid and not divisions.owner(id) and not loans.drafted(id) and not loans.on_loan(id)
+        and not s.team_of[id] and not cover.held(id) and not combat.fighting(id) and not selected(id) then
+      loans.draft(id)
+      n = n + 1
+      if n >= wanted then break end
+    end
+  end
+  if n > 0 then s.dirty = true end
+  return n
 end
 
 -- A soldier dealt out of its team stops where it is while its division is
@@ -273,6 +328,7 @@ function M.on_command_completed(unit_number, result)
 end
 
 function M.forget(unit_number)
+  loans.release(unit_number)
   local s = state.peek()
   local c = s and s.team_of[unit_number]
   if not c then return end
