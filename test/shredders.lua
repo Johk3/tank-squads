@@ -156,24 +156,24 @@ return function(ctx)
     return calls
   end
 
-  test('shredders: a group parks 60 tiles behind its division toward home', function()
+  test('shredders: a group parks 120 tiles behind its division toward home', function()
     building()
     engine()
-    division(1, 100)
+    division(1, 200)
     local e, record = shredder(0, 0)
     shredders.tick()
     local group = storage.shredders.groups['1:1']
     assert(group, 'no group for division 1')
-    -- Centre (100, 1.5), home (0, 0): 60 tiles toward home is about (40.0, 0.6).
-    assert(math.abs(group.point.x - 40) < 0.1 and math.abs(group.point.y - 0.6) < 0.1, 'backline not toward home')
+    -- Centre (200, 1.5), home (0, 0): 120 tiles toward home is about (80.0, 0.6).
+    assert(math.abs(group.point.x - 80) < 0.1 and math.abs(group.point.y - 0.6) < 0.1, 'backline not toward home')
     assert(record.group == '1:1' and e.command.type == defines.command.go_to_location, 'shredder not sent')
     assert(e.command.distraction == defines.distraction.none, 'shredder can be distracted on its way')
   end)
 
-  test('shredders: parked shredders get no new orders until the division moves 20 tiles', function()
+  test('shredders: parked shredders get no new orders until the division moves 30 tiles', function()
     building()
     engine()
-    local members = division(1, 100)
+    local members = division(1, 200)
     local e, record = shredder(0, 0)
     shredders.tick()
     shredders.on_command_completed(e.unit_number, defines.behavior_result.success)
@@ -181,7 +181,11 @@ return function(ctx)
     local calls = commands(e)
     for _ = 1, 5 do game.tick = game.tick + 60; shredders.tick() end
     assert(calls.n == 0, calls.n .. ' orders while parked')
-    for _, m in ipairs(members) do m.position = {x = 180, y = m.position.y} end
+    for _, m in ipairs(members) do m.position = {x = 225, y = m.position.y} end
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(calls.n == 0, 'a 25-tile move sent the parked shredder')
+    for _, m in ipairs(members) do m.position = {x = 240, y = m.position.y} end
     game.tick = game.tick + 60
     shredders.tick()
     assert(calls.n == 1 and record.state == 'moving', 'no order after the division moved')
@@ -792,5 +796,217 @@ return function(ctx)
     game.tick = game.tick + 60
     shredders.tick()
     assert(record.group == '1:1', 'merged shredder never joined the new force')
+  end)
+
+  local function nest(enemy, x, y)
+    local e = enemy_unit(enemy, x, y, 350)
+    e.type = 'unit-spawner'
+    return e
+  end
+
+  -- A shredder charging from the origin at a nest 50 tiles east.
+  local function charge_at_nest()
+    local _, enemy = engine()
+    local _, record = shredder(0, 0)
+    local target = nest(enemy, 50, 0)
+    assert(shredders.charge(record, target, false))
+    assert(record.state == 'charging')
+    return record, target, enemy
+  end
+
+  test('shredders: a charge stuck on a nest in its way rams that nest', function()
+    local record, target, enemy = charge_at_nest()
+    local blocker = nest(enemy, 3, 0)
+    game.tick = game.tick + shredders.STALL_TICKS - 1
+    shredders.tick()
+    assert(record.target == target, 'rammed before the charge stalled')
+    game.tick = game.tick + 1
+    shredders.tick()
+    assert(record.target == blocker, 'the stuck charge did not ram the nest in its way')
+    assert(record.state == 'charging' and record.entity.command.target == blocker)
+    assert(storage.shredders.locks[target.unit_number] == nil, 'the first target stayed locked')
+  end)
+
+  test('shredders: a charge on the move is never taken for stuck', function()
+    local record, target, enemy = charge_at_nest()
+    nest(enemy, 3, 0)
+    for i = 1, 20 do
+      game.tick = game.tick + 10
+      record.entity.position = {x = i * 2, y = 0}
+      shredders.tick()
+    end
+    assert(record.target == target, 'a moving charge changed target')
+  end)
+
+  test('shredders: a stuck charge with nothing to ram waits for its path, then gives the target up', function()
+    local record, target, enemy = charge_at_nest()
+    local other = nest(enemy, 60, 0)
+    game.tick = game.tick + shredders.STALL_TICKS
+    shredders.tick()
+    assert(record.target == target, 'gave up while the path may still come')
+    game.tick = game.tick + shredders.STUCK_TICKS
+    shredders.tick()
+    assert(record.target == other, 'a charge stuck for good kept its target')
+    assert(record.unreachable[target.unit_number], 'the stuck target not marked unreachable')
+  end)
+
+  test('shredders: a failed path next to a nest rams that nest', function()
+    local record, _, enemy = charge_at_nest()
+    local blocker = nest(enemy, 2, 2)
+    nest(enemy, 55, 0)
+    shredders.on_command_completed(record.id, defines.behavior_result.fail)
+    assert(record.target == blocker, 'the failed charge did not ram the nest beside it')
+  end)
+
+  test('shredders: rams count toward the retarget limit', function()
+    local record, _, enemy = charge_at_nest()
+    nest(enemy, 3, 0)
+    for _ = 1, shredders.RETARGETS + 1 do
+      game.tick = game.tick + shredders.STALL_TICKS
+      shredders.tick()
+    end
+    game.tick = game.tick + shredders.STUCK_TICKS
+    shredders.tick()
+    assert(record.state == 'parked', 'a shredder rammed a nest it cannot reach without end')
+    assert(next(storage.shredders.charging) == nil, 'a stood-down shredder is still watched')
+  end)
+
+  test('shredders: a crashed shredder leaves the charge watch', function()
+    local record = charge_at_nest()
+    shredders.on_trigger{effect_id = shredders.EFFECT, source_entity = record.entity}
+    shredders.tick()
+    assert(next(storage.shredders.charging) == nil)
+  end)
+
+  -- A patrolling division of four at x = 200 with two parked shredders and
+  -- a swarm of `count` enemy units at x = 230, in a group in `state`.
+  local function patrol_swarm(count, state)
+    building()
+    local _, enemy = engine()
+    defines.group_state = {gathering = 0, moving = 1, attacking_distraction = 2, attacking_target = 3,
+      finished = 4, pathfinding = 5, wander_in_group = 6}
+    local members = division(1, 200, 4)
+    divisions.record(1, 1).mode = 'patrol'
+    shredder(0, 1)
+    shredder(0, 2)
+    shredders.tick()
+    local group = {state = defines.group_state[state or 'moving']}
+    local swarm = {}
+    for i = 1, count do
+      local e = enemy_unit(enemy, 230 + (i % 5), i % 7, 15)
+      e.commandable.parent_group = group
+      swarm[i] = e
+    end
+    return members, swarm, group
+  end
+
+  local function charging_count()
+    local n = 0
+    for _, r in pairs(storage.shredders.units) do
+      if r.state == 'igniting' or r.state == 'charging' then n = n + 1 end
+    end
+    return n
+  end
+
+  test('shredders: a patrol that sees a swarm on the move sends one shredder at its middle', function()
+    local _, swarm = patrol_swarm(shredders.SWARM_UNITS)
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(charging_count() == 1, charging_count() .. ' shredders sent at the swarm')
+    local target
+    for _, r in pairs(storage.shredders.units) do if r.state == 'igniting' then target = r.target end end
+    local middle = require('scripts.shredder_geometry').centre(swarm)
+    for _, e in ipairs(swarm) do
+      assert(require('scripts.shredder_geometry').distance2(e.position, middle)
+        >= require('scripts.shredder_geometry').distance2(target.position, middle), 'target not in the middle')
+    end
+  end)
+
+  test('shredders: an interception leaves the division free to call a strike', function()
+    local members = patrol_swarm(shredders.SWARM_UNITS)
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(charging_count() == 1)
+    die(members[1]); die(members[2])
+    assert(charging_count() == 2, 'the interception blocked the distress strike')
+  end)
+
+  test('shredders: a swarm draws one more shredder only after the cooldown', function()
+    patrol_swarm(shredders.SWARM_UNITS)
+    game.tick = game.tick + 60
+    shredders.tick()
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(charging_count() == 1, 'a second shredder went within the cooldown')
+    game.tick = game.tick + shredders.SWARM_COOLDOWN
+    shredders.tick()
+    assert(charging_count() == 2, 'no second shredder after the cooldown')
+  end)
+
+  test('shredders: small swarms, gathering groups and loose units send nobody', function()
+    patrol_swarm(shredders.SWARM_UNITS - 1)
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(charging_count() == 0, 'a small swarm drew a shredder')
+    patrol_swarm(shredders.SWARM_UNITS, 'gathering')
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(charging_count() == 0, 'a gathering group drew a shredder')
+    local _, swarm = patrol_swarm(shredders.SWARM_UNITS)
+    for _, e in ipairs(swarm) do e.commandable.parent_group = nil end
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(charging_count() == 0, 'loose units drew a shredder')
+  end)
+
+  test('shredders: a swarm with a few loose units beside it still counts', function()
+    local _, swarm = patrol_swarm(shredders.SWARM_UNITS + 4)
+    for i = 1, 4 do swarm[i].commandable.parent_group = nil end
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(charging_count() == 1, 'loose units hid the swarm')
+  end)
+
+  test('shredders: a crowd of loose units is read only until they outnumber the swarm', function()
+    local _, swarm = patrol_swarm(40)
+    local reads = 0
+    for _, e in ipairs(swarm) do
+      e.commandable.parent_group = nil
+      setmetatable(e.commandable, {__index = function(_, key)
+        if key == 'parent_group' then reads = reads + 1 end
+      end})
+    end
+    game.tick = game.tick + 60
+    shredders.tick(divisions.phase(1, 1))
+    assert(charging_count() == 0)
+    assert(reads <= shredders.LOOSE * shredders.SWARM_SCANS, reads .. ' group reads for loose units')
+  end)
+
+  test('shredders: only patrolling divisions look out for swarms', function()
+    patrol_swarm(shredders.SWARM_UNITS)
+    divisions.record(1, 1).mode = 'idle'
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(charging_count() == 0, 'an idle division intercepted a swarm')
+  end)
+
+  test('shredders: a lookout without ready shredders searches nothing', function()
+    patrol_swarm(shredders.SWARM_UNITS)
+    for _, r in pairs(storage.shredders.units) do r.state = 'stranded' end
+    local surface, searches = game.surfaces[1], 0
+    local find = surface.find_entities_filtered
+    surface.find_entities_filtered = function(query) searches = searches + 1; return find(query) end
+    game.tick = game.tick + 60
+    shredders.tick(divisions.phase(1, 1))
+    assert(searches == 0, searches .. ' searches without a shredder to send')
+  end)
+
+  test('shredders: a hurt patrol soldier looks for a swarm around itself', function()
+    local members = patrol_swarm(shredders.SWARM_UNITS)
+    -- The others are far away: only the hurt soldier sees the swarm.
+    members[1].position = {x = 231, y = 2}
+    for i = 2, #members do members[i].position = {x = 500, y = i} end
+    assert(shredders.patrol_alarm(1, 1, members[1]), 'the hurt soldier drew no shredder')
+    assert(charging_count() == 1)
   end)
 end

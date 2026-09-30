@@ -43,7 +43,9 @@ local function unit(name, speed, run_animation, attack)
   return u
 end
 
-local parked = unit(names.shredder, 0.35, hull(), {
+-- The parked unit drives at a soldier's pace, so it trails its division
+-- calmly; only a strike's charging unit is fast.
+local parked = unit(names.shredder, 0.15, hull(), {
   -- Units need an attack. Parked shredders always carry commands without
   -- distraction, so this never fires; a strike swaps in the charging unit.
   type = 'projectile', range = 0.5, cooldown = 600, ammo_category = 'melee',

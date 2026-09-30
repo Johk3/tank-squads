@@ -54,6 +54,29 @@ local ok, err = pcall(function()
     p.stop(); p.divide(30)
     rcon.print({'', 'Full sweep with a split after a change, run ', run, ': ', p})
   end
+  -- Patrolling divisions look out for swarms around two soldiers each per
+  -- sweep: first with no enemy near, then with 30 loose biters by each.
+  for n = 1, 9 do storage.divisions[owner].slots[n].mode = 'patrol' end
+  for run = 1, 3 do
+    local p = engine_game.create_profiler()
+    for _ = 1, 30 do remote.call('tank-squads', 'shredders_tick') end
+    p.stop(); p.divide(30)
+    rcon.print({'', 'Full sweep, 9 patrolling divisions, no enemy near, run ', run, ': ', p})
+  end
+  for n = 1, 9 do
+    local x0 = -160 + n * 32
+    for i = 1, 30 do
+      local biter = s.create_entity{name = 'small-biter', position = {x0 + (i % 6) * 2, -60 - math.floor(i / 6) * 2},
+        force = 'enemy'}
+      if biter then biter.active = false; created[#created + 1] = biter end
+    end
+  end
+  for run = 1, 3 do
+    local p = engine_game.create_profiler()
+    for _ = 1, 30 do remote.call('tank-squads', 'shredders_tick') end
+    p.stop(); p.divide(30)
+    rcon.print({'', 'Full sweep, 9 patrolling divisions, 30 loose biters each, run ', run, ': ', p})
+  end
 end)
 for _, e in ipairs(created) do if e.valid then e.destroy() end end
 for _, object in ipairs(drawings) do if object.valid then object.destroy() end end

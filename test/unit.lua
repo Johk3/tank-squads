@@ -67,7 +67,11 @@ local function reset()
         match = false
         for _, name in ipairs(query.name) do if e.name == name then match = true end end
       end
-      if query.force and e.force ~= query.force then match = false end
+      if type(query.force) == "table" and query.force[1] ~= nil then
+        local listed = false
+        for _, f in ipairs(query.force) do if e.force == f then listed = true end end
+        if not listed then match = false end
+      elseif query.force and e.force ~= query.force then match = false end
       if query.radius then
         local dx, dy = e.position.x - query.position.x, e.position.y - query.position.y
         if dx * dx + dy * dy > query.radius * query.radius then match = false end

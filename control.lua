@@ -534,6 +534,10 @@ remote.add_interface("tank-squads", {
   shredders_strike = function(ids, surface_index, position, force_name, radius)
     return shredders.strike(ids, game.surfaces[surface_index], position, game.forces[force_name], radius)
   end,
+  shredders_swarm = function(surface_index, position, force_name)
+    local target = shredders.swarm(game.surfaces[surface_index], position, game.forces[force_name])
+    return target and target.unit_number or nil
+  end,
   escort_state = function(owner, n)
     local state = divisions.record(owner, n).escort
     if not state then return nil end

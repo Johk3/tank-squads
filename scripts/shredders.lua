@@ -14,6 +14,8 @@
 --     the next split has work to do
 --   stranded[unit_number] = true for charging units still to swap back to
 --     parked ones: a swap that failed, or a charger found without a charge
+--   charging[unit_number] = true for shredders on a charge, which each
+--     slice checks for being stuck
 -- }
 -- Everything runs from events and the existing sweep slices; a parked
 -- shredder costs nothing until its division moves.
@@ -27,7 +29,7 @@ local M = {}
 M.PARKED, M.CHARGING = names.shredder, names.shredder_charging
 M.EFFECT = 'tank-squad-shredder-impact'
 M.REBALANCE_PHASE = 5
-M.DRIFT = 20
+M.DRIFT = 30
 -- A group its division slice has not refreshed for this long lost its slot.
 M.STALE = 120
 local READY = {parked = true, moving = true}
@@ -38,10 +40,21 @@ M.BREAKUP_TICKS = 8
 -- A charge gives up after this many targets it could not reach, so it
 -- never circles a fight across water or cliffs.
 M.RETARGETS = 5
+-- A charge that moved less than STALL_DISTANCE tiles in STALL_TICKS is
+-- stuck. It rams the nearest enemy within BLOCK_RADIUS tiles, such as a
+-- nest in its way. With nothing to ram, it waits for its path up to
+-- STUCK_TICKS, then counts its target as unreachable.
+M.STALL_TICKS, M.STALL_DISTANCE, M.BLOCK_RADIUS, M.STUCK_TICKS = 30, 1, 4, 10 * 60
+-- A patrol that sees SWARM_UNITS enemy units of attack groups on the move
+-- within SWARM_RADIUS tiles of a soldier sends one shredder at them, at
+-- most once every SWARM_COOLDOWN ticks. Each slice looks around
+-- SWARM_SCANS soldiers in turn and reads at most SWARM_LIMIT units; it
+-- stops at LOOSE units outside a marching group that outnumber those in one.
+M.SWARM_UNITS, M.SWARM_RADIUS, M.SWARM_COOLDOWN, M.SWARM_SCANS, M.SWARM_LIMIT, M.LOOSE = 15, 40, 5 * 60, 2, 45, 8
 local TARGETS = {'unit', 'unit-spawner', 'turret'}
 local LOOK = appearance.shredder
 M.DANGER_UNITS, M.DANGER_RADIUS, M.NEST_RADIUS = 10, 40, 50
-M.SHADOW_SIZE, M.SHADOW_REACH, M.SHADOW_BACK, M.SHADOW_STRIKE, M.SHADOW_DRIFT = 3, 200, 40, 30, 15
+M.SHADOW_SIZE, M.SHADOW_REACH, M.SHADOW_BACK, M.SHADOW_STRIKE, M.SHADOW_DRIFT = 3, 200, 80, 30, 20
 M.CALM = 10 * 60
 local NESTS = {'unit-spawner', 'turret'}
 local PLAYER_TYPES = {character = true, car = true, ['spider-vehicle'] = true}
@@ -50,7 +63,7 @@ function M.state()
   local s = storage.shredders
   if not s then
     s = {units = {}, groups = {}, shadows = {}, locks = {}, doomed = {}, present = {}, dirty = true,
-      stranded = {}}
+      stranded = {}, charging = {}}
     storage.shredders = s
   end
   return s
@@ -206,6 +219,7 @@ function M.unregister(unit_number)
   s.units[unit_number] = nil
   s.doomed[unit_number] = nil
   if s.stranded then s.stranded[unit_number] = nil end
+  if s.charging then s.charging[unit_number] = nil end
   s.dirty = true
 end
 
@@ -311,6 +325,9 @@ function M.update_group(player_index, n)
   if not group.ordered or geometry.distance2(group.ordered, group.point) > M.DRIFT * M.DRIFT then
     M.post(group)
   end
+  local pstate = storage.divisions and storage.divisions[player_index]
+  local slot = pstate and pstate.slots[n]
+  if slot and slot.mode == 'patrol' then M.lookout(group, here, player.force) end
 end
 
 -- Pooled shredders with no division to serve wait at their rally point.
@@ -415,6 +432,7 @@ function M.tick(phase)
   if not (s and next(s.units)) then return end
   M.reap()
   M.recover()
+  M.check_charges()
   for player_index, pstate in pairs(storage.divisions or {}) do
     for n in pairs(pstate.slots) do
       if n ~= 0 and divisions.in_phase(player_index, n, phase) then M.update_group(player_index, n) end
@@ -447,6 +465,8 @@ end
 -- rebalance gives it a post.
 function M.stand_down(record)
   record.striking = nil
+  local charging = M.state().charging
+  if charging then charging[record.id] = nil end
   unlock(record)
   clear_renders(record)
   leave(record)
@@ -494,6 +514,10 @@ function M.launch(record)
   if not (target and target.valid) then return M.retarget(record) end
   local entity = record.entity
   record.state = 'charging'
+  local s, p = M.state(), entity.position
+  s.charging = s.charging or {}
+  s.charging[record.id] = true
+  record.still = {x = p.x, y = p.y, tick = game.tick}
   draw_body(record, 'tank-squad-shredder-boost', LOOK.boost_offset, 0.5)
   entity.commandable.set_command{type = defines.command.attack, target = target,
     distraction = defines.distraction.none}
@@ -627,6 +651,7 @@ function M.on_trigger(event)
   clear_renders(record)
   leave(record)
   record.state = 'spent'
+  if s.charging then s.charging[record.id] = nil end
   source.active = false
   s.doomed[record.id] = true
   return true
@@ -655,10 +680,185 @@ function M.on_command_completed(unit_number, result)
       record.unreachable = record.unreachable or {}
       record.unreachable[target.unit_number] = true
       record.retargets = (record.retargets or 0) + 1
+      if M.ram_blocker(record) then return true end
     end
     M.retarget(record)
   end
   return true
+end
+
+-- The nearest enemy touching the shredder, skipping enemies this charge
+-- could not reach, or nil.
+function M.blocker(record)
+  local entity = record.entity
+  local position, skip = entity.position, record.unreachable or {}
+  local best, best_d
+  for _, other in ipairs(enemies_of(entity.force)) do
+    for _, e in pairs(entity.surface.find_entities_filtered{position = position, radius = M.BLOCK_RADIUS,
+      force = other, type = TARGETS}) do
+      local id = e.unit_number
+      if not (id and skip[id]) then
+        local d = geometry.distance2(e.position, position)
+        if not best_d or d < best_d or (d == best_d and (id or 0) < (best.unit_number or 0)) then
+          best, best_d = e, d
+        end
+      end
+    end
+  end
+  return best
+end
+
+-- A stuck charge rams whatever blocks it, such as a nest between it and its
+-- target. Each ram counts toward the retarget limit, so a shredder that
+-- cannot even reach a blocker stands down. Returns true when it charges.
+function M.ram_blocker(record)
+  if (record.retargets or 0) > M.RETARGETS then return false end
+  local blocker = M.blocker(record)
+  if not blocker then return false end
+  record.retargets = (record.retargets or 0) + 1
+  lock(record, blocker)
+  draw_lock(record)
+  return M.launch(record)
+end
+
+-- Runs every slice over the charges alone, so parked shredders cost
+-- nothing here. A charge still where it was STALL_TICKS ago is stuck.
+function M.check_charges()
+  local s = storage.shredders
+  if not (s and s.charging and next(s.charging)) then return end
+  local ids = {}
+  for id in pairs(s.charging) do ids[#ids + 1] = id end
+  table.sort(ids)
+  local tick = game.tick
+  for _, id in ipairs(ids) do
+    local record = s.units[id]
+    if not (record and record.state == 'charging' and record.entity.valid and record.still) then
+      s.charging[id] = nil
+    else
+      local p, still = record.entity.position, record.still
+      if geometry.distance2(p, still) > M.STALL_DISTANCE * M.STALL_DISTANCE then
+        still.x, still.y, still.tick = p.x, p.y, tick
+      elseif tick - still.tick >= M.STALL_TICKS and not M.ram_blocker(record)
+        and tick - still.tick >= M.STUCK_TICKS then
+        local target = record.target
+        if target and target.valid and target.unit_number then
+          record.unreachable = record.unreachable or {}
+          record.unreachable[target.unit_number] = true
+        end
+        record.retargets = (record.retargets or 0) + 1
+        M.retarget(record)
+      end
+    end
+  end
+end
+
+local MARCHING = {'moving', 'pathfinding', 'attacking_distraction', 'attacking_target'}
+
+-- The group states of an attack on its way or under way; a group still
+-- gathering at its nests is not coming.
+local function marching()
+  local states, out = defines.group_state, {}
+  if not states then return out end
+  for _, name in ipairs(MARCHING) do
+    if states[name] then out[states[name]] = true end
+  end
+  return out
+end
+
+-- At least SWARM_UNITS enemy units of marching attack groups around the
+-- position: the one nearest their middle, or nil.
+function M.swarm(surface, position, force, enemies)
+  -- One search over every enemy force; a count first, so a quiet patrol
+  -- builds no list.
+  local query = {position = position, radius = M.SWARM_RADIUS, force = enemies or enemies_of(force), type = 'unit',
+    limit = M.SWARM_UNITS}
+  if #query.force == 0 or surface.count_entities_filtered(query) < M.SWARM_UNITS then return nil end
+  query.limit = M.SWARM_LIMIT
+  local found = surface.find_entities_filtered(query)
+  -- Loose units near their nests stop the reading early: a swarm is
+  -- mostly its group.
+  local states, swarm, loose = marching(), {}, 0
+  for _, e in ipairs(found) do
+    local commandable = e.commandable
+    local group = commandable and commandable.parent_group
+    if group and states[group.state] then
+      swarm[#swarm + 1] = e
+    else
+      loose = loose + 1
+      if (loose >= M.LOOSE and loose > #swarm) or #found - loose < M.SWARM_UNITS then return nil end
+    end
+  end
+  if #swarm < M.SWARM_UNITS then return nil end
+  local middle = geometry.centre(swarm)
+  local best, best_d
+  for _, e in ipairs(swarm) do
+    local d = geometry.distance2(e.position, middle)
+    if not best_d or d < best_d or (d == best_d and e.unit_number < best.unit_number) then best, best_d = e, d end
+  end
+  return best
+end
+
+-- Sends the group's ready shredder nearest the target. Unlike a strike it
+-- is not marked striking, so the division can still call for a strike.
+local function intercept(group, target)
+  local units, best, best_d = M.state().units, nil, nil
+  for _, id in ipairs(group.members) do
+    local record = units[id]
+    if record and READY[record.state] and record.entity.valid and record.entity.surface_index == target.surface_index then
+      local d = geometry.distance2(record.entity.position, target.position)
+      if not best_d or d < best_d then best, best_d = record, d end
+    end
+  end
+  return best ~= nil and M.charge(best, target, true)
+end
+
+local function has_ready(group)
+  local units = M.state().units
+  for _, id in ipairs(group.members) do
+    local record = units[id]
+    if record and READY[record.state] then return true end
+  end
+  return false
+end
+
+-- Looks for a swarm around the position; sends one shredder at it.
+-- Returns true when one went.
+function M.answer_swarm(group, surface, position, force, enemies)
+  local tick = game.tick
+  if group.swarm_tick and tick - group.swarm_tick < M.SWARM_COOLDOWN then return false end
+  if group.surface_index ~= surface.index or not has_ready(group) then return false end
+  local target = M.swarm(surface, position, force, enemies)
+  if not (target and intercept(group, target)) then return false end
+  group.swarm_tick = tick
+  return true
+end
+
+-- A patrolling division's lookout, in its own slice: SWARM_SCANS soldiers
+-- in turn look around them. Costs nothing while its shredders are away or
+-- resting after an interception.
+function M.lookout(group, here, force)
+  local tick = game.tick
+  if group.swarm_tick and tick - group.swarm_tick < M.SWARM_COOLDOWN then return false end
+  if not has_ready(group) then return false end
+  local soldiers = {}
+  for _, e in ipairs(here) do if names.soldier_set[e.name] then soldiers[#soldiers + 1] = e end end
+  if #soldiers == 0 then return false end
+  local turn, enemies = group.lookout or 0, enemies_of(force)
+  group.lookout = (turn + M.SWARM_SCANS) % #soldiers
+  for i = 1, math.min(M.SWARM_SCANS, #soldiers) do
+    local soldier = soldiers[(turn + i - 1) % #soldiers + 1]
+    if M.answer_swarm(group, soldier.surface, soldier.position, force, enemies) then return true end
+  end
+  return false
+end
+
+-- A patrol soldier under attack looks for a swarm around it too, so a long
+-- route does not wait for its lookout's turn.
+function M.patrol_alarm(player_index, n, entity)
+  local s = storage.shredders
+  local group = s and s.groups[player_index .. ':' .. n]
+  if not group or #group.members == 0 then return false end
+  return M.answer_swarm(group, entity.surface, entity.position, entity.force)
 end
 
 -- At least DANGER_UNITS enemy units within DANGER_RADIUS, or any nest or

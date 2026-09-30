@@ -8,6 +8,7 @@ local retreat = require("scripts.retreat")
 local config = require("scripts.config")
 local cover = require("scripts.cover")
 local loans = require("scripts.engineers.loans")
+local shredders = require("scripts.shredders")
 
 local M = {}
 
@@ -402,6 +403,8 @@ function M.on_damaged(event)
   local force = entity.force
   if cause.force == force or not force.is_enemy(cause.force) then return end
   r.alarm_tick = tick
+  -- A swarm on the move also draws one of the division's shredders.
+  shredders.patrol_alarm(player_index, n, entity)
   local victim, surface_index, position = entity.unit_number, entity.surface_index, entity.position
   local reach, candidates = M.HELP_REACH * M.HELP_REACH, {}
   for _, soldier in ipairs(divisions.cached(player_index, n)) do

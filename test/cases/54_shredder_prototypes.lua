@@ -3,7 +3,7 @@ local charging = prototypes.entity['tank-squad-shredder-charging']
 assert(parked and charging, 'shredder units are missing')
 assert(parked.type == 'unit' and charging.type == 'unit', 'shredders bypass native unit AI')
 assert(parked.get_max_health('normal') == 600 and charging.get_max_health('normal') == 600, 'wrong shredder health')
-assert(math.abs(charging.speed - 1.0) < 1e-6 and math.abs(parked.speed - 0.35) < 1e-6, 'wrong shredder speeds')
+assert(math.abs(charging.speed - 1.0) < 1e-6 and math.abs(parked.speed - 0.15) < 1e-6, 'wrong shredder speeds')
 assert(charging.attack_parameters.range == 1.5, 'crash range differs')
 assert(prototypes.recipe['tank-squad-train-shredder'] and prototypes.item['tank-squad-recruit-shredder'], 'shredder cannot be trained')
 local unlocks = false
