@@ -54,6 +54,26 @@ local ok, err = pcall(function()
     p.stop(); p.divide(30)
     rcon.print({'', 'Full sweep with a split after a change, run ', run, ': ', p})
   end
+  -- The runs above start from a pool the first sweep already dealt out, so
+  -- their split has nothing to move. Here every sweep starts from a full,
+  -- unallocated pool; the reset is left out of the profile.
+  local sh = storage.shredders
+  for run = 1, 3 do
+    local p = engine_game.create_profiler(true)
+    for _ = 1, 30 do
+      for _, group in pairs(sh.groups) do group.members = {} end
+      for _, record in pairs(sh.units) do record.group, record.homeward, record.state = nil, nil, 'parked' end
+      sh.dirty = true
+      p.restart()
+      remote.call('tank-squads', 'shredders_tick')
+      p.stop()
+    end
+    p.divide(30)
+    local dealt = 0
+    for _, record in pairs(sh.units) do if record.group then dealt = dealt + 1 end end
+    assert(dealt > 0, 'the split dealt no shredder')
+    rcon.print({'', 'Full sweep splitting a full unallocated pool, 200 / 9 divisions (', dealt, ' dealt), run ', run, ': ', p})
+  end
   -- Patrolling divisions look out for swarms around two soldiers each per
   -- sweep: first with no enemy near, then with 30 loose biters by each.
   for n = 1, 9 do storage.divisions[owner].slots[n].mode = 'patrol' end
