@@ -111,12 +111,26 @@ end
 script.on_event(defines.events.on_pre_player_mined_item, on_pre_mined, barracks_filters)
 script.on_event(defines.events.on_robot_pre_mined, on_pre_mined, barracks_filters)
 -- The headquarters is unarmed, but a patrol still comes to its help.
-script.on_event(defines.events.on_entity_damaged, function(event)
+-- While a ring has a garrison, hits on walls and gates come through as
+-- well, for the garrison's wall alarm; without one the engine never calls
+-- Lua for them.
+local function on_damaged(event)
+  if engineers.on_wall_damaged(event) then return end
   if shredders.on_damaged(event) then return end
   veterans.on_damaged(event)
   combat.on_damaged(event)
   patrol.on_damaged(event)
-end, damaged_filters)
+end
+local garrison_filters = {}
+for _, filter in ipairs(damaged_filters) do garrison_filters[#garrison_filters + 1] = filter end
+for _, filter in ipairs(wall_filters) do garrison_filters[#garrison_filters + 1] = filter end
+local function register_damaged(garrisoned)
+  script.on_event(defines.events.on_entity_damaged, on_damaged, garrisoned and garrison_filters or damaged_filters)
+end
+register_damaged(false)
+engineers.on_garrison_change(function() register_damaged(engineers.garrison_active()) end)
+-- A save with a garrison registers the wall filters again when loaded.
+script.on_load(function() register_damaged(engineers.garrison_active()) end)
 script.on_event(defines.events.script_raised_destroy, function(event)
   local entity = event.entity
   if entity and entity.valid and names.soldier_set[entity.name] then

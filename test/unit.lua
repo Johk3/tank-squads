@@ -140,7 +140,8 @@ local function reset()
   event_filters = {}
   script = {on_event = function(event, handler, filters) handlers[event] = handler; event_filters[event] = filters end,
     on_nth_tick = function(period, handler) handlers.nth_tick = {period = period, handler = handler} end, on_init = function() end,
-    on_configuration_changed = function(handler) handlers.configuration_changed = handler end}
+    on_configuration_changed = function(handler) handlers.configuration_changed = handler end,
+    on_load = function(handler) handlers.load = handler end}
   remote = {add_interface = function() end}
 end
 

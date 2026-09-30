@@ -14,6 +14,10 @@ local divisions = require('scripts.divisions')
 local patrol = require('scripts.patrol')
 local combat = require('scripts.combat')
 local assault = require('scripts.assault')
+local retreat = require('scripts.retreat')
+local cover = require('scripts.cover')
+local shredders = require('scripts.shredders')
+local loans = require('scripts.engineers.loans')
 local geometry = require('scripts.engineers.rings.geometry')
 local rings = require('scripts.engineers.rings.rings')
 
@@ -22,6 +26,15 @@ local M = {}
 M.PERIOD = 30 * 60
 M.RADIUS = 200
 M.WEIGHTS = {['unit-spawner'] = 5, turret = 2, unit = 1}
+-- The wall alarm: at most one per sector every ALARM_TICKS. Garrison
+-- soldiers within REACH answer, nearest first: one per
+-- ENEMIES_PER_RESPONDER enemy units within HELP_RADIUS of the wall, at
+-- least MIN_RESPONDERS.
+M.ALARM_TICKS = 5 * 60
+M.REACH = 150
+M.HELP_RADIUS = 24
+M.MIN_RESPONDERS = 3
+M.ENEMIES_PER_RESPONDER = 2
 
 -- Set by control.lua: garrisons came or went, so the wall damage filter
 -- changes with them.
@@ -294,6 +307,80 @@ function M.tick(phase)
       end
     end
   end
+end
+
+-- Sends the nearest free garrison soldiers of the ring to the wall. They
+-- are patrol responders: each takes up its post again when its attack
+-- completes. Each division that sent someone also calls its shredders.
+function M.respond(ring, g, wall, tick)
+  local p, surface_index = wall.position, wall.surface_index
+  local reach, candidates = M.REACH * M.REACH, {}
+  for _, d in ipairs(holding(ring, g)) do
+    local r = divisions.record(d.player_index, d.n).patrol
+    if r.posts then
+      for _, soldier in ipairs(divisions.cached(d.player_index, d.n)) do
+        local id = soldier.unit_number
+        local answered = r.responders and r.responders[id]
+        if soldier.valid and r.posts[id] and soldier.surface_index == surface_index and soldier.name ~= names.headquarters
+            and not combat.fighting(id) and not (answered and tick - answered < patrol.RESPONSE_TICKS)
+            and not retreat.is_away(r, id) and not cover.held(id) and not loans.on_loan(id) then
+          local dx, dy = soldier.position.x - p.x, soldier.position.y - p.y
+          local dist = dx * dx + dy * dy
+          if dist <= reach then candidates[#candidates + 1] = {soldier = soldier, id = id, d = dist, r = r, division = d} end
+        end
+      end
+    end
+  end
+  if not candidates[1] then return end
+  local radius = M.HELP_RADIUS
+  local enemies = #wall.surface.find_units{area = {{p.x - radius, p.y - radius}, {p.x + radius, p.y + radius}},
+    force = wall.force, condition = 'enemy'}
+  local wanted = math.max(M.MIN_RESPONDERS, math.ceil(enemies / M.ENEMIES_PER_RESPONDER))
+  table.sort(candidates, function(a, b)
+    if a.d ~= b.d then return a.d < b.d end
+    return a.id < b.id
+  end)
+  local called = {}
+  for i = 1, math.min(wanted, #candidates) do
+    local c = candidates[i]
+    c.r.responders = c.r.responders or {}
+    c.r.responders[c.id] = tick
+    if c.r.retry then c.r.retry[c.id] = nil end
+    combat.set_command(c.soldier, {type = defines.command.attack_area, destination = {x = p.x, y = p.y},
+      radius = radius, distraction = defines.distraction.by_enemy})
+    if not called[c.division.key] then
+      called[c.division.key] = true
+      shredders.patrol_alarm(c.division.player_index, c.division.n, wall)
+    end
+  end
+end
+
+-- A wall or gate was hit. An enemy hit on the band of a garrisoned ring
+-- raises that sector's alarm. True for every wall and gate, so the other
+-- damage handlers never see them.
+function M.on_wall_damaged(event)
+  local wall = event.entity
+  if not (wall and wall.valid) then return false end
+  if wall.type ~= 'wall' and wall.type ~= 'gate' then return false end
+  local fs = rings.peek(wall.force_index)
+  local cause = event.cause
+  if not (fs and cause and cause.valid) then return true end
+  local force = wall.force
+  if cause.force == force or not force.is_enemy(cause.force) then return true end
+  local p, tick = wall.position, game.tick
+  for _, ring in pairs(fs.slots) do
+    local g = ring.garrison
+    if g and next(g.divisions) and ring.surface_index == wall.surface_index and geometry.in_band(ring, p.x, p.y) then
+      local side, along = geometry.to_frame(ring, p.x, p.y)
+      local j = geometry.segment_of(ring, side, along)
+      if (g.alarms[j] or 0) <= tick then
+        g.alarms[j] = tick + M.ALARM_TICKS
+        M.respond(ring, g, wall, tick)
+      end
+      return true
+    end
+  end
+  return true
 end
 
 rings.on_teardown = M.release_ring

@@ -948,4 +948,71 @@ return function(ctx)
     assert(g.due == game.tick + garrison.PERIOD)
     assert(require('scripts.divisions').record(1, 1).patrol.dirty, 'the new weights were not dealt')
   end)
+
+  -- Five garrison soldiers of division 1 just inside the east wall of a
+  -- radius-200 ring, and a wall of that ring.
+  local function alarm_world()
+    local ring, division = garrison_world()
+    local soldiers = division(1, 5, 185, 0)
+    garrison.set(1, 1, 1)
+    local own = game.forces[1]
+    own.is_enemy = function(other) return other == 'enemy' end
+    game.surfaces[1].find_units = function() return {} end
+    local wall = ctx.soldier(nil, nil, 200.5, 0.5)
+    wall.name, wall.type, wall.force_index, wall.surface_index = 'stone-wall', 'wall', 1, 1
+    return ring, soldiers, wall
+  end
+
+  local function attacked(list)
+    local n = 0
+    for _, s in ipairs(list) do
+      if s.command and s.command.type == defines.command.attack_area then n = n + 1 end
+    end
+    return n
+  end
+
+  test('garrison: a wall hit by the enemy calls the nearest garrison soldiers, once per 5 seconds', function()
+    local _, soldiers, wall = alarm_world()
+    local biter = ctx.soldier('enemy', nil, 210, 0)
+    assert(garrison.on_wall_damaged{entity = wall, cause = biter}, 'a wall hit was passed on')
+    assert(attacked(soldiers) == garrison.MIN_RESPONDERS, attacked(soldiers) .. ' responders')
+    local r = require('scripts.divisions').record(1, 1).patrol
+    local marked = 0
+    for _ in pairs(r.responders) do marked = marked + 1 end
+    assert(marked == garrison.MIN_RESPONDERS, 'responders not marked for their posts')
+    for _, s in ipairs(soldiers) do s.command = nil end
+    garrison.on_wall_damaged{entity = wall, cause = biter}
+    assert(attacked(soldiers) == 0, 'a second alarm within 5 seconds')
+  end)
+
+  test('garrison: hits from a friend, or on a wall of no garrisoned ring, call nobody', function()
+    local _, soldiers, wall = alarm_world()
+    for _, s in ipairs(soldiers) do s.command = nil end
+    local friend = ctx.soldier(nil, nil, 210, 0)
+    assert(garrison.on_wall_damaged{entity = wall, cause = friend})
+    local stray = ctx.soldier(nil, nil, 150.5, 0.5)
+    stray.name, stray.type = 'stone-wall', 'wall'
+    garrison.on_wall_damaged{entity = stray, cause = ctx.soldier('enemy', nil, 140, 0)}
+    assert(attacked(soldiers) == 0)
+    assert(not garrison.on_wall_damaged{entity = soldiers[1], cause = friend}, 'a soldier hit was taken as a wall hit')
+  end)
+
+  test('garrison: walls reach the damage handler only while a ring has a garrison', function()
+    local _, division = garrison_world()
+    dofile('control.lua')
+    local function wall_filtered()
+      for _, f in ipairs(ctx.filters().on_entity_damaged) do
+        if f.filter == 'type' and f.type == 'wall' then return true end
+      end
+      return false
+    end
+    assert(not wall_filtered(), 'walls filtered in without a garrison')
+    division(1, 2, 150, -150)
+    garrison.set(1, 1, 1)
+    assert(wall_filtered(), 'a garrison did not bring the walls in')
+    garrison.set(1, 1, nil)
+    assert(not wall_filtered(), 'walls stayed in after the garrison left')
+    ctx.handlers().load()
+    assert(not wall_filtered())
+  end)
 end

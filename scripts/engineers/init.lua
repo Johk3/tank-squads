@@ -32,6 +32,12 @@ combat.crossing = crossing.route
 patrol.garrison_layout = garrison.layout
 M.garrison_set = garrison.set
 M.garrison_active = garrison.active
+M.on_wall_damaged = garrison.on_wall_damaged
+
+-- control.lua switches the damage filter when garrisons come or go.
+function M.on_garrison_change(fn)
+  garrison.on_change = fn
+end
 M.on_crossing_completed = crossing.on_command_completed
 
 -- Once per second. Without the engineers state this is one table check.
