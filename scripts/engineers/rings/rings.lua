@@ -660,6 +660,28 @@ function M.again(force_index, n)
   return true
 end
 
+-- A force merged into another lets its rings go. Its walls and ghosts,
+-- now the other force's, stay as ordinary entities; its garrisons stop.
+function M.release_force(force_index)
+  local fs = M.peek(force_index)
+  if not fs then return end
+  local s = state.get()
+  for _, ring in pairs(fs.slots) do
+    for _, seg in ipairs(ring.segments) do
+      for id in pairs(seg.ghosts) do
+        if s.ring_ghosts then s.ring_ghosts[id] = nil end
+      end
+    end
+    dismantle.clear(ring.key)
+    M.clear_labels(ring)
+    M.clear_crossings(ring)
+    if M.on_teardown then M.on_teardown(ring) end
+  end
+  if fs.mark and fs.mark.valid then fs.mark.destroy() end
+  if fs.mark_circle and fs.mark_circle.valid then fs.mark_circle.destroy() end
+  s.rings[force_index] = nil
+end
+
 function M.finish_teardown(ring)
   dismantle.clear(ring.key)
   M.clear_labels(ring)

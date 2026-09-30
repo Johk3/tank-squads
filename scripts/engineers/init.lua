@@ -141,6 +141,7 @@ function M.on_forces_merged(event)
   for _, tf in pairs(s.task_forces) do
     if tf.force_index == from then tf.force_index = to end
   end
+  rings.release_force(from)
   M.reconcile()
 end
 

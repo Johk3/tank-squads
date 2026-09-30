@@ -1073,6 +1073,19 @@ return function(ctx)
     assert(not garrison.active())
   end)
 
+  test('garrison: a merged force lets its rings go and its garrison stops', function()
+    local ring, division, rings = garrison_world()
+    division(1, 2, 150, -150)
+    garrison.set(1, 1, 1)
+    local dest = {index = 2, name = 'dest', is_enemy = function() return false end}
+    game.forces = {[2] = dest}
+    require('scripts.engineers.init').on_forces_merged{source_index = 1, source_name = 'gone', destination = dest}
+    garrison.tick()
+    local record = require('scripts.divisions').record(1, 1)
+    assert(record.mode == 'idle' and not record.patrol, 'the garrison still holds a ring of a merged force')
+    assert(rings.peek(1) == nil and not ring.garrison and not garrison.active())
+  end)
+
   test('garrison: weights are read one sector per call and trigger a new deal', function()
     local ring, division = garrison_world()
     division(1, 4, 150, -150)
