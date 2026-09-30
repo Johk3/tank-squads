@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.37.1
+Date: 2026-09-30
+  Bugfixes:
+    - Ring gates now face along the wall, so neighbouring gates join into one gate. Gatehouses and rail crossings are three rows deep again. On update, gates already on the map are turned, and one-row gates get ghosts for the inner and outer rows, which the constructors build.
+    - A deleted ring's name leaves the map at once, not only after its walls are taken down.
+---------------------------------------------------------------------------------------------------
 Version: 0.37.0
 Date: 2026-09-30
   Features:
