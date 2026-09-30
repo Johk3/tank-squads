@@ -55,11 +55,14 @@ function M.unregister(unit_number)
 end
 
 -- A wall or gate that died left a ghost when the force keeps ghosts of
--- destroyed buildings.
+-- destroyed buildings; a ring wall is rebuilt either way.
 function M.on_post_died(event)
   local ghost = event.ghost
   if ghost and ghost.valid then ghosts.add(ghost) end
+  rings.on_wall_died(event)
 end
+
+M.on_wall_mined = rings.on_wall_mined
 
 -- Runs before divisions.forget, while the loan still names the lender.
 function M.forget_soldier(entity)

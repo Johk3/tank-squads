@@ -557,4 +557,69 @@ return function(ctx)
     restore()
     assert(ok, err)
   end)
+
+  -- Ring 1 of radius 200 with segment 2 (east, gatehouse at along 0)
+  -- placed, and one ring ghost built into a wall at (200.5, 50.5).
+  local function breach_world()
+    local rings, s, surface, force = ring_world()
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    for _, seg in ipairs(ring.segments) do seg.state = 'built' end
+    ring.state = 'built'
+    return rings, s, surface, force, ring
+  end
+
+  test('rings: a ring wall that dies gets its ghost back and its segment is built again', function()
+    local rings, s, surface, force, ring = breach_world()
+    local breached, saved = {}, rings.on_breach
+    rings.on_breach = function(r, i) breached[#breached + 1] = i end
+    local version = rings.version(1)
+    local killer = {index = 2, name = 'enemy'}
+    rings.on_wall_died{force = killer, surface_index = 1, position = {x = 200.5, y = 50.5},
+      prototype = {name = 'stone-wall'}}
+    rings.on_breach = saved
+    local seg = ring.segments[2]
+    assert(seg.state == 'placed' and seg.live == 1, 'segment ' .. seg.state .. ', ' .. seg.live .. ' live')
+    assert(ring.state == 'building' and breached[1] == 2 and rings.version(1) > version)
+    local id = next(seg.ghosts)
+    assert(s.ring_ghosts[id].segment == 2)
+  end)
+
+  test('rings: a ghost the force left for a dead wall is tagged, not doubled', function()
+    local rings, s, surface, force, ring = breach_world()
+    local left = surface.create_entity{name = 'entity-ghost', inner_name = 'gate', position = {x = 200.5, y = 0.5}}
+    rings.on_wall_died{surface_index = 1, position = {x = 200.5, y = 0.5}, prototype = {name = 'gate'}, ghost = left}
+    assert(s.ring_ghosts[left.unit_number] and ring.segments[2].live == 1)
+  end)
+
+  test('rings: a released tile, a wall outside the rings or another wall type is not rebuilt', function()
+    local rings, _, _, _, ring = breach_world()
+    ring.released['200,50'] = true
+    rings.on_wall_died{surface_index = 1, position = {x = 200.5, y = 50.5}, prototype = {name = 'stone-wall'}}
+    rings.on_wall_died{surface_index = 1, position = {x = 150.5, y = 50.5}, prototype = {name = 'stone-wall'}}
+    rings.on_wall_died{surface_index = 1, position = {x = 200.5, y = 60.5}, prototype = {name = 'modded-wall'}}
+    assert(ring.segments[2].live == 0 and ring.state == 'built')
+  end)
+
+  test('rings: a mined ring wall is released, except during tear-down', function()
+    local rings, _, _, _, ring = breach_world()
+    local wall = ctx.soldier(nil, nil, 200.5, 50.5)
+    wall.type = 'wall'
+    rings.on_wall_mined(wall)
+    assert(ring.released['200,50'], 'a mined wall was not released')
+    ring.state = 'tearing_down'
+    local other = ctx.soldier(nil, nil, 200.5, 51.5)
+    other.type = 'wall'
+    rings.on_wall_mined(other)
+    assert(not ring.released['200,51'], 'a wall taken down with its ring was released')
+  end)
+
+  test('rings: mined walls and gates reach the rings through filtered events', function()
+    dofile('control.lua')
+    for _, event in ipairs({'on_player_mined_entity', 'on_robot_mined_entity'}) do
+      local filters = assert(ctx.filters()[event], event .. ' is unfiltered')
+      local types = {}
+      for _, f in ipairs(filters) do types[f.type] = f.filter == 'type' end
+      assert(types.wall and types.gate and #filters == 2, event .. ' has the wrong filters')
+    end
+  end)
 end

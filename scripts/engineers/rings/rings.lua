@@ -413,6 +413,55 @@ function M.claim(record, radius, max)
   return nil, 'planning'
 end
 
+-- A ring wall or gate died: biters broke through. Its ghost goes back up
+-- (the one the force left, or a new one) and the segment is built again.
+-- Released tiles stay open; walls of other kinds are not ring walls. The
+-- event names the killer's force, not the wall's: the wall's force is the
+-- ghost's, or that of the ring whose band holds the tile.
+function M.on_wall_died(event)
+  local s = state.peek()
+  if not (s and s.rings) then return end
+  local prototype, p = event.prototype, event.position
+  if not (prototype and (prototype.name == 'stone-wall' or prototype.name == 'gate')) then return end
+  local ghost = event.ghost
+  local ring
+  if ghost and ghost.valid then
+    local fs = s.rings[ghost.force_index]
+    ring = fs and M.find(fs, event.surface_index, p)
+  else
+    ghost = nil
+    for _, fs in pairs(s.rings) do
+      ring = M.find(fs, event.surface_index, p)
+      if ring then break end
+    end
+  end
+  if not ring or (ring.state ~= 'building' and ring.state ~= 'built') or ring.released[tile_key(p)] then return end
+  local side, along = geometry.to_frame(ring, p.x, p.y)
+  local i = geometry.segment_of(ring, side, along)
+  local seg = ring.segments[i]
+  -- A segment not planned yet plans this tile itself.
+  if seg.state ~= 'placed' and seg.state ~= 'built' then return end
+  if not ghost then
+    ghost = M.create_ghost(game.surfaces[event.surface_index], game.forces[ring.force_index],
+      {x = p.x, y = p.y, name = prototype.name, dir = layout.gate_dir(ring, p.x, p.y)})
+  end
+  if not ghost then return end
+  M.tag(ring, i, ghost)
+  seg.state, ring.state = 'placed', 'building'
+  if M.on_breach then M.on_breach(ring, i) end
+  M.bump(M.peek(ring.force_index))
+end
+
+-- A player or robot mined a ring wall or gate: the tile stays open.
+function M.on_wall_mined(entity)
+  if not (entity and entity.valid) then return end
+  local fs = M.peek(entity.force_index)
+  if not fs then return end
+  local p = entity.position
+  local ring = M.find(fs, entity.surface_index, p)
+  if ring and (ring.state == 'building' or ring.state == 'built') then ring.released[tile_key(p)] = true end
+end
+
 ghosts.on_ring_gone = M.ghost_gone
 
 return M

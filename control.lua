@@ -89,8 +89,12 @@ script.on_event(defines.events.on_built_entity, on_built, filters)
 script.on_event(defines.events.on_robot_built_entity, on_built, filters)
 script.on_event(defines.events.script_raised_built, on_built, filters)
 script.on_event(defines.events.script_raised_revive, on_built, filters)
-script.on_event(defines.events.on_post_entity_died, engineers.on_post_died,
-  {{filter = "type", type = "wall"}, {filter = "type", type = "gate"}})
+local wall_filters = {{filter = "type", type = "wall"}, {filter = "type", type = "gate"}}
+script.on_event(defines.events.on_post_entity_died, engineers.on_post_died, wall_filters)
+-- A ring wall a player or robot mines stays open.
+local function on_wall_mined(event) engineers.on_wall_mined(event.entity) end
+script.on_event(defines.events.on_player_mined_entity, on_wall_mined, wall_filters)
+script.on_event(defines.events.on_robot_mined_entity, on_wall_mined, wall_filters)
 script.on_event(defines.events.on_script_trigger_effect, function(event)
   if shredders.on_trigger(event) then return end
   local shooter = weapons.on_shot(event)
