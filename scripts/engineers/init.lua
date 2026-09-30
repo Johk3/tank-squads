@@ -11,6 +11,8 @@ local window = require('scripts.engineers.window')
 local rings = require('scripts.engineers.rings.rings')
 local combat = require('scripts.combat')
 local crossing = require('scripts.engineers.rings.crossing')
+local patrol = require('scripts.patrol')
+local garrison = require('scripts.engineers.rings.garrison')
 local names = require('scripts.names')
 
 local M = {}
@@ -27,6 +29,9 @@ M.click = window.click
 M.checked = window.checked
 M.refresh_windows = window.refresh_all
 combat.crossing = crossing.route
+patrol.garrison_layout = garrison.layout
+M.garrison_set = garrison.set
+M.garrison_active = garrison.active
 M.on_crossing_completed = crossing.on_command_completed
 
 -- Once per second. Without the engineers state this is one table check.
@@ -95,7 +100,10 @@ function M.tick(phase)
     teams.tick(phase)
   end
   task_force.tick(phase)
-  if s.rings and next(s.rings) then rings.tick(phase) end
+  if s.rings and next(s.rings) then
+    rings.tick(phase)
+    garrison.tick(phase)
+  end
   if s.crossings and (phase == nil or phase == 0) then crossing.sweep() end
 end
 

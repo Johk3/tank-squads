@@ -15,6 +15,15 @@ local M = {}
 -- A route whose every waypoint failed in a row is unreachable for now.
 M.RETRY_TICKS = 10 * 60
 
+-- Set by the engineers: the posts of a ring garrison (engineers/rings/
+-- garrison.lua), dealt instead of the route's layout.
+M.garrison_layout = nil
+
+-- A route to deal posts on: waypoints, or a ring to garrison.
+local function routed(r)
+  return r.garrison ~= nil or #r.waypoints > 0
+end
+
 local function route(player_index, n)
   local record = divisions.record(player_index, n)
   return record, record.patrol
@@ -29,7 +38,7 @@ end
 function M.draw(player_index, n)
   local record = divisions.record(player_index, n)
   local r = record.patrol
-  if not r then
+  if not r or r.garrison then
     render.clear_route(record)
     return
   end
@@ -47,6 +56,10 @@ function M.add_waypoint(player_index, n, position, surface)
   if not surface then return nil end
   local record = divisions.record(player_index, n)
   local r = record.patrol
+  -- A waypoint ends a ring garrison: the division starts a route of its own.
+  if r and r.garrison then
+    record.patrol, r = nil, nil
+  end
   if r and r.surface_index and r.surface_index ~= surface.index then return nil end
   if not r then
     r = {waypoints = {}, surface_index = surface.index}
@@ -127,7 +140,12 @@ local function assign(player_index, n, r, all)
         hq = soldier.name == names.headquarters}
     end
   end
-  local layout = patrol_geometry.layout(r.waypoints, #keyed)
+  local layout
+  if r.garrison and M.garrison_layout then
+    layout = M.garrison_layout(player_index, n, r, keyed)
+  else
+    layout = patrol_geometry.layout(r.waypoints, #keyed)
+  end
   local centre = layout.centre
   for _, k in ipairs(keyed) do k.d = geometry.distance_squared(k.position, centre) end
   table.sort(keyed, function(a, b)
@@ -181,7 +199,7 @@ end
 -- divisions module calls this once per change, not once per soldier.
 divisions.listen_members_changed(function(player_index, n)
   local record, r = route(player_index, n)
-  if record.mode == "patrol" and r and #r.waypoints > 0 and not r.assigning then
+  if record.mode == "patrol" and r and routed(r) and not r.assigning then
     assign(player_index, n, r, false)
   end
 end)
@@ -190,6 +208,11 @@ end)
 -- sweep deals every post again, once for a whole burst of recruits.
 function M.join(record, soldier)
   local r = record.patrol
+  -- A garrison deals the recruit a post in the next sweep.
+  if record.mode == "patrol" and r and r.garrison then
+    r.dirty = true
+    return true
+  end
   if record.mode ~= "patrol" or not (r and r.waypoints[1]) then return false end
   r.dirty = true
   go(soldier, r.waypoints[geometry.nearest_point(r.waypoints, soldier.position)])
@@ -209,6 +232,16 @@ function M.start(player_index, n)
   r.retry, r.responders, r.alarm_tick = nil, nil, nil
   assign(player_index, n, r, true)
   return #r.waypoints
+end
+
+-- A ring garrison: posts from the engineers instead of a route.
+function M.start_garrison(player_index, n, ring_key, surface_index)
+  local record = divisions.record(player_index, n)
+  divisions.end_escort(record)
+  render.clear_route(record)
+  record.patrol = {waypoints = {}, surface_index = surface_index, garrison = ring_key}
+  record.mode, record.order, record.scout = "patrol", nil, nil
+  assign(player_index, n, record.patrol, true)
 end
 
 -- The point a soldier walks to or holds, as an index into its post's points.
@@ -342,7 +375,7 @@ function M.tick(phase)
       if changed then r.dirty = true end
     end
     if r.dirty or not r.posts then
-      if #r.waypoints > 0 then assign(player_index, n, r, not r.posts) end
+      if routed(r) then assign(player_index, n, r, not r.posts) end
       return
     end
     if not r.retry then return end

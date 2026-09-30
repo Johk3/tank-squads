@@ -808,4 +808,144 @@ return function(ctx)
     combat.direct(unit, go(300, 0))
     assert(unit.command.destination.x == 191.5, 'a direct command skipped the crossing')
   end)
+
+  local garrison = require('scripts.engineers.rings.garrison')
+
+  test('garrison: a quarter go as pickets, the rest by weight', function()
+    local c = garrison.allocate({0, 0, 10, 0}, 8)
+    assert(c[1] == 0 and c[2] == 1 and c[3] == 6 and c[4] == 1, table.concat(c, ','))
+    c = garrison.allocate({1, 1, 1}, 4)
+    assert(c[1] == 1 and c[2] == 2 and c[3] == 1, table.concat(c, ','))
+    c = garrison.allocate({0, 0, 0, 0}, 6)
+    for j = 1, 4 do assert(c[j] >= 1 and c[j] <= 2, 'uneven spread ' .. table.concat(c, ',')) end
+    c = garrison.allocate({5, 5}, 0)
+    assert(c[1] == 0 and c[2] == 0)
+  end)
+
+  test('garrison: posts stand 9 tiles inside the wall of their sector', function()
+    local ring = square(200)
+    ring.count = geometry.segment_count(ring)
+    local counts = {}
+    for j = 1, ring.count do counts[j] = 0 end
+    counts[2] = 2
+    local points = garrison.points(ring, counts)
+    assert(#points == 2)
+    for _, p in ipairs(points) do
+      local side, along, depth = geometry.to_frame(ring, p.x, p.y)
+      assert(side == 1 and depth == -9 and geometry.segment_of(ring, side, along) == 2)
+    end
+  end)
+
+  test('garrison: blocks are contiguous, in the order divisions stand round the ring', function()
+    local points = {{x = 1}, {x = 2}, {x = 3}, {x = 4}, {x = 5}}
+    local out = garrison.blocks(points, {{key = 'b', count = 2, mean = 5}, {key = 'a', count = 3, mean = 1}})
+    assert(out.a[1].x == 1 and out.a[3].x == 3 and out.b[1].x == 4 and out.b[2].x == 5)
+  end)
+
+  -- A ring of radius 200 round (0, 0) and division n of player 1 with
+  -- `count` soldiers near (x, y).
+  local function garrison_world()
+    local rings, _, surface, force = ring_world()
+    require('scripts.engineers.init')
+    defines.command.attack, defines.command.stop = 3, 4
+    defines.distraction.none = 0
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    local function division(n, count, x, y)
+      local list = {}
+      for i = 1, count do list[i] = ctx.soldier(nil, nil, x + i, y) end
+      require('scripts.divisions').assign(1, n, list)
+      return list
+    end
+    return ring, division, rings
+  end
+
+  local function posts_of(n)
+    local r = require('scripts.divisions').record(1, n).patrol
+    local out = {}
+    for _, post in pairs(r and r.posts or {}) do out[#out + 1] = post.points[1] end
+    return out
+  end
+
+  test('garrison: a division on a ring gets one hold point per soldier inside the wall', function()
+    local ring, division = garrison_world()
+    division(1, 4, 150, -150)
+    assert(garrison.set(1, 1, 1), 'the garrison was refused')
+    local record = require('scripts.divisions').record(1, 1)
+    assert(record.mode == 'patrol' and record.patrol.garrison == ring.key)
+    local posts = posts_of(1)
+    assert(#posts == 4, #posts .. ' posts')
+    for _, p in ipairs(posts) do
+      local _, _, depth = geometry.to_frame(ring, p.x, p.y)
+      assert(depth == -9, 'post at depth ' .. depth)
+    end
+    assert(garrison.active())
+  end)
+
+  test('garrison: weights pull soldiers toward the sector with nests', function()
+    local ring, division = garrison_world()
+    division(1, 4, 150, -150)
+    garrison.set(1, 1, 1)
+    local g = garrison.state(ring)
+    g.weights = {[5] = 10}
+    garrison.mark_all(ring, g)
+    require('scripts.patrol').tick()
+    local in_five = 0
+    for _, p in ipairs(posts_of(1)) do
+      local side, along = geometry.to_frame(ring, p.x, p.y)
+      if geometry.segment_of(ring, side, along) == 5 then in_five = in_five + 1 end
+    end
+    assert(in_five == 3, in_five .. ' posts in the weighted sector')
+  end)
+
+  test('garrison: a division that leaves hands its posts to the others', function()
+    local ring, division = garrison_world()
+    division(1, 4, 150, -150)
+    division(2, 4, -150, 150)
+    garrison.set(1, 1, 1)
+    garrison.set(1, 2, 1)
+    require('scripts.patrol').tick()
+    assert(garrison.set(1, 2, nil))
+    assert(require('scripts.divisions').record(1, 2).mode == 'idle')
+    require('scripts.patrol').tick()
+    local far = 0
+    for _, p in ipairs(posts_of(1)) do
+      local side, along = geometry.to_frame(ring, p.x, p.y)
+      if geometry.segment_of(ring, side, along) >= 7 then far = far + 1 end
+    end
+    assert(#posts_of(1) == 4 and far >= 1, 'division 1 did not spread round the ring alone')
+  end)
+
+  test('garrison: an empty division or a ring not standing is refused', function()
+    local ring, division = garrison_world()
+    assert(not garrison.set(1, 3, 1), 'an empty division joined')
+    division(1, 2, 150, -150)
+    ring.state = 'tearing_down'
+    assert(not garrison.set(1, 1, 1), 'a ring being torn down took a garrison')
+    assert(not garrison.set(1, 1, 5), 'a ring that does not exist took a garrison')
+  end)
+
+  test('garrison: tearing a ring down sends its garrison to idle', function()
+    local ring, division, rings = garrison_world()
+    division(1, 2, 150, -150)
+    garrison.set(1, 1, 1)
+    rings.delete(1, 1)
+    local record = require('scripts.divisions').record(1, 1)
+    assert(record.mode == 'idle' and not record.patrol and not ring.garrison)
+    assert(not garrison.active())
+  end)
+
+  test('garrison: weights are read one sector per call and trigger a new deal', function()
+    local ring, division = garrison_world()
+    division(1, 4, 150, -150)
+    garrison.set(1, 1, 1)
+    local surface, own, enemy = game.surfaces[1], game.forces[1], {index = 2, name = 'enemy'}
+    own.is_enemy = function(other) return other == enemy end
+    game.forces[2] = enemy
+    surface.count_entities_filtered = function(q) return (q.type == 'unit-spawner' and q.position.x > 150) and 1 or 0 end
+    local g = garrison.state(ring)
+    for _ = 1, ring.count do garrison.weigh(ring, g, game.tick) end
+    assert(g.weights[2] == 5 and g.weights[8] == 0, 'weights ' .. tostring(g.weights[2]))
+    assert(g.due == game.tick + garrison.PERIOD)
+    assert(require('scripts.divisions').record(1, 1).patrol.dirty, 'the new weights were not dealt')
+  end)
 end
