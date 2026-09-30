@@ -34,6 +34,8 @@ M.CROSSING_CHECK = 5 * 3600
 M.LABEL_DEPTH = 12
 -- Ticks between counting off walls robots took during a tear-down.
 M.PURGE = 10 * 60
+-- Ghosts the audit reads per call, once per second per ring.
+M.AUDIT_BATCH = 64
 
 -- Set by crossing.lua (on_segment_built, on_breach) and garrison.lua
 -- (on_teardown).
@@ -352,17 +354,40 @@ function M.ghost_gone(id, position, built)
   if seg.live <= 0 and seg.state == 'placed' then M.segment_built(ring, tag.segment) end
 end
 
--- One placed segment per call, in turn: ghosts that vanished without
--- passing the registry (robots built them, a player removed them) are
--- counted off.
+-- Ghosts that vanished without passing the registry (robots built them,
+-- a player removed them) are counted off, placed segment after placed
+-- segment, at most AUDIT_BATCH ghosts per call. ring.audit = {i, ids, at}:
+-- the segment read, its ghosts when the read began, and the next to check.
 function M.audit(ring)
   if ring.count == 0 then return end
-  ring.audit = (ring.audit or 0) % ring.count + 1
-  local seg = ring.segments[ring.audit]
-  if not (seg and seg.state == 'placed') then return end
-  for id, g in pairs(seg.ghosts) do
-    if not g.entity.valid then M.ghost_gone(id, g.position, false) end
+  local a = ring.audit
+  if type(a) ~= 'table' or a.at > #a.ids then
+    local start, found = type(a) == 'table' and a.i or 0, nil
+    for k = 1, ring.count do
+      local i = (start + k - 1) % ring.count + 1
+      local seg = ring.segments[i]
+      if seg and seg.state == 'placed' then
+        found = i
+        break
+      end
+    end
+    if not found then
+      ring.audit = nil
+      return
+    end
+    local ids = {}
+    for id in pairs(ring.segments[found].ghosts) do ids[#ids + 1] = id end
+    a = {i = found, ids = ids, at = 1}
+    ring.audit = a
   end
+  local seg = ring.segments[a.i]
+  local last = math.min(#a.ids, a.at + M.AUDIT_BATCH - 1)
+  for k = a.at, last do
+    local id = a.ids[k]
+    local g = seg and seg.ghosts[id]
+    if g and not g.entity.valid then M.ghost_gone(id, g.position, false) end
+  end
+  a.at = last + 1
 end
 
 -- Percent of segments built.

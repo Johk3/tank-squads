@@ -1098,4 +1098,19 @@ return function(ctx)
     local frame = ctx.players()[1].gui.screen.tank_squads_divisions
     assert(frame and frame.visible and frame.titlebar.engineers.visible)
   end)
+
+  test('rings: the audit reads a bounded number of ghosts per call', function()
+    local rings, _, surface, force = ring_world()
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    ring.segments[1].state = 'placed'
+    local tiles = {}
+    for k = 1, 100 do tiles[k] = {x = 200.5, y = -190.5 + k, name = 'stone-wall', dir = 'east', a = -191 + k} end
+    rings.place(ring, 1, tiles, surface, force)
+    local seg = ring.segments[1]
+    for _, g in pairs(seg.ghosts) do g.entity.valid = false end
+    rings.audit(ring)
+    assert(seg.live == 100 - rings.AUDIT_BATCH, seg.live .. ' ghosts left after one call')
+    rings.audit(ring)
+    assert(seg.live == 0 and seg.state == 'built', 'the audit did not finish the segment')
+  end)
 end
