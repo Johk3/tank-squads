@@ -84,16 +84,27 @@ function M.rebalance(groups, pool)
       counts[i] = high
     end
   end
+  -- Each group ranks the free shredders by distance once, on its first
+  -- pick, and takes them in that order, skipping those taken meanwhile.
+  local left, taken, ranked, next_of = #free, {}, {}, {}
   for _, cap in ipairs({low, high}) do
     for i, g in ipairs(groups) do
-      while counts[i] < cap and #free > 0 do
-        local best, best_d
-        for j, s in ipairs(free) do
-          local d = M.distance2(s.position, g.point)
-          if not best_d or d < best_d or (d == best_d and s.id < free[best].id) then best, best_d = j, d end
-        end
-        changes[free[best].id] = g.key
-        table.remove(free, best)
+      if counts[i] < cap and left > 0 and not ranked[i] then
+        local list = {}
+        for j, s in ipairs(free) do list[j] = {s = s, d = M.distance2(s.position, g.point)} end
+        table.sort(list, function(a, b)
+          if a.d ~= b.d then return a.d < b.d end
+          return a.s.id < b.s.id
+        end)
+        ranked[i], next_of[i] = list, 1
+      end
+      while counts[i] < cap and left > 0 do
+        local list, k = ranked[i], next_of[i]
+        while taken[list[k].s] do k = k + 1 end
+        local s = list[k].s
+        taken[s], next_of[i] = true, k + 1
+        changes[s.id] = g.key
+        left = left - 1
         counts[i] = counts[i] + 1
       end
     end

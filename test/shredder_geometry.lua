@@ -79,4 +79,19 @@ return function(ctx)
     assert(count(changes, 'a') + count(changes, 'b') + count(changes, 'c') == 2)
     assert(count(changes, 'a') <= 1 and count(changes, 'b') <= 1 and count(changes, 'c') <= 1)
   end)
+
+  test('shredder geometry: a large pool is dealt without a distance scan per pick', function()
+    local groups = {}
+    for i = 1, 9 do groups[i] = {key = 'g' .. i, point = {x = i * 40, y = 0}, members = {}} end
+    local pool = {}
+    for i = 1, 1000 do pool[i] = item(i, (i * 37) % 400, (i * 11) % 90) end
+    local distance2, calls = g.distance2, 0
+    g.distance2 = function(a, b) calls = calls + 1; return distance2(a, b) end
+    local changes = g.rebalance(groups, pool)
+    g.distance2 = distance2
+    local dealt = 0
+    for i = 1, 9 do dealt = dealt + count(changes, 'g' .. i) end
+    assert(dealt == 1000, dealt .. ' shredders dealt')
+    assert(calls <= 9 * 1000, calls .. ' distances for 1000 shredders and 9 groups')
+  end)
 end
