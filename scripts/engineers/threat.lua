@@ -14,8 +14,12 @@ M.KINDS = {['tank-squad-siege'] = 1.5, ['tank-squad-flame'] = 1.5, ['tank-squad-
 M.RANK_BONUS = 0.25
 -- A patrol keeps one soldier per POST_LENGTH tiles of route, at least
 -- MIN_PATROL, so no post grows longer when soldiers are lent.
-M.POST_LENGTH = 64
-M.MIN_PATROL = 2
+M.POST_LENGTH = 32
+M.MIN_PATROL = 4
+-- A lending division keeps at least KEEP_SHARE of its soldiers and never
+-- fewer than MIN_KEEP, so a task force only takes a real surplus.
+M.KEEP_SHARE = 0.5
+M.MIN_KEEP = 4
 
 function M.structure(s)
   if s.type == 'unit-spawner' then return M.SPAWNER end
@@ -38,13 +42,16 @@ function M.needed(score)
   return score * M.MARGIN
 end
 
--- Takes candidates nearest first until their strength reaches `needed`.
+-- Takes candidates by tier, then nearest first, until their strength
+-- reaches `needed`. Soldiers in no division have tier 0 and go first.
 -- Returns the picked candidates and their total strength, or nil and the
 -- total when all of them together fall short.
 function M.pick(candidates, needed)
   local sorted = {}
   for i, c in ipairs(candidates) do sorted[i] = c end
   table.sort(sorted, function(a, b)
+    local ta, tb = a.tier or 0, b.tier or 0
+    if ta ~= tb then return ta < tb end
     if a.d ~= b.d then return a.d < b.d end
     return a.id < b.id
   end)
@@ -60,6 +67,12 @@ end
 
 function M.patrol_keep(length)
   return math.max(M.MIN_PATROL, math.ceil(length / M.POST_LENGTH))
+end
+
+-- The soldiers a division of `count` keeps: at least `floor`, at least
+-- KEEP_SHARE of them and at least MIN_KEEP.
+function M.keep(count, floor)
+  return math.max(floor or 0, M.MIN_KEEP, math.ceil(count * M.KEEP_SHARE))
 end
 
 -- The soldiers a patrol can spare: the weakest beyond `keep`.

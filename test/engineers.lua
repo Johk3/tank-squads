@@ -243,13 +243,27 @@ return function(ctx)
     assert(threat.pick(c, 0) == nil, 'picked for no threat')
   end)
 
-  test('engineers: a patrol keeps one soldier per 64 tiles, at least two', function()
+  test('engineers: a patrol keeps one soldier per 32 tiles, at least four', function()
     local threat = require('scripts.engineers.threat')
-    assert(threat.patrol_keep(0) == 2 and threat.patrol_keep(128) == 2 and threat.patrol_keep(200) == 4)
+    assert(threat.patrol_keep(0) == 4 and threat.patrol_keep(128) == 4 and threat.patrol_keep(200) == 7)
     local soldiers = {{id = 1, strength = 3}, {id = 2, strength = 1}, {id = 3, strength = 1.5}, {id = 4, strength = 1}}
     local spare = threat.surplus(soldiers, 2)
     assert(#spare == 2 and spare[1].id == 2 and spare[2].id == 4, 'surplus is not the weakest')
     assert(#threat.surplus(soldiers, 4) == 0 and #threat.surplus(soldiers, 9) == 0)
+  end)
+
+  test('engineers: a lender keeps half its soldiers, at least four', function()
+    local threat = require('scripts.engineers.threat')
+    assert(threat.keep(10) == 5 and threat.keep(6) == 4 and threat.keep(3) == 4 and threat.keep(11) == 6)
+    assert(threat.keep(10, 7) == 7, 'the patrol floor was ignored')
+  end)
+
+  test('engineers: pick takes soldiers in no division before division soldiers', function()
+    local threat = require('scripts.engineers.threat')
+    local c = {{id = 1, strength = 1, d = 10, tier = 1}, {id = 2, strength = 1, d = 90, tier = 0},
+      {id = 3, strength = 1, d = 50, tier = 0}}
+    local picked = threat.pick(c, 2)
+    assert(#picked == 2 and picked[1].id == 3 and picked[2].id == 2, 'a division soldier went before a loose one')
   end)
 
   test('engineers: loans record, recall and finish', function()
@@ -442,7 +456,7 @@ return function(ctx)
     assert(ghosts.bucket(surface.index, 1).count == 0 and #record.cluster == 0)
   end)
 
-  test('engineers: a ghost under a unit waits three cycles, then is let go', function()
+  test('engineers: a ghost under a unit waits three cycles, then is blocked', function()
     local E = ctx.engineers
     E.engine()
     local ghosts = require('scripts.engineers.ghosts')
@@ -458,6 +472,47 @@ return function(ctx)
     end
     assert(crane.place(record) == 0 and #record.cluster == 0, 'never gave up')
     assert(storage.engineers.claims[g.unit_number] == nil and g.valid)
+    assert(storage.engineers.blocked[g.unit_number] == game.tick + crane.UNIT_BLOCK, 'the same ghost could be claimed again')
+    assert(ghosts.claim(record, 3, 9) == nil, 'the constructor went back to the blocked ghost')
+  end)
+
+  test('engineers: a ghost blocked again waits twice as long, up to thirty minutes', function()
+    local E = ctx.engineers
+    E.engine()
+    local ghosts = require('scripts.engineers.ghosts')
+    local record = require('scripts.engineers.constructor').register(E.constructor_entity(0, 0))
+    local g = E.ghost(10, 0)
+    ghosts.add(g)
+    local cluster = ghosts.claim(record, 3, 9)
+    local blocked = storage.engineers.blocked
+    ghosts.block(cluster, 100)
+    assert(blocked[g.unit_number] == game.tick + 100)
+    ghosts.block(cluster, 100)
+    assert(blocked[g.unit_number] == game.tick + 200)
+    ghosts.block(cluster, 100)
+    assert(blocked[g.unit_number] == game.tick + 400)
+    for _ = 1, 20 do ghosts.block(cluster, ghosts.BLOCK) end
+    assert(blocked[g.unit_number] == game.tick + ghosts.GIVE_UP, 'the wait grew without bound')
+    g.valid = false
+    assert(ghosts.claim(record, 3, 9) == nil and storage.engineers.strikes[g.unit_number] == nil,
+      'a gone ghost kept its strikes')
+  end)
+
+  test('engineers: a cliff on a ghost is cleared before the wall goes up', function()
+    local E = ctx.engineers
+    E.engine()
+    local ghosts = require('scripts.engineers.ghosts')
+    local crane = require('scripts.engineers.crane')
+    local record = require('scripts.engineers.constructor').register(E.constructor_entity(0, 0))
+    local g = E.ghost(10, 0)
+    ghosts.add(g)
+    record.cluster = ghosts.claim(record, 3, 9)
+    local cliff = soldier(nil, nil, 10, 0)
+    cliff.name, cliff.type = 'cliff', 'cliff'
+    local corrected
+    cliff.destroy = function(args) corrected = args and args.do_cliff_correction; cliff.valid = false end
+    assert(crane.place(record) == 1, 'the wall did not go up')
+    assert(not cliff.valid and corrected, 'the cliff was not cleared with cliff correction')
   end)
 
   test('engineers: a ghost that cannot be revived is blocked for five minutes', function()
@@ -675,53 +730,92 @@ return function(ctx)
       'the team swallowed the completion of an order')
   end)
 
-  test('engineers: lenders are idle divisions, patrol surplus and soldiers in no division', function()
+  test('engineers: lenders are soldiers in no division and the surplus of large near divisions', function()
     local _, _, surface, spawner = nest_setup()
     local divisions = require('scripts.divisions')
     local patrol = require('scripts.patrol')
     local task_force = require('scripts.engineers.task_force')
-    local idle = idle_division(1, 2)
+    local idle = idle_division(1, 8)
     local walkers = {}
-    for i = 1, 4 do walkers[i] = soldier(nil, nil, 50 + i, 5) end
+    for i = 1, 10 do walkers[i] = soldier(nil, nil, 50 + i, 5) end
     divisions.assign(1, 2, walkers)
     patrol.add_waypoint(1, 2, {x = 50, y = 5}, surface)
     patrol.add_waypoint(1, 2, {x = 100, y = 5}, surface)
     patrol.start(1, 2)
-    local escorting = idle_division(3, 1, 70)
+    local escorting = idle_division(3, 8, 70)
     divisions.record(1, 3).mode = 'escort'
-    local pooled = idle_division(4, 1, 75)
+    local pooled = idle_division(4, 8, 75)
     require('scripts.engineers.teams').set_pool(1, 4, true)
+    local small = idle_division(5, 5, 80)
+    local distant = idle_division(6, 8, 300)
     local loose, far = soldier(nil, nil, 80, 0), soldier(nil, nil, 500, 0)
     local found = {}
     for _, c in ipairs(task_force.candidates(1, surface, spawner.position)) do found[c.id] = c end
-    assert(found[idle[1].unit_number] and found[idle[2].unit_number], 'an idle division did not lend')
-    local lent = 0
-    for _, w in ipairs(walkers) do if found[w.unit_number] then lent = lent + 1 end end
-    assert(lent == 2, 'a 50-tile patrol of 4 lent ' .. lent)
-    assert(not found[escorting[1].unit_number] and not found[pooled[1].unit_number], 'a busy division lent')
-    assert(found[loose.unit_number] and found[loose.unit_number].player_index == nil)
+    local function lent(list)
+      local n = 0
+      for _, e in ipairs(list) do if found[e.unit_number] then n = n + 1 end end
+      return n
+    end
+    assert(lent(idle) == 4, 'an idle division of 8 lent ' .. lent(idle))
+    assert(lent(walkers) == 5, 'a 50-tile patrol of 10 lent ' .. lent(walkers))
+    assert(lent(escorting) == 0 and lent(pooled) == 0, 'a busy division lent')
+    assert(lent(small) == 0, 'a division of 5 lent')
+    assert(lent(distant) == 0, 'a division far from the nest lent')
+    assert(found[loose.unit_number] and found[loose.unit_number].player_index == nil and found[loose.unit_number].tier == 0)
     assert(not found[far.unit_number], 'a soldier beyond reach lent')
+  end)
+
+  test('engineers: a patrol that fought lately, a garrison or a fighting division lends nothing', function()
+    local _, _, surface, spawner = nest_setup()
+    local divisions = require('scripts.divisions')
+    local patrol = require('scripts.patrol')
+    local task_force = require('scripts.engineers.task_force')
+    local walkers = {}
+    for i = 1, 10 do walkers[i] = soldier(nil, nil, 50 + i, 5) end
+    divisions.assign(1, 2, walkers)
+    patrol.add_waypoint(1, 2, {x = 50, y = 5}, surface)
+    patrol.add_waypoint(1, 2, {x = 100, y = 5}, surface)
+    patrol.start(1, 2)
+    local r = divisions.record(1, 2).patrol
+    local function count()
+      local n = 0
+      for _ in ipairs(task_force.candidates(1, surface, spawner.position)) do n = n + 1 end
+      return n
+    end
+    assert(count() == 5)
+    r.alarm_tick = game.tick - 60
+    assert(count() == 0, 'a patrol alarmed a second ago lent')
+    r.alarm_tick = game.tick - task_force.QUIET
+    assert(count() == 5, 'a patrol quiet for long did not lend')
+    r.garrison = 'ring'
+    assert(count() == 0, 'a garrison lent')
+    r.garrison = nil
+    storage.combat = {[walkers[1].unit_number] = {target = spawner}}
+    assert(count() == 0, 'a fighting division lent')
+    storage.combat = nil
   end)
 
   test('engineers: a division attacking lends nothing, one parked after a move does', function()
     local _, _, surface, spawner = nest_setup()
     local divisions = require('scripts.divisions')
     local task_force = require('scripts.engineers.task_force')
-    local attacking = idle_division(1, 2)
+    local attacking = idle_division(1, 8)
     divisions.record(1, 1).order = {surface_index = 1, command = {type = defines.command.attack_area}}
-    local parked = idle_division(2, 2, 70)
+    local parked = idle_division(2, 8, 70)
     divisions.record(1, 2).order = {surface_index = 1, command = {type = defines.command.go_to_location}}
     local found = {}
     for _, c in ipairs(task_force.candidates(1, surface, spawner.position)) do found[c.id] = c end
-    assert(not found[attacking[1].unit_number] and not found[attacking[2].unit_number], 'an attacking division lent')
-    assert(found[parked[1].unit_number] and found[parked[2].unit_number], 'a division parked after a move did not lend')
+    for _, e in ipairs(attacking) do assert(not found[e.unit_number], 'an attacking division lent') end
+    local lent = 0
+    for _, e in ipairs(parked) do if found[e.unit_number] then lent = lent + 1 end end
+    assert(lent == 4, 'a division parked after a move lent ' .. lent)
   end)
 
   test('engineers: a task force borrows enough soldiers and attacks the nest', function()
     local _, _, _, spawner, record = nest_setup()
     local loans = require('scripts.engineers.loans')
     local task_force = require('scripts.engineers.task_force')
-    local idle = idle_division(1, 4)
+    local idle = idle_division(1, 8)
     local tf = task_force.request(record, {spawner})
     assert(tf and #tf.members == 3, 'needed strength 3 from three carriers')
     assert(not loans.on_loan(idle[1].unit_number), 'lent the farthest soldier')
@@ -744,7 +838,7 @@ return function(ctx)
     local _, _, _, spawner, record = nest_setup()
     local loans = require('scripts.engineers.loans')
     local task_force = require('scripts.engineers.task_force')
-    local idle = idle_division(1, 4)
+    local idle = idle_division(1, 8)
     local back = {x = idle[3].position.x, y = idle[3].position.y}
     local tf = task_force.request(record, {spawner})
     record.task_force = tf.id
@@ -756,13 +850,29 @@ return function(ctx)
     assert(command.type == defines.command.go_to_location and command.destination.x == back.x, 'not sent back')
   end)
 
+  test('engineers: an injured task force soldier goes back to its job', function()
+    local _, _, _, spawner, record = nest_setup()
+    local loans = require('scripts.engineers.loans')
+    local task_force = require('scripts.engineers.task_force')
+    local idle = idle_division(1, 8)
+    local back = {x = idle[3].position.x, y = idle[3].position.y}
+    local tf = task_force.request(record, {spawner})
+    assert(tf and loans.on_loan(idle[3].unit_number))
+    idle[3].health = 50
+    task_force.drive(tf)
+    assert(not loans.on_loan(idle[3].unit_number), 'an injured soldier stayed at the nest')
+    local command = idle[3].command
+    assert(command.type == defines.command.go_to_location and command.destination.x == back.x, 'not sent back')
+    assert(loans.on_loan(idle[2].unit_number) and storage.engineers.task_forces[tf.id], 'the healthy ones left too')
+  end)
+
   test('engineers: a patrol lender deals its posts when soldiers leave and return', function()
     local _, _, surface, spawner, record = nest_setup()
     local divisions = require('scripts.divisions')
     local patrol = require('scripts.patrol')
     local task_force = require('scripts.engineers.task_force')
     local walkers = {}
-    for i = 1, 6 do walkers[i] = soldier(nil, nil, 50 + i, 5) end
+    for i = 1, 10 do walkers[i] = soldier(nil, nil, 50 + i, 5) end
     divisions.assign(1, 2, walkers)
     patrol.add_waypoint(1, 2, {x = 50, y = 5}, surface)
     patrol.add_waypoint(1, 2, {x = 100, y = 5}, surface)
@@ -781,7 +891,7 @@ return function(ctx)
     local divisions = require('scripts.divisions')
     local loans = require('scripts.engineers.loans')
     local task_force = require('scripts.engineers.task_force')
-    local idle = idle_division(1, 4)
+    local idle = idle_division(1, 8)
     local tf = task_force.request(record, {spawner})
     local before = idle[2].command
     divisions.record(1, 1).order = {surface_index = 1, command = {type = defines.command.go_to_location}}
@@ -795,7 +905,7 @@ return function(ctx)
     local _, _, _, spawner, record = nest_setup()
     local loans = require('scripts.engineers.loans')
     local task_force = require('scripts.engineers.task_force')
-    local idle = idle_division(1, 4)
+    local idle = idle_division(1, 8)
     local tf = task_force.request(record, {spawner})
     record.task_force = tf.id
     require('scripts.engineers.constructor').unregister(record.id)
@@ -814,7 +924,7 @@ return function(ctx)
     local loans = require('scripts.engineers.loans')
     local task_force = require('scripts.engineers.task_force')
     local walkers = {}
-    for i = 1, 6 do walkers[i] = soldier(nil, nil, 50 + i, 5) end
+    for i = 1, 10 do walkers[i] = soldier(nil, nil, 50 + i, 5) end
     divisions.assign(1, 2, walkers)
     patrol.add_waypoint(1, 2, {x = 50, y = 5}, surface)
     patrol.add_waypoint(1, 2, {x = 100, y = 5}, surface)
@@ -835,7 +945,7 @@ return function(ctx)
     local _, _, _, spawner, record = nest_setup()
     local loans = require('scripts.engineers.loans')
     local task_force = require('scripts.engineers.task_force')
-    local idle = idle_division(1, 4)
+    local idle = idle_division(1, 8)
     local back = {x = idle[3].position.x, y = idle[3].position.y}
     local tf = task_force.request(record, {spawner})
     storage.divisions[1] = nil
@@ -854,7 +964,7 @@ return function(ctx)
     local _, _, _, spawner, record = nest_setup()
     local task_force = require('scripts.engineers.task_force')
     local shredders = require('scripts.shredders')
-    local idle = idle_division(1, 4)
+    local idle = idle_division(1, 8)
     task_force.request(record, {spawner})
     local calls, old = {}, shredders.call
     shredders.call = function(p, n) calls[#calls + 1] = {p, n}; return 0, nil end
@@ -949,6 +1059,35 @@ return function(ctx)
     assert(record.state == 'moving', 'never resumed')
   end)
 
+  test('engineers: enemies that linger send the constructor home and block its work there', function()
+    local b = ctx.building()
+    local E = ctx.engineers
+    local _, enemy = E.engine()
+    b.position = {x = -50, y = 0}
+    local constructor = require('scripts.engineers.constructor')
+    local record = working()
+    local g = add_ghost(20, 0)
+    constructor.tick()
+    assert(record.state == 'moving' and record.cluster)
+    E.enemy_unit(enemy, 60, 0)
+    constructor.tick()
+    assert(record.state == 'paused')
+    game.tick = game.tick + constructor.PAUSE_LIMIT + 1
+    constructor.tick()
+    assert(record.withdrawn and record.cluster == nil, 'the constructor kept waiting beside the enemies')
+    assert(storage.engineers.blocked[g.unit_number], 'the work beside the enemies was not blocked')
+    assert(record.entity.command.destination.x == -50, 'the constructor did not drive home')
+  end)
+
+  test('engineers: a constructor whose task force vanished goes back to work', function()
+    local constructor = require('scripts.engineers.constructor')
+    ctx.engineers.engine()
+    local record = working()
+    record.state, record.task_force = 'task_force', 42
+    constructor.tick()
+    assert(record.state ~= 'task_force' and record.task_force == nil, 'waited for a task force that is gone')
+  end)
+
   test('engineers: a hurt constructor heals at a barracks, then works again', function()
     local b = ctx.building()
     ctx.engineers.engine()
@@ -971,8 +1110,9 @@ return function(ctx)
     local record = working()
     add_ghost(50, 0)
     local spawner = E.enemy_unit(enemy, 70, 0, 'biter-spawner', 'unit-spawner', 350)
-    require('scripts.divisions').assign(1, 1, {soldier(nil, nil, 10, 0), soldier(nil, nil, 11, 0),
-      soldier(nil, nil, 12, 0)})
+    local lenders = {}
+    for i = 1, 8 do lenders[i] = soldier(nil, nil, 9 + i, 0) end
+    require('scripts.divisions').assign(1, 1, lenders)
     constructor.tick()
     assert(record.state == 'task_force' and record.task_force, 'no task force called')
     spawner.valid = false
@@ -1321,8 +1461,9 @@ return function(ctx)
     local constructor = require('scripts.engineers.constructor')
     local task_force = require('scripts.engineers.task_force')
     local spawner = E.enemy_unit(enemy, 100, 0, 'biter-spawner', 'unit-spawner', 350)
-    require('scripts.divisions').assign(1, 1, {soldier(nil, nil, 10, 0), soldier(nil, nil, 11, 0),
-      soldier(nil, nil, 12, 0)})
+    local lenders = {}
+    for i = 1, 8 do lenders[i] = soldier(nil, nil, 9 + i, 0) end
+    require('scripts.divisions').assign(1, 1, lenders)
     local c = read_interior(fs)
     constructor.check(record, {retreat = 0})
     assert(record.state == 'task_force' and record.nest and record.task_force, 'state ' .. record.state)

@@ -1,9 +1,14 @@
 -- Nest task force. When a nest blocks a constructor's ghosts, soldiers are
--- borrowed from nearby divisions that can spare them: all of an idle or
--- parked division, the surplus of a patrol, and soldiers in no division.
--- They run the usual nest assault, call their divisions' shredders on heavy
--- losses, and go back to their jobs when the nest falls or the task force
--- breaks off. A lending division given a new order takes its soldiers back
+-- borrowed: first soldiers in no division, then the surplus of a nearby
+-- division that has plenty. A division lends only while its centre lies
+-- within LEND_RADIUS of the nest, it has at least MIN_LENDER soldiers there,
+-- none of them fights and, for a patrol, no alarm rang for QUIET ticks. It
+-- keeps the larger of half its soldiers and, for a patrol, one per 32 tiles
+-- of route (threat.keep). A ring garrison never lends. The soldiers run the
+-- usual nest assault, call their divisions' shredders on heavy losses, and
+-- go back to their jobs when the nest falls or the task force breaks off. A
+-- soldier below the retreat health goes back at once, so its patrol sends
+-- it to heal. A lending division given a new order takes its soldiers back
 -- at once. Runs in the sweep slice of its id.
 --
 -- task force = {id, surface_index, force_index, origin, structures,
@@ -13,6 +18,7 @@
 --     is the division's mode, order and patrol when it lent
 --   waiting[constructor unit_number] = true for constructors it serves
 local names = require('scripts.names')
+local config = require('scripts.config')
 local combat = require('scripts.combat')
 local divisions = require('scripts.divisions')
 local assault = require('scripts.assault')
@@ -26,7 +32,11 @@ local state = require('scripts.engineers.state')
 
 local M = {}
 
+-- Soldiers in no division lend from this far; a division from LEND_RADIUS.
 M.REACH = 300
+M.LEND_RADIUS = 150
+M.MIN_LENDER = 6
+M.QUIET = 2 * 3600
 -- A constructor blocked by a nest a task force already fights waits for it.
 M.JOIN_RADIUS = 40
 M.WINDOW = 30 * 60
@@ -70,45 +80,66 @@ local function same_job(record, j)
   return record ~= nil and record.mode == j.mode and record.order == j.order and record.patrol == j.patrol
 end
 
+-- The soldiers division n can spare for a nest at `origin`, or none. `here`
+-- are its free soldiers on the surface; `floor` is the least it keeps.
+local function spare(here, origin, floor)
+  if #here < M.MIN_LENDER then return {} end
+  local sx, sy = 0, 0
+  for _, x in ipairs(here) do
+    if combat.fighting(x.id) then return {} end
+    local p = x.entity.position
+    sx, sy = sx + p.x, sy + p.y
+  end
+  local centre = {x = sx / #here, y = sy / #here}
+  if distance2(centre, origin) > M.LEND_RADIUS * M.LEND_RADIUS then return {} end
+  return threat.surplus(here, threat.keep(#here, floor))
+end
+
+-- A patrol that saw enemies lately, or holds a ring, lends nothing.
+local function patrol_floor(r)
+  if r.garrison or not r.posts then return nil end
+  if r.alarm_tick and game.tick - r.alarm_tick < M.QUIET then return nil end
+  return threat.patrol_keep(patrol_geometry.length(r.waypoints, patrol_geometry.area(r.waypoints) > 0))
+end
+
 function M.candidates(force_index, surface, origin)
   local s = state.get()
   local reach2, out = M.REACH * M.REACH, {}
   local function add(e, player_index, n, record)
-    local d = distance2(e.position, origin)
-    if d <= reach2 then
-      out[#out + 1] = {id = e.unit_number, entity = e, strength = strength_of(e), d = d,
-        player_index = player_index, n = n, record = record}
-    end
+    out[#out + 1] = {id = e.unit_number, entity = e, strength = strength_of(e), d = distance2(e.position, origin),
+      player_index = player_index, n = n, record = record, tier = record and 1 or 0}
   end
   for player_index, pstate in pairs(storage.divisions or {}) do
     local player = game.get_player(player_index)
     if player and player.force_index == force_index then
       for n = 1, names.max_division do
         local record = pstate.slots[n]
+        local floor
         if record and #record.members > 0 then
           if idle(record) then
-            for _, e in ipairs(divisions.cached(player_index, n)) do
-              if e.valid and e.surface_index == surface.index and free(s, e) then add(e, player_index, n, record) end
-            end
-          elseif record.mode == 'patrol' and record.patrol and record.patrol.posts then
-            local r, here = record.patrol, {}
-            for _, e in ipairs(divisions.cached(player_index, n)) do
-              if e.valid and e.surface_index == surface.index and free(s, e) and not retreat.is_away(r, e.unit_number) then
-                here[#here + 1] = {id = e.unit_number, entity = e, strength = strength_of(e)}
-              end
-            end
-            local length = patrol_geometry.length(r.waypoints, patrol_geometry.area(r.waypoints) > 0)
-            for _, x in ipairs(threat.surplus(here, threat.patrol_keep(length))) do
-              add(x.entity, player_index, n, record)
+            floor = 0
+          elseif record.mode == 'patrol' and record.patrol then
+            floor = patrol_floor(record.patrol)
+          end
+        end
+        if floor then
+          local r, here = record.mode == 'patrol' and record.patrol, {}
+          for _, e in ipairs(divisions.cached(player_index, n)) do
+            if e.valid and e.surface_index == surface.index and free(s, e)
+                and not (r and retreat.is_away(r, e.unit_number)) then
+              here[#here + 1] = {id = e.unit_number, entity = e, strength = strength_of(e)}
             end
           end
+          for _, x in ipairs(spare(here, origin, floor)) do add(x.entity, player_index, n, record) end
         end
       end
     end
   end
   for _, e in pairs(surface.find_entities_filtered{position = origin, radius = M.REACH, name = names.soldier_names,
       force = force_index}) do
-    if not divisions.owner(e.unit_number) and free(s, e) then add(e, nil, nil, nil) end
+    if not divisions.owner(e.unit_number) and free(s, e) and distance2(e.position, origin) <= reach2 then
+      add(e, nil, nil, nil)
+    end
   end
   return out
 end
@@ -264,22 +295,25 @@ local function members_of(tf)
   return out
 end
 
+-- A soldier whose loan ended goes back to its job: a patrol deals it a post
+-- on its next sweep, anyone else walks to its back point.
+local function go_back(loan, e)
+  local pstate = loan.player_index and storage.divisions and storage.divisions[loan.player_index]
+  local record = pstate and pstate.slots[loan.n]
+  if record and record.mode == 'patrol' and record.patrol then
+    record.patrol.dirty = true
+  else
+    combat.set_command(e, {type = defines.command.go_to_location, destination = loan.back, radius = 4,
+      distraction = defines.distraction.by_enemy})
+  end
+end
+
 function M.finish(tf, outcome)
   local s = state.get()
   for _, id in ipairs(tf.members) do
     local loan = loans.finish(id)
     local e = game.get_entity_by_unit_number(id)
-    if loan and e and e.valid then
-      local pstate = loan.player_index and storage.divisions and storage.divisions[loan.player_index]
-      local record = pstate and pstate.slots[loan.n]
-      if record and record.mode == 'patrol' and record.patrol then
-        -- The patrol deals it a post on its next sweep.
-        record.patrol.dirty = true
-      else
-        combat.set_command(e, {type = defines.command.go_to_location, destination = loan.back, radius = 4,
-          distraction = defines.distraction.by_enemy})
-      end
-    end
+    if loan and e and e.valid then go_back(loan, e) end
   end
   for id in pairs(tf.waiting) do
     local record = s.constructors[id]
@@ -289,9 +323,23 @@ function M.finish(tf, outcome)
   announce(tf, 'task-force-' .. outcome)
 end
 
+-- Members below the retreat health leave the task force.
+local function send_injured(members)
+  local below = config.escort().retreat
+  for i = #members, 1, -1 do
+    local e = members[i]
+    if e.health < e.max_health * below then
+      local loan = loans.finish(e.unit_number)
+      if loan then go_back(loan, e) end
+      table.remove(members, i)
+    end
+  end
+end
+
 function M.drive(tf)
   recall_changed(tf)
   local members = members_of(tf)
+  send_injured(members)
   if #alive(tf) == 0 then return M.finish(tf, 'cleared') end
   local strength = 0
   for _, e in ipairs(members) do strength = strength + strength_of(e) end

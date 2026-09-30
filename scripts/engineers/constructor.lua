@@ -7,7 +7,7 @@
 -- record = {entity, id, force_index, surface_index, state, since, said,
 --   cluster, centre, fails, retries, crane, release_tick, done_tick,
 --   released, paused_since, calm_since, task_force, task_force_result, home,
---   autonomous, segment, dismantle, rings_version, nest, draft_tick}
+--   autonomous, segment, dismantle, rings_version, nest, draft_tick, withdrawn}
 -- state is 'waiting', 'seeking', 'moving', 'building', 'paused',
 -- 'task_force', 'healing' or 'idle'.
 -- An autonomous constructor builds rings (rings/rings.lua) instead of the
@@ -89,7 +89,7 @@ end
 
 function M.reset(record)
   release(record)
-  record.task_force, record.task_force_result, record.nest = nil, nil, nil
+  record.task_force, record.task_force_result, record.nest, record.withdrawn = nil, nil, nil, nil
   set(record, 'seeking')
 end
 
@@ -345,7 +345,12 @@ function M.check(record, cfg)
   end
   if record.state == 'task_force' then
     local result = record.task_force_result
-    if not result then return end
+    if not result then
+      -- A task force that ended without telling it counts as broken.
+      local s = state.peek()
+      if record.task_force and s and s.task_forces[record.task_force] then return end
+      result = 'broken'
+    end
     if result == 'broken' then
       ghosts.block(record.cluster, ghosts.BLOCK)
       if record.nest then clearing.block(record.force_index, record.nest) end
@@ -371,15 +376,21 @@ function M.check(record, cfg)
       record.paused_since = tick
       set(record, 'paused')
       stop(record)
-    elseif record.cluster and tick - record.paused_since > M.PAUSE_LIMIT then
+    elseif not record.withdrawn and tick - record.paused_since > M.PAUSE_LIMIT then
+      -- Enemies that linger: the work here waits, and the constructor
+      -- drives home out of their way.
+      ghosts.block(record.cluster, ghosts.BLOCK)
       release(record)
+      record.withdrawn = true
+      local home = M.home(record, true)
+      if home then go(record, home.position, M.HOME_RADIUS) end
     end
     return
   end
   if record.state == 'paused' then
     record.calm_since = record.calm_since or tick
     if tick - record.calm_since < M.CALM then return end
-    record.calm_since, record.paused_since = nil, nil
+    record.calm_since, record.paused_since, record.withdrawn = nil, nil, nil
     release(record)
     set(record, 'seeking')
   end

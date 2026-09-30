@@ -41,6 +41,7 @@ local function drop(bucket, entry)
   if chunk.count == 0 then bucket.chunks[entry.chunk] = nil end
   local s = state.get()
   s.claims[entry.id], s.blocked[entry.id] = nil, nil
+  if s.strikes then s.strikes[entry.id] = nil end
 end
 
 -- The nearest cluster of walls to take down on the constructor's surface,

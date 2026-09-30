@@ -12,8 +12,10 @@ local M = {}
 M.CYCLE = 60
 M.RELEASE = 30
 M.SPEED = 4 / M.CYCLE
--- Cycles a ghost under a unit waits before the constructor lets it go.
+-- Cycles a ghost under a unit waits before the constructor blocks it for
+-- UNIT_BLOCK and goes on with other work.
 M.RETRIES = 3
+M.UNIT_BLOCK = 60 * 60
 local LOOK = appearance.constructor
 -- A unit, character or vehicle on a ghost blocks its revive.
 local BLOCKERS = {'unit', 'character', 'car', 'spider-vehicle'}
@@ -53,9 +55,10 @@ function M.start(record)
   record.release_tick, record.done_tick, record.released = tick + M.RELEASE, tick + M.CYCLE, nil
 end
 
--- Sets down the claimed walls. Trees and rocks on a ghost are cleared
--- first. A ghost under a unit stays claimed for the next cycle, up to
--- RETRIES cycles; one that cannot be revived is blocked. Returns the
+-- Sets down the claimed walls. Trees, rocks and cliffs on a ghost are
+-- cleared first. A ghost under a unit stays claimed for the next cycle, up
+-- to RETRIES cycles, then is blocked; one that cannot be revived is
+-- blocked. Blocks grow with each failure (ghosts.block). Returns the
 -- number of walls built. A constructor taking a ring down destroys the
 -- claimed walls instead.
 function M.place(record)
@@ -80,6 +83,9 @@ function M.place(record)
     else
       local box = ghost.bounding_box
       for _, obstacle in pairs(surface.find_entities_filtered{area = box, type = CLEARED}) do obstacle.destroy() end
+      for _, cliff in pairs(surface.find_entities_filtered{area = box, type = 'cliff'}) do
+        cliff.destroy{do_cliff_correction = true}
+      end
       if surface.count_entities_filtered{area = box, type = BLOCKERS, limit = 1} > 0 then
         kept[#kept + 1] = entry
       else
@@ -95,7 +101,7 @@ function M.place(record)
   end
   record.retries = #kept > 0 and (record.retries or 0) + 1 or 0
   if record.retries > M.RETRIES then
-    ghosts.release(kept)
+    ghosts.block(kept, M.UNIT_BLOCK)
     kept, record.retries = {}, 0
   end
   record.cluster = kept

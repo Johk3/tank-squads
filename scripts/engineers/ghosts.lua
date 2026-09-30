@@ -14,6 +14,10 @@ M.CHUNK = 32
 M.RECHECK = 60 * 60
 -- A cluster the constructor could not reach or clear waits this long.
 M.BLOCK = 5 * 3600
+-- Each further block of the same ghost waits twice as long, up to GIVE_UP,
+-- so a ghost that keeps failing is left for long and the constructor moves
+-- on to other work.
+M.GIVE_UP = 30 * 3600
 -- Robot-covered ghosts a single claim may step over before giving up.
 M.ATTEMPTS = 20
 
@@ -237,6 +241,7 @@ local function drop(bucket, entry, built)
   end
   local s = state.get()
   s.claims[entry.id], s.blocked[entry.id] = nil, nil
+  if s.strikes then s.strikes[entry.id] = nil end
   if M.on_ring_gone and s.ring_ghosts and s.ring_ghosts[entry.id] then
     M.on_ring_gone(entry.id, entry.position, built)
   end
@@ -331,9 +336,13 @@ end
 
 function M.block(cluster, ticks)
   local s = state.get()
-  local until_tick = game.tick + ticks
-  for _, entry in ipairs(cluster or {}) do
-    s.claims[entry.id], s.blocked[entry.id] = nil, until_tick
+  if not (cluster and cluster[1]) then return end
+  s.strikes = s.strikes or {}
+  local tick, limit = game.tick, math.max(ticks, M.GIVE_UP)
+  for _, entry in ipairs(cluster) do
+    local n = s.strikes[entry.id] or 0
+    s.strikes[entry.id] = n + 1
+    s.claims[entry.id], s.blocked[entry.id] = nil, tick + math.min(ticks * 2 ^ n, limit)
   end
 end
 

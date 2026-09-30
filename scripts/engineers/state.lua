@@ -7,6 +7,7 @@
 --   scanned[surface_index] = true once that surface's ghosts were read
 --   claims[ghost unit_number] = constructor unit_number
 --   blocked[ghost unit_number] = tick until which no constructor takes it
+--   strikes[ghost unit_number] = how often it was blocked (ghosts.block)
 --   teams[constructor unit_number] = {members, state, present} (teams.lua)
 --   team_of[soldier unit_number] = constructor unit_number
 --   signatures[force_index .. ':' .. surface_index] = the pool and

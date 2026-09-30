@@ -65,7 +65,10 @@ Shredders are unmanned rammers. Train them at a barracks with the **Build Shredd
 - If a target dies before the crash, the shredder picks the next enemy nearby. With none left, it rejoins the divisions.
 - A shredder stuck on its way, for example against another nest, rams the enemy blocking it.
 - A shredder attacked while parked rams its attacker.
-- A patrolling division that sees a swarm of 15 or more attacking enemies within 40 tiles sends one shredder at it, at most one every five seconds.
+- A division that sees a swarm of 15 or more attacking enemies within 40 tiles sends one shredder at it, at most one every five seconds.
+- A division that passes within 40 tiles of a nest of three or more spawners and worms now and then throws one shredder at it, spawner first, at most one a minute.
+- Shredders show on the map. A shredder locked onto an enemy draws a bright red line to its target and rings it, so you can follow every charge from the map view. Like soldiers, shredders reveal the map around them.
+- The divisions that escort constructors get no shredders.
 - When you walk near a large pack of enemies or a nest, up to three shredders follow 80 tiles behind you and strike as soon as you are hurt. They return to the divisions after ten quiet seconds.
 - A barracks set to build shredders keeps building them even when its linked division is full. To keep a fixed number, set a shredder limit in the barracks' **Automatic reinforcements** panel. The barracks pauses when that many of its shredders are alive and replaces each one that dies or crashes. 0 means no limit.
 
@@ -73,11 +76,12 @@ Shredders are unmanned rammers. Train them at a barracks with the **Build Shredd
 
 Constructors are unmanned wall-laying vehicles. Train them at a barracks with the **Build Constructor** recipe. They never join a division and take no orders:
 
-- They build the stone wall and gate ghosts that your construction robots cannot reach, nearest first. They never run out of walls. Each crane cycle sets down up to nine walls and clears trees and rocks in the way.
+- They build the stone wall and gate ghosts that your construction robots cannot reach, nearest first. They never run out of walls. Each crane cycle sets down up to nine walls and clears trees, rocks and cliffs in the way.
+- A wall they cannot place, for example because a tank stands on it, waits a minute while they build elsewhere. Each further failure doubles the wait, up to 30 minutes, so a constructor never gets stuck on one spot.
 - Constructors drive straight through forests and rock fields: trees and rocks fall under their tracks. Walls, buildings and water still stop them. Like soldiers, they reveal the map around them.
 - Open the **Engineers** window with the constructor button on the division panel. It appears once you have a constructor. Tick the divisions that escort your constructors: their soldiers are shared out between the constructors, up to eight each. Any new order to a division takes it out of the escort. A constructor with fewer than eight escorts also takes soldiers in no division within 100 tiles; they leave the escort when they join a division or you order them.
-- A constructor with fewer than two escorts waits at the nearest barracks or headquarters. Enemies within 80 tiles pause the work until five seconds after the fight. A damaged constructor repairs at a barracks.
-- When a nest lies next to the walls, the constructor borrows soldiers from nearby idle divisions, the spare soldiers of patrols (a patrol keeps one soldier per 64 tiles of its route, and at least two) and soldiers in no division. They clear the nest, then return to their jobs. Their divisions' shredders join in if they take heavy losses.
+- A constructor with fewer than two escorts waits at the nearest barracks or headquarters. Enemies within 80 tiles pause the work until five seconds after the fight. If they are still there after a minute, the constructor leaves that work for later and drives home. A damaged constructor repairs at a barracks.
+- When a nest lies next to the walls, the constructor borrows soldiers in no division within 300 tiles first. Only then does it borrow from a division, and only a real surplus: the division must have at least six soldiers and stand within 150 tiles of the nest, and none of them may be fighting. It keeps at least half its soldiers and at least four; a patrol also keeps one soldier per 32 tiles of its route, and lends nothing for two minutes after it met enemies. A ring garrison never lends. The soldiers clear the nest, then return to their jobs; a borrowed soldier that falls below the retreat health goes back at once to heal. Their divisions' shredders join in if they take heavy losses.
 
 ### Rings
 
@@ -152,7 +156,7 @@ All keys can be rebound in the controls menu. Each soldier belongs to one divisi
 - **Defensive:** the division holds an evenly spaced ring 160 tiles from the player. When enemies come within 224 tiles of the player or of the ring's centre, the nearest half of the division intercepts them and the rest hold the ring.
 - **Offensive:** the division roams 256–448 tiles from the player and attacks the nearest biters, nests, worms, turrets or enemy players.
 - The escort only relocates once the player has stopped and moved more than 64 tiles, so it never chases a train.
-- Soldiers below 35% health retreat to the nearest barracks or headquarters within 1,000 tiles and come back at 95%.
+- Soldiers below 35% health retreat to the nearest barracks or headquarters within 1,000 tiles and come back at 95%. A soldier whose trip failed tries again after a minute.
 - The escorted player can dismiss the escort at any time.
 
 ---
