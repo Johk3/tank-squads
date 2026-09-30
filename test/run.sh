@@ -10,7 +10,8 @@ start_server || exit 1
 
 fails=0
 skips=0
-for f in "$ROOT"/test/cases/*.lua; do
+# An optional argument runs only the cases whose file name starts with it.
+for f in "$ROOT"/test/cases/${1:-}*.lua; do
   result=0
   run_case "$f" || result=$?
   if [ "$result" -eq 2 ]; then skips=$((skips + 1)); fi
