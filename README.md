@@ -78,6 +78,19 @@ Constructors are unmanned wall-laying vehicles. Train them at a barracks with th
 - A constructor with fewer than two escorts waits at the nearest barracks or headquarters. Enemies within 80 tiles pause the work until five seconds after the fight. A damaged constructor repairs at a barracks.
 - When a nest lies next to the walls, the constructor borrows soldiers from nearby idle divisions, the spare soldiers of patrols (a patrol keeps one soldier per 64 tiles of its route) and soldiers in no division. They clear the nest, then return to their jobs. Their divisions' shredders join in if they take heavy losses.
 
+### Rings
+
+Constructors can also build fortress rings round your base, ring after ring outward.
+
+- Tick **auto** next to a constructor in the Engineers window. Constructors on auto build only rings and leave your own wall ghosts to the others. They share the work, each taking its own stretch of the ring, and park at a barracks or headquarters when every ring is done.
+- The **Rings** area of the window sets the shape (square or circle), the spacing between rings (100 to 1,000 tiles; ring *n* has radius *n* times the spacing), how many rings to build (1 to 20) and the centre, which you pick on the map with the centre tool. Until you pick one, rings go round your force's spawn. New settings apply to rings not started yet.
+- A ring has three rows of wall, a gap and two rows of checkerboard dragon teeth, with a bastion every 32 tiles and solid corners. Gatehouses 16 gates wide, flanked by bastions, stand every 128 tiles on small rings and closer together on large ones. Each ring is numbered on the map.
+- A ring bulges out round your buildings, blueprints and cliffs, and ends at water. Trees and rocks are cleared. A straight rail through the ring gets gates; a belt or pipe leaves an open crossing, marked on the map and walled up once you replace it with an underground belt or pipe.
+- A ring wall the enemy destroys is rebuilt. A ring wall or ghost you remove yourself stays open.
+- **Delete** a ring (click twice) and the constructors on auto take its walls down; robots may help. A deleted ring can be built again from the current settings.
+- **Garrison:** choose a ring for a division in the window. A quarter of the ring's garrison soldiers spread evenly round it, the rest gather where spawners, worms and biters within 200 tiles are thickest, 9 tiles inside the wall. When the enemy hits a wall, the nearest garrison soldiers rush to it, the division's shredders come, and everyone returns to their posts afterwards. Any new order takes a division out of the garrison.
+- Gates do not open for units by themselves, so the mod opens them: soldiers, shredders, constructors and the headquarters crossing a finished ring drive to a gatehouse, wait for it to open, and pass through.
+
 ### Mobile headquarters
 
 Research **Mobile headquarters** (automation to utility science), then choose **Build Mobile Headquarters** in a barracks. It costs 400 steel, 100 gears, 40 electric engines, 40 processing units, 40 solar panels, 40 accumulators and 4 roboports, and takes 60 seconds.
@@ -173,6 +186,8 @@ Tank Squads soldiers are native `unit` entities, the same type as biters. Moveme
 In testing, 200 carriers in constant combat cost about **0.02 ms per tick** of script time.
 
 Veteran ranks add no per-tick work. Cover adds one read per soldier per second for a division without veterans. A covered veteran costs one position read per second, and its covers are sent again only when the veteran has moved 4 tiles. Kills are counted from enemy deaths only, a Recruit's shots cost no extra engine calls, and names and ranks are shown on a card while you point at a unit rather than drawn over every tank.
+
+Rings are planned one 64 to 128-tile segment at a time and their wall ghosts are placed 64 per slice, and wall hits reach the script only while a ring has a garrison.
 
 A mobile headquarters' camp moves only when it parks, because the engine takes a few milliseconds to move a roboport with such a large reach. Its once-a-second sweep is otherwise light.
 

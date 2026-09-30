@@ -1,4 +1,16 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.34.0
+Date: 2026-09-30
+  Features:
+    - Rings: tick "auto" for a constructor in the Engineers window and it builds fortress rings round your base, ring after ring outward, together with the other constructors on auto. A ring has three wall rows, a gap, two rows of dragon teeth and bastions, with 16-gate gatehouses that come closer together on larger rings. Choose square or circle, the spacing between rings, how many to build and the centre.
+    - Rings bulge round your buildings, blueprints and cliffs and end at water. A straight rail through a ring gets rail gates; a belt or pipe leaves an open crossing marked on the map, walled up once you replace it with an underground belt or pipe.
+    - A ring wall destroyed by the enemy is rebuilt. A ring wall you mine stays open.
+    - Delete a ring and the constructors take its walls down.
+    - Ring garrison: put divisions on a ring. A quarter of its soldiers spread evenly round it, the rest gather where spawners, worms and biters are thickest, and the nearest rush to any wall under attack.
+    - Soldiers, shredders and constructors pass through ring gatehouses, which open for them.
+  Changes:
+    - A constructor that finds a nest too strong for a task force now leaves every wall ghost by that nest for five minutes at once, instead of trying them nine at a time.
+---------------------------------------------------------------------------------------------------
 Version: 0.33.0
 Date: 2026-09-30
   Features:
