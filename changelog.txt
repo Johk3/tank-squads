@@ -1,4 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.35.0
+Date: 2026-09-30
+  Features:
+    - Constructors on auto clear the inside of the rings first: they search the area inside the outermost ring for spawners and worms and send a task force at each nest, nearest first, before they build on. A nest too strong for the soldiers in reach waits five minutes while the ring goes on. The inside is searched again every five minutes.
+    - A constructor with fewer than eight escorts takes soldiers in no division within 100 tiles into its escort. They leave it when they join a division or you order them.
+  Graphics:
+    - Constructors are drawn larger. They still fit through the same gaps and gates.
+---------------------------------------------------------------------------------------------------
 Version: 0.34.3
 Date: 2026-09-30
   Locale:
