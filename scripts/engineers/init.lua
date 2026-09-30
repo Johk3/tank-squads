@@ -8,6 +8,7 @@ local teams = require('scripts.engineers.teams')
 local task_force = require('scripts.engineers.task_force')
 local loans = require('scripts.engineers.loans')
 local window = require('scripts.engineers.window')
+local rings = require('scripts.engineers.rings.rings')
 local names = require('scripts.names')
 
 local M = {}
@@ -135,6 +136,38 @@ function M.build_now(unit_number)
   local record = s and s.constructors[unit_number]
   if not (record and record.entity.valid) then return 0 end
   return constructor.build_now(record)
+end
+
+-- Engine tests: ring settings, the centre, planning one segment and a
+-- summary of a ring.
+function M.ring_set(force_index, name, value)
+  return rings.set(force_index, name, value)
+end
+
+function M.ring_centre(force, surface, position)
+  return rings.set_centre(force, surface, position)
+end
+
+function M.ring_plan(force, n, i)
+  local fs = rings.force_state(force.index)
+  ghosts.scan(game.surfaces[fs.settings.surface_index or 1])
+  local ring = fs.slots[n] or rings.start(fs, force, n, game.surfaces[fs.settings.surface_index or 1])
+  return rings.plan_segment(ring, i), ring.segments[i].live
+end
+
+function M.ring_info(force_index, n)
+  local fs = rings.peek(force_index)
+  local ring = fs and fs.slots[n]
+  if not ring then return nil end
+  local live, built, released, crossings = 0, 0, 0, 0
+  for _, seg in ipairs(ring.segments) do
+    live = live + seg.live
+    if seg.state == 'built' then built = built + 1 end
+  end
+  for _ in pairs(ring.released) do released = released + 1 end
+  for _ in pairs(ring.crossings) do crossings = crossings + 1 end
+  return {state = ring.state, radius = ring.radius, count = ring.count, built = built, live = live,
+    released = released, bulges = #ring.bulges, crossings = crossings}
 end
 
 return M

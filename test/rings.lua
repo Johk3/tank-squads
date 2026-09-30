@@ -293,4 +293,175 @@ return function(ctx)
     assert(layout.gate_dir(ring, 0.5, 200.5) == 'north')
     assert(layout.gate_dir(circle(300), 0.5, -299.5) == 'north')
   end)
+
+  -- A world where rings can be started and ghosts placed, outside the engine.
+  local function ring_world()
+    local state = require('scripts.engineers.state')
+    local s = state.get()
+    s.scanned[1] = true
+    local surface = game.surfaces[1]
+    local force = game.forces[1]
+    force.printed = {}
+    force.print = function(message) force.printed[#force.printed + 1] = message end
+    force.get_spawn_position = function() return {x = 0, y = 0} end
+    surface.create_entity = function(spec)
+      local g = ctx.soldier(nil, nil, spec.position.x, spec.position.y)
+      g.name, g.type, g.ghost_name, g.direction = 'entity-ghost', 'entity-ghost', spec.inner_name, spec.direction
+      g.force_index, g.surface_index = 1, 1
+      g.destroy = function() g.valid = false end
+      return g
+    end
+    surface.find_non_colliding_position = function(_, position) return {x = position.x, y = position.y} end
+    defines.direction = {north = 0, east = 4, south = 8, west = 12}
+    defines.build_check_type = {manual_ghost = 3}
+    return require('scripts.engineers.rings.rings'), s, surface, force
+  end
+
+  test('rings: settings are clamped, and each change bumps the version', function()
+    local rings = ring_world()
+    assert(rings.set(1, 'spacing', 50) == 100 and rings.set(1, 'spacing', 5000) == 1000)
+    assert(rings.set(1, 'spacing', 'abc') == 1000, 'text changed the spacing')
+    assert(rings.set(1, 'count', 0) == 1 and rings.set(1, 'count', 7.6) == 7)
+    assert(rings.set(1, 'shape', 'hexagon') == 'square' and rings.set(1, 'shape', 'circle') == 'circle')
+    assert(rings.version(1) == 5, 'version ' .. rings.version(1))
+  end)
+
+  test('rings: a ring starts round the spawn with four map labels', function()
+    local rings, _, surface, force = ring_world()
+    local fs = rings.force_state(1)
+    local before = #ctx.draws()
+    local ring = rings.start(fs, force, 1, surface)
+    assert(ring.radius == 200 and ring.centre.x == 0 and ring.state == 'building')
+    assert(ring.count == 12 and ring.segments[12].state == 'unplanned')
+    assert(#ctx.draws() - before == 4 and #ring.labels == 4)
+    assert(rings.by_key(ring.key) == ring)
+  end)
+
+  test('rings: a new ring keeps clear of the one before', function()
+    local rings, _, surface, force = ring_world()
+    local fs = rings.force_state(1)
+    rings.start(fs, force, 1, surface)
+    rings.set(1, 'spacing', 100)
+    local second = rings.start(fs, force, 2, surface)
+    assert(second.radius == 280, 'ring 2 at radius ' .. second.radius)
+  end)
+
+  test('rings: the current ring is the lowest slot with segments left to plan', function()
+    local rings, _, surface, force = ring_world()
+    local fs = rings.force_state(1)
+    local first = rings.start(fs, force, 1, surface)
+    assert(rings.current(fs, force, surface) == first)
+    for _, seg in ipairs(first.segments) do seg.state = 'placed' end
+    local second = rings.current(fs, force, surface)
+    assert(second and second.n == 2, 'slot 2 was not started')
+    second.state = 'deleted'
+    assert(rings.current(fs, force, surface).n == 3, 'a deleted slot was worked on')
+    rings.set(1, 'count', 2)
+    assert(rings.current(fs, force, surface) == nil, 'worked past the ring count')
+  end)
+
+  test('rings: a generating segment waits for its delay, then anyone takes it', function()
+    local rings, _, surface, force = ring_world()
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    for i = 1, ring.count do ring.segments[i].state = 'placed' end
+    ring.segments[5].state, ring.segments[5].due = 'generating', 100
+    game.tick = 50
+    assert(rings.next_segment(ring, {x = 0, y = 0}, game.tick) == nil)
+    assert(rings.waiting(ring, game.tick), 'a generating segment does not count as work to wait for')
+    game.tick = 100
+    assert(rings.next_segment(ring, {x = 0, y = 0}, game.tick) == 5)
+  end)
+
+  test('rings: the next segment is the unplanned one nearest the constructor', function()
+    local rings, _, surface, force = ring_world()
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    assert(rings.next_segment(ring, {x = 250, y = 0}, 0) == 2)
+    assert(rings.next_segment(ring, {x = 0, y = -250}, 0) == 11)
+  end)
+
+  test('rings: placed ghosts are tagged and counted, and the last one built finishes the segment', function()
+    local rings, s, surface, force = ring_world()
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    local built, saved = {}, rings.on_segment_built
+    rings.on_segment_built = function(r, i) built[#built + 1] = i end
+    ring.segments[1].state = 'placed'
+    rings.place(ring, 1, {{x = 200.5, y = -150.5, name = 'stone-wall', dir = 'east', a = -151},
+      {x = 201.5, y = -150.5, name = 'gate', dir = 'east', a = -151}}, surface, force)
+    local seg = ring.segments[1]
+    assert(seg.live == 2, seg.live .. ' live')
+    local ids = {}
+    for id in pairs(seg.ghosts) do ids[#ids + 1] = id; assert(s.ring_ghosts[id].ring == ring.key) end
+    assert(require('scripts.engineers.ghosts').bucket(1, 1).count == 2, 'ghosts not in the registry')
+    rings.ghost_gone(ids[1], {x = 200.5, y = -150.5}, true)
+    assert(seg.live == 1 and seg.state == 'placed')
+    rings.ghost_gone(ids[2], {x = 201.5, y = -150.5}, true)
+    rings.on_segment_built = saved
+    assert(seg.state == 'built' and built[1] == 1)
+  end)
+
+  test('rings: a ghost gone with no wall on its tile releases the tile', function()
+    local rings, _, surface, force = ring_world()
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    ring.segments[1].state = 'placed'
+    rings.place(ring, 1, {{x = 200.5, y = -150.5, name = 'stone-wall', dir = 'east', a = -151},
+      {x = 200.5, y = -149.5, name = 'stone-wall', dir = 'east', a = -150}}, surface, force)
+    local ids = {}
+    for id in pairs(ring.segments[1].ghosts) do ids[#ids + 1] = id end
+    table.sort(ids)
+    rings.ghost_gone(ids[1], {x = 200.5, y = -150.5}, false)
+    assert(ring.released['200,-151'], 'a removed ghost was not released')
+    local wall = ctx.soldier(nil, nil, 200.5, -149.5)
+    wall.type = 'wall'
+    rings.ghost_gone(ids[2], {x = 200.5, y = -149.5}, false)
+    assert(not ring.released['200,-150'], 'a tile with a wall on it was released')
+    rings.place(ring, 1, {{x = 200.5, y = -150.5, name = 'stone-wall', dir = 'east', a = -151}}, surface, force)
+    assert(ring.segments[1].live == 0, 'a released tile got a new ghost')
+  end)
+
+  test('rings: a segment with nothing to place is built at once', function()
+    local rings, _, surface, force = ring_world()
+    local obstacles = require('scripts.engineers.rings.obstacles')
+    local layout = require('scripts.engineers.rings.layout')
+    local scan, plan = obstacles.scan, layout.plan
+    obstacles.scan = function() return {bulges = {}, crossings = {}, water = {}} end
+    layout.plan = function() return {} end
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    local ok, result = pcall(rings.plan_segment, ring, 3)
+    obstacles.scan, layout.plan = scan, plan
+    assert(ok, result)
+    assert(result == 'built' and ring.segments[3].state == 'built', tostring(result))
+  end)
+
+  test('rings: a segment whose chunks are missing waits and asks for them', function()
+    local rings, _, surface, force = ring_world()
+    local obstacles = require('scripts.engineers.rings.obstacles')
+    local scan = obstacles.scan
+    obstacles.scan = function() return nil end
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    game.tick = 10
+    local result = rings.plan_segment(ring, 2)
+    obstacles.scan = scan
+    assert(result == 'generating' and ring.segments[2].due == 10 + rings.RETRY)
+  end)
+
+  test('rings: ring claims take only ring ghosts, other claims never do', function()
+    local rings, s, surface, force = ring_world()
+    local ghosts = require('scripts.engineers.ghosts')
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    ring.segments[2].state = 'placed'
+    rings.place(ring, 2, {{x = 200.5, y = 0.5, name = 'stone-wall', dir = 'east', a = 0}}, surface, force)
+    local own = surface.create_entity{name = 'entity-ghost', inner_name = 'stone-wall', position = {x = 190.5, y = 0.5}}
+    ghosts.add(own)
+    -- Robots reach everything: step 1 claims skip covered ghosts, ring claims do not.
+    surface.find_logistic_networks_by_construction_area = function() return {{}} end
+    local c = ctx.soldier(nil, nil, 180, 0)
+    local record = {id = c.unit_number, entity = c, surface_index = 1, force_index = 1}
+    assert(ghosts.claim(record, 3, 9) == nil, 'a manual claim took a covered or ring ghost')
+    local cluster = ghosts.claim(record, 3, 9, {ring = true})
+    assert(cluster and #cluster == 1 and s.ring_ghosts[cluster[1].id], 'no ring ghost claimed')
+    ghosts.release(cluster)
+    assert(ghosts.claim(record, 3, 9, {ring = ring.key, segment = 1}) == nil, 'another segment was claimed')
+    assert(ghosts.claim(record, 3, 9, {ring = ring.key, segment = 2}), 'own segment not claimed')
+    assert(ghosts.count(1, 1) == 0, 'the window counts ring ghosts or covered ghosts')
+  end)
 end

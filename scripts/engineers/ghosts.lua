@@ -117,7 +117,11 @@ local function insert(bucket, entity)
   chunk.count, bucket.count = chunk.count + 1, bucket.count + 1
 end
 
-local function drop(bucket, entry)
+-- Set by rings.lua: told when a ring ghost leaves the registry, and whether
+-- the crane built it.
+M.on_ring_gone = nil
+
+local function drop(bucket, entry, built)
   local chunk = bucket.chunks[entry.chunk]
   if not (chunk and chunk.entries[entry.id]) then return end
   chunk.entries[entry.id] = nil
@@ -125,6 +129,9 @@ local function drop(bucket, entry)
   if chunk.count == 0 then bucket.chunks[entry.chunk] = nil end
   local s = state.get()
   s.claims[entry.id], s.blocked[entry.id] = nil, nil
+  if M.on_ring_gone and s.ring_ghosts and s.ring_ghosts[entry.id] then
+    M.on_ring_gone(entry.id, entry.position, built)
+  end
 end
 
 -- A wall or gate ghost was placed. A surface no constructor has visited is
@@ -150,31 +157,44 @@ function M.scan(surface)
   end
 end
 
--- Claims the nearest free ghost that no construction network covers, and
--- the free ghosts within `radius` of it, at most `max`. Robot coverage is
--- asked only about the seed, and a covered seed is not asked about again
--- for RECHECK ticks. Returns the cluster, or nil.
-function M.claim(record, radius, max)
+-- Claims the nearest free ghost and the free ghosts within `radius` of it,
+-- at most `max`. Without a filter only ghosts outside every construction
+-- network and outside every ring are taken; robot coverage is asked only
+-- about the seed, and a covered seed is not asked about again for RECHECK
+-- ticks. With a filter only ring ghosts are taken, robots or not:
+-- filter.ring == true any ring's, or filter.ring == key with
+-- filter.segment one segment's. filter.near moves the search centre.
+-- Returns the cluster, or nil.
+function M.claim(record, radius, max, filter)
   local s = state.get()
   local bucket = M.bucket(record.surface_index, record.force_index)
   if not (bucket and bucket.count > 0) then return nil end
   local entity = record.entity
   local surface, force, tick = entity.surface, entity.force, game.tick
+  local tags = s.ring_ghosts
   local function free(entry)
-    if not entry.entity.valid then drop(bucket, entry); return false end
+    if not entry.entity.valid then drop(bucket, entry, false); return false end
     if s.claims[entry.id] then return false end
+    local tag = tags and tags[entry.id]
+    if filter then
+      if not tag then return false end
+      if filter.ring ~= true and (tag.ring ~= filter.ring or tag.segment ~= filter.segment) then return false end
+    elseif tag then
+      return false
+    end
     local blocked = s.blocked[entry.id]
     if blocked then
       if blocked > tick then return false end
       s.blocked[entry.id] = nil
     end
+    if filter then return true end
     return not (entry.covered_until and entry.covered_until > tick)
   end
-  local position = entity.position
+  local position = filter and filter.near or entity.position
   for _ = 1, M.ATTEMPTS do
     local seed = M.nearest(bucket.chunks, position, free)
     if not seed then return nil end
-    if #surface.find_logistic_networks_by_construction_area(seed.position, force) == 0 then
+    if filter or #surface.find_logistic_networks_by_construction_area(seed.position, force) == 0 then
       local cluster = M.cluster(bucket.chunks, seed, radius, max, free)
       for _, entry in ipairs(cluster) do s.claims[entry.id] = record.id end
       return cluster
@@ -201,17 +221,20 @@ end
 -- The crane built the ghost, or found it gone.
 function M.placed(record, entry)
   local bucket = M.bucket(record.surface_index, record.force_index)
-  if bucket then drop(bucket, entry) end
+  if bucket then drop(bucket, entry, true) end
 end
 
--- Ghosts not known to be in robot coverage, for the Engineers window.
+-- Player ghosts not known to be in robot coverage, for the Engineers
+-- window. Ring ghosts are shown per ring instead.
 function M.count(surface_index, force_index)
   local bucket = M.bucket(surface_index, force_index)
   if not bucket then return 0 end
+  local s = state.peek()
+  local tags = s and s.ring_ghosts
   local tick, n = game.tick, 0
   for _, chunk in pairs(bucket.chunks) do
-    for _, entry in pairs(chunk.entries) do
-      if not (entry.covered_until and entry.covered_until > tick) then n = n + 1 end
+    for id, entry in pairs(chunk.entries) do
+      if not (tags and tags[id]) and not (entry.covered_until and entry.covered_until > tick) then n = n + 1 end
     end
   end
   return n

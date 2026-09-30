@@ -14,6 +14,12 @@
 --   next_task_force = the last task force id
 --   min_team = test override of constructor.MIN_TEAM
 --   dirty = true when the next split must run
+--   rings[force_index] = the force's rings and ring settings (rings/rings.lua)
+--   ring_ghosts[ghost unit_number] = {ring = key, segment = i}
+--   plan_tick = the tick the last ring segment was planned
+--   dismantle[ring key] = walls of a ring being taken down (rings/dismantle.lua)
+--   crossings[unit_number] = a unit crossing a ring (rings/crossing.lua)
+--   armed[player_index] = {n, tick}: a ring delete waiting for its second click
 -- }
 local M = {}
 
