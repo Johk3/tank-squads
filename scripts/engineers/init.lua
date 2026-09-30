@@ -192,11 +192,15 @@ function M.ring_centre(force, surface, position)
   return rings.set_centre(force, surface, position)
 end
 
-function M.ring_plan(force, n, i)
+function M.ring_plan(force, n, i, first_batch)
   local fs = rings.force_state(force.index)
   ghosts.scan(game.surfaces[fs.settings.surface_index or 1])
   local ring = fs.slots[n] or rings.start(fs, force, n, game.surfaces[fs.settings.surface_index or 1])
-  return rings.plan_segment(ring, i), ring.segments[i].live
+  local result = rings.plan_segment(ring, i)
+  -- The test places the whole segment at once, unless it times the
+  -- planning tick alone.
+  if not first_batch then rings.place_pending(ring, i, math.huge) end
+  return result, ring.segments[i].live
 end
 
 function M.ring_info(force_index, n)

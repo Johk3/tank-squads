@@ -8,9 +8,11 @@
 --   surface_index, centre}, slots[n] = ring, version, mark, mark_circle}
 -- ring = {key, n, force_index, surface_index, centre, radius, shape, state,
 --   count, segments[i], bulges, crossings[key], released[tile key], labels,
---   gatehouses[i], announced, audit, teardown, purge_tick, garrison}
+--   gatehouses[i], announced, audit, teardown, purge_tick, garrison,
+--   placing[i] = true for segments with tiles still to place}
 -- ring.state is 'building', 'built', 'tearing_down' or 'deleted'.
--- segment = {state, live, ghosts[unit_number] = {entity, position}, due}
+-- segment = {state, live, ghosts[unit_number] = {entity, position}, due,
+--   pending = {tiles, next}: planned tiles not placed yet}
 -- segment.state is 'unplanned', 'generating', 'placed' or 'built'.
 -- storage.engineers.ring_ghosts[unit_number] = {ring = key, segment = i}
 local state = require('scripts.engineers.state')
@@ -36,6 +38,8 @@ M.LABEL_DEPTH = 12
 M.PURGE = 10 * 60
 -- Ghosts the audit reads per call, once per second per ring.
 M.AUDIT_BATCH = 64
+-- Ghosts placed per sweep slice, and at once when a segment is planned.
+M.PLACE_BATCH = 64
 
 -- Set by crossing.lua (on_segment_built, on_breach) and garrison.lua
 -- (on_teardown).
@@ -307,12 +311,40 @@ function M.plan_segment(ring, i)
   add_crossings(ring, i, found.crossings, force, surface)
   local tiles = layout.plan(ring, i, {bulges = ring.bulges, crossings = found.crossings, water = found.water})
   seg.state = 'placed'
-  M.place(ring, i, tiles, surface, force)
-  if seg.live == 0 then
-    M.segment_built(ring, i)
-    return 'built'
+  if tiles[1] then
+    seg.pending = {tiles = tiles, next = 1}
+    ring.placing = ring.placing or {}
+    ring.placing[i] = true
+    M.place_pending(ring, i, M.PLACE_BATCH)
   end
-  return 'placed'
+  if seg.state == 'placed' and seg.live == 0 and not seg.pending then
+    M.segment_built(ring, i)
+  end
+  return seg.state == 'built' and 'built' or 'placed'
+end
+
+-- Places up to `budget` of segment i's planned tiles. Returns how many
+-- tiles it went through. A segment with nothing left to place and no
+-- live ghost is built.
+function M.place_pending(ring, i, budget)
+  local seg = ring.segments[i]
+  local pending = seg and seg.pending
+  if not pending then
+    if ring.placing then ring.placing[i] = nil end
+    return 0
+  end
+  local tiles = pending.tiles
+  local last = math.min(#tiles, pending.next + budget - 1)
+  local batch = {}
+  for k = pending.next, last do batch[#batch + 1] = tiles[k] end
+  M.place(ring, i, batch, game.surfaces[ring.surface_index], game.forces[ring.force_index])
+  pending.next = last + 1
+  if pending.next > #tiles then
+    seg.pending = nil
+    ring.placing[i] = nil
+    if seg.state == 'placed' and seg.live == 0 then M.segment_built(ring, i) end
+  end
+  return #batch
 end
 
 -- Every segment built: the ring is built. The force hears it once.
@@ -351,7 +383,7 @@ function M.ghost_gone(id, position, built)
       ring.released[tile_key(position)] = true
     end
   end
-  if seg.live <= 0 and seg.state == 'placed' then M.segment_built(ring, tag.segment) end
+  if seg.live <= 0 and seg.state == 'placed' and not seg.pending then M.segment_built(ring, tag.segment) end
 end
 
 -- Ghosts that vanished without passing the registry (robots built them,
@@ -421,11 +453,26 @@ function M.claim(record, radius, max)
   if taken then return taken, 'dismantle' end
   local own = record.segment
   if own then
-    local cluster = ghosts.claim(record, radius, max, {ring = own.ring, segment = own.index, near = own.near})
+    local filter = {ring = own.ring, segment = own.index, near = own.near}
+    local cluster = ghosts.claim(record, radius, max, filter)
     if cluster then return cluster, 'build' end
+    -- Nothing placed is left: the next batch of its segment goes up now.
+    local ring = M.by_key(own.ring)
+    if ring and ring.placing and ring.placing[own.index] and M.place_pending(ring, own.index, M.PLACE_BATCH) > 0 then
+      cluster = ghosts.claim(record, radius, max, filter)
+      if cluster then return cluster, 'build' end
+    end
   end
   local cluster = ghosts.claim(record, radius, max, {ring = true})
   if cluster then return cluster, 'build' end
+  -- Planned ghosts still waiting to be placed come before a new segment.
+  for _, ring in pairs(M.force_state(record.force_index).slots) do
+    local i = ring.placing and ring.surface_index == record.surface_index and next(ring.placing)
+    if i and M.place_pending(ring, i, M.PLACE_BATCH) > 0 then
+      cluster = ghosts.claim(record, radius, max, {ring = true})
+      if cluster then return cluster, 'build' end
+    end
+  end
   local entity = record.entity
   local ring = M.current(M.force_state(record.force_index), entity.force, entity.surface)
   if not ring or ring.surface_index ~= record.surface_index then return nil, 'done' end
@@ -506,9 +553,9 @@ function M.delete(force_index, n)
       if s.ring_ghosts then s.ring_ghosts[id] = nil end
       if g.entity.valid then g.entity.destroy() end
     end
-    seg.ghosts, seg.live = {}, 0
+    seg.ghosts, seg.live, seg.pending = {}, 0, nil
   end
-  ring.state, ring.teardown, ring.gatehouses = 'tearing_down', 1, {}
+  ring.state, ring.teardown, ring.gatehouses, ring.placing = 'tearing_down', 1, {}, nil
   M.clear_crossings(ring)
   if M.on_teardown then M.on_teardown(ring) end
   M.bump(fs)
@@ -599,9 +646,15 @@ end
 function M.tick(phase)
   local s = state.peek()
   if not (s and s.rings) then return end
-  local tick = game.tick
+  local tick, budget = game.tick, M.PLACE_BATCH
   for _, fs in pairs(s.rings) do
     for _, ring in pairs(fs.slots) do
+      if budget > 0 and ring.placing and (ring.state == 'building' or ring.state == 'built') then
+        for i in pairs(ring.placing) do
+          budget = budget - M.place_pending(ring, i, budget)
+          if budget <= 0 then break end
+        end
+      end
       if ring.state == 'tearing_down' then
         M.sweep_teardown(ring, tick)
       elseif (phase == nil or phase == 0) and (ring.state == 'building' or ring.state == 'built') then

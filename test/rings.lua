@@ -1113,4 +1113,73 @@ return function(ctx)
     rings.audit(ring)
     assert(seg.live == 0 and seg.state == 'built', 'the audit did not finish the segment')
   end)
+
+  -- Segment 1 of a radius-200 ring planned with `n` wall tiles on two
+  -- columns just inside the east wall line.
+  local function planned(n)
+    local rings, s, surface, force = ring_world()
+    local obstacles = require('scripts.engineers.rings.obstacles')
+    local layout = require('scripts.engineers.rings.layout')
+    local scan, plan = obstacles.scan, layout.plan
+    obstacles.scan = function() return {bulges = {}, crossings = {}, water = {}} end
+    layout.plan = function()
+      local tiles = {}
+      for k = 1, n do
+        local col, row = (k - 1) % 2, math.floor((k - 1) / 2)
+        tiles[k] = {x = 200.5 + col, y = -190.5 + row, name = 'stone-wall', dir = 'east', a = -191 + row}
+      end
+      return tiles
+    end
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    local ok, result = pcall(rings.plan_segment, ring, 1)
+    obstacles.scan, layout.plan = scan, plan
+    assert(ok, result)
+    return rings, ring, result, s
+  end
+
+  test('rings: a planned segment places its ghosts a batch at a time', function()
+    local rings, ring, result = planned(150)
+    local seg = ring.segments[1]
+    assert(result == 'placed' and seg.live == rings.PLACE_BATCH, seg.live .. ' ghosts placed at once')
+    rings.tick(3)
+    assert(seg.live == 2 * rings.PLACE_BATCH, seg.live .. ' after one slice')
+    rings.tick(4)
+    assert(seg.live == 150 and not seg.pending, 'the rest was not placed')
+  end)
+
+  test('rings: a segment is not built while ghosts wait to be placed', function()
+    local rings, ring = planned(150)
+    local seg = ring.segments[1]
+    local ids = {}
+    for id, g in pairs(seg.ghosts) do ids[#ids + 1] = {id, g.position} end
+    for _, v in ipairs(ids) do rings.ghost_gone(v[1], v[2], true) end
+    assert(seg.live == 0 and seg.state == 'placed', 'built with ghosts still to place')
+    for phase = 1, 3 do rings.tick(phase) end
+    ids = {}
+    for id, g in pairs(seg.ghosts) do ids[#ids + 1] = {id, g.position} end
+    for _, v in ipairs(ids) do rings.ghost_gone(v[1], v[2], true) end
+    assert(seg.state == 'built', 'not built after the last ghost')
+  end)
+
+  test('rings: a constructor with nothing placed left places the next batch of its segment', function()
+    local rings, ring, _, s = planned(150)
+    local seg = ring.segments[1]
+    for id in pairs(seg.ghosts) do s.claims[id] = 999 end
+    local c = ctx.soldier(nil, nil, 190, -170)
+    local record = {id = c.unit_number, entity = c, surface_index = 1, force_index = 1, autonomous = true,
+      segment = {ring = ring.key, index = 1, near = {x = 200.5, y = -150.5}}}
+    local cluster = rings.claim(record, 3, 9)
+    assert(cluster and seg.live == 2 * rings.PLACE_BATCH, 'no new batch for the constructor')
+  end)
+
+  test('rings: a constructor with no segment of its own places a batch before planning a new one', function()
+    local rings, ring, _, s = planned(150)
+    local seg = ring.segments[1]
+    for id in pairs(seg.ghosts) do s.claims[id] = 999 end
+    local c = ctx.soldier(nil, nil, 190, -170)
+    local record = {id = c.unit_number, entity = c, surface_index = 1, force_index = 1, autonomous = true}
+    local cluster, mode = rings.claim(record, 3, 9)
+    assert(cluster and mode == 'build', 'no cluster: ' .. tostring(mode))
+    assert(seg.live == 2 * rings.PLACE_BATCH and ring.segments[2].state == 'unplanned', 'a new segment was planned')
+  end)
 end

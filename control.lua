@@ -566,7 +566,9 @@ remote.add_interface("tank-squads", {
   engineers_ring_centre = function(force_name, surface_index, x, y)
     return engineers.ring_centre(game.forces[force_name], game.surfaces[surface_index], {x = x, y = y})
   end,
-  engineers_ring_plan = function(force_name, n, i) return engineers.ring_plan(game.forces[force_name], n, i) end,
+  engineers_ring_plan = function(force_name, n, i, first_batch)
+    return engineers.ring_plan(game.forces[force_name], n, i, first_batch)
+  end,
   engineers_ring_info = function(force_name, n) return engineers.ring_info(game.forces[force_name].index, n) end,
   engineers_set_autonomous = function(unit_number, value) return engineers.set_autonomous(unit_number, value) end,
   engineers_ring_delete = function(force_name, n) return engineers.ring_delete(game.forces[force_name].index, n) end,

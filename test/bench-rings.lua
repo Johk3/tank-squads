@@ -17,19 +17,19 @@ local ok, err = pcall(function()
   remote.call('tank-squads', 'engineers_ring_centre', 'player', 1, 0, -3000)
   remote.call('tank-squads', 'engineers_ring_set', 'player', 'spacing', 200)
   remote.call('tank-squads', 'engineers_ring_set', 'player', 'count', 2)
+  local r = engine_game.create_profiler()
+  remote.call('tank-squads', 'engineers_ring_plan', 'player', 1, 1, true)
+  local first = remote.call('tank-squads', 'engineers_ring_info', 'player', 1).count
+  for i = 2, first do remote.call('tank-squads', 'engineers_ring_plan', 'player', 1, i, true) end
+  r.stop(); r.divide(first)
+  rcon.print({'', 'Planning tick (scan, layout, first batch), average of ', first, ': ', r})
+  for _ = 1, 200 do remote.call('tank-squads', 'engineers_ring_tick') end
   local p = engine_game.create_profiler()
-  local planned = 0
-  for n = 1, 2 do
-    remote.call('tank-squads', 'engineers_ring_plan', 'player', n, 1)
-    planned = planned + 1
-    local count = remote.call('tank-squads', 'engineers_ring_info', 'player', n).count
-    for i = 2, count do
-      remote.call('tank-squads', 'engineers_ring_plan', 'player', n, i)
-      planned = planned + 1
-    end
-  end
+  remote.call('tank-squads', 'engineers_ring_plan', 'player', 2, 1)
+  local planned = remote.call('tank-squads', 'engineers_ring_info', 'player', 2).count
+  for i = 2, planned do remote.call('tank-squads', 'engineers_ring_plan', 'player', 2, i) end
   p.stop(); p.divide(planned)
-  rcon.print({'', 'Planning one segment, average of ', planned, ': ', p})
+  rcon.print({'', 'Planning one segment with all its ghosts, average of ', planned, ': ', p})
   remote.call('tank-squads', 'engineers_min_team', 0)
   for i = 1, 3 do
     local c = s.create_entity{name = 'tank-squad-constructor', position = {-20 + i * 10, -3000}, force = force, raise_built = true}
