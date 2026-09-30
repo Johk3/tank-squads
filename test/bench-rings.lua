@@ -17,12 +17,12 @@ local ok, err = pcall(function()
   remote.call('tank-squads', 'engineers_ring_centre', 'player', 1, 0, -3000)
   remote.call('tank-squads', 'engineers_ring_set', 'player', 'spacing', 200)
   remote.call('tank-squads', 'engineers_ring_set', 'player', 'count', 2)
-  local r = engine_game.create_profiler()
   remote.call('tank-squads', 'engineers_ring_plan', 'player', 1, 1, true)
   local first = remote.call('tank-squads', 'engineers_ring_info', 'player', 1).count
+  local r = engine_game.create_profiler()
   for i = 2, first do remote.call('tank-squads', 'engineers_ring_plan', 'player', 1, i, true) end
-  r.stop(); r.divide(first)
-  rcon.print({'', 'Planning tick (scan, layout, first batch), average of ', first, ': ', r})
+  r.stop(); r.divide(first - 1)
+  rcon.print({'', 'Planning tick (scan, layout, first batch), average of segments 2 to ', first, ': ', r})
   for _ = 1, 200 do remote.call('tank-squads', 'engineers_ring_tick') end
   local p = engine_game.create_profiler()
   remote.call('tank-squads', 'engineers_ring_plan', 'player', 2, 1)

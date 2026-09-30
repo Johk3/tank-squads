@@ -146,16 +146,24 @@ function M.plan(ring, i, obstacles)
     water = obstacles.water or {}}
   local seg = geometry.segment(ring, i)
   local house_ok = M.house_clear(ring, seg, o)
-  local deep = 4
+  -- Only the bulges and crossings that reach this segment, in their order,
+  -- so each tile looks through a few instead of the whole ring's.
+  local near = {bulges = {}, crossings = {}, water = o.water}
   for _, b in ipairs(o.bulges) do
-    if b.side == seg.side and b.kind == 'bulge' and b.a1 + 4 >= seg.lo and b.a0 - 4 <= seg.hi then
-      deep = math.max(deep, b.depth + 4)
-    end
+    if b.side == seg.side and b.a1 + 4 >= seg.lo and b.a0 - 4 <= seg.hi then near.bulges[#near.bulges + 1] = b end
   end
+  for _, c in ipairs(o.crossings) do
+    if c.side == seg.side and c.a1 >= seg.lo and c.a0 <= seg.hi then near.crossings[#near.crossings + 1] = c end
+  end
+  local deep = 4
+  for _, b in ipairs(near.bulges) do
+    if b.kind == 'bulge' then deep = math.max(deep, b.depth + 4) end
+  end
+  local wet = next(o.water) ~= nil
   local tiles = {}
   local function consider(a, d, x, y, dir)
-    if o.water[x .. ',' .. y] then return end
-    local name = M.cell(ring, seg, a, d, x, y, o, house_ok)
+    if wet and o.water[x .. ',' .. y] then return end
+    local name = M.cell(ring, seg, a, d, x, y, near, house_ok)
     if name then
       tiles[#tiles + 1] = {x = x + 0.5, y = y + 0.5, name = name == 'gate' and 'gate' or 'stone-wall', dir = dir, a = a}
     end
@@ -163,7 +171,12 @@ function M.plan(ring, i, obstacles)
   if ring.shape ~= 'circle' then
     local dir = (seg.side == 1 or seg.side == 3) and 'east' or 'north'
     for a = seg.lo, seg.hi do
-      for d = -3, deep do
+      -- Rows beyond the teeth hold walls only beside a bulge.
+      local rows = 4
+      for _, b in ipairs(near.bulges) do
+        if b.kind == 'bulge' and a >= b.a0 - 4 and a <= b.a1 + 4 then rows = math.max(rows, b.depth + 4) end
+      end
+      for d = -3, rows do
         local x, y = geometry.to_tile(ring, seg.side, a, d)
         consider(a, d, x, y, dir)
       end

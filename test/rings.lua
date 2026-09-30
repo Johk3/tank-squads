@@ -1193,4 +1193,17 @@ return function(ctx)
     for k = before + 1, #ctx.draws() do assert(not ctx.draws()[k].valid, 'a ring render was left on the map') end
     assert(rings.peek(1) == nil, 'the rings stayed')
   end)
+
+  test('rings: planning reads deep rows only beside a bulge', function()
+    local ring = square(200)
+    local o = {bulges = {{side = 1, a0 = -180, a1 = -170, depth = 60, kind = 'bulge'}}}
+    local cell, calls = layout.cell, 0
+    layout.cell = function(...) calls = calls + 1; return cell(...) end
+    local ok, err = pcall(layout.plan, ring, 1, o)
+    layout.cell = cell
+    assert(ok, err)
+    local seg = geometry.segment(ring, 1)
+    local plain = (seg.hi - seg.lo + 1) * 8
+    assert(calls < plain + 20 * 70, calls .. ' cells read for ' .. plain .. ' plain ones')
+  end)
 end
