@@ -23,8 +23,10 @@ unit.name, unit.icon, unit.icon_size = names.constructor, ICON, 1254
 unit.order = 'z-' .. names.constructor
 unit.max_health, unit.movement_speed = 800, 0.10
 unit.distance_per_frame = 0.2
+-- The hull is drawn larger than it collides, so it still fits through
+-- 2-tile gaps, ring gates and the stand-off beside a ring's band.
 unit.collision_box = {{-0.9, -0.9}, {0.9, 0.9}}
-unit.selection_box = {{-1.3, -1.3}, {1.3, 1.3}}
+unit.selection_box = {{-1.6, -1.6}, {1.6, 1.6}}
 unit.run_animation = hull()
 unit.attack_parameters = {
   type = 'projectile', range = 0.5, cooldown = 600, ammo_category = 'melee',

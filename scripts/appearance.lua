@@ -66,7 +66,7 @@ local M = {
   -- source pixels below the frame centre; scripts/engineers/crane.lua
   -- offsets the frame so that point stays on the hull. Calibrate both in
   -- the engine check.
-  constructor = {chassis_scale = 0.5, crane_scale = 0.16, crane_base = 162},
+  constructor = {chassis_scale = 0.625, crane_scale = 0.2, crane_base = 162},
   tier_colors = {
     {r = 0.9, g = 0.8, b = 0.2, a = 1},
     {r = 0.85, g = 0.25, b = 0.2, a = 1},
