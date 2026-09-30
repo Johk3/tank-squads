@@ -34,8 +34,14 @@ local function unarmed(command)
   return out
 end
 
-function M.set_command(entity, command)
+-- Set by the engineers: routes an order that crosses a ring through a
+-- gatehouse. Returns true when it sent the unit there itself.
+M.crossing = nil
+
+-- `direct_path` sends the order as it is, without a ring crossing.
+function M.set_command(entity, command, direct_path)
   M.forget(entity.unit_number)
+  if M.crossing and not direct_path and M.crossing(entity, command, 'combat') then return end
   if entity.name == names.headquarters then
     entity.commandable.set_command(unarmed(command))
     return
@@ -45,6 +51,13 @@ function M.set_command(entity, command)
     local mission = {entity = entity, order = command}
     if assault_next(mission) then storage.assaults[entity.unit_number] = mission; return end
   end
+  entity.commandable.set_command(command)
+end
+
+-- For units commanded outside combat's bookkeeping (shredders,
+-- constructors): the same ring crossing, then the order as it is.
+function M.direct(entity, command)
+  if M.crossing and M.crossing(entity, command, 'direct') then return end
   entity.commandable.set_command(command)
 end
 

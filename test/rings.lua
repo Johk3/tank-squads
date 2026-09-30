@@ -708,4 +708,104 @@ return function(ctx)
     obstacles.scan, obstacles.crossing_present = saved.scan, saved.present
     assert(ok, err)
   end)
+
+  -- Ring 1 of radius 200 round (0, 0) with a working gatehouse in segment 2
+  -- (east side, gates at x = 199 .. 201, y = -8 .. 7) and a soldier inside.
+  local function crossing_world()
+    local rings, s, surface, force = ring_world()
+    require('scripts.engineers.init')
+    defines.command.attack, defines.command.stop = 3, 4
+    defines.distraction.none = 0
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    ring.state = 'built'
+    local opened = {}
+    local gate = {valid = true, request_to_open = function(f, ticks) opened[#opened + 1] = ticks end}
+    ring.gatehouses[2] = {gates = {gate}, complete = true, inside = {x = 191.5, y = 0.5}, outside = {x = 210.5, y = 0.5}}
+    local unit = ctx.soldier(nil, nil, 100, 0)
+    return unit, ring, opened, s
+  end
+
+  local function go(x, y)
+    return {type = defines.command.go_to_location, destination = {x = x, y = y}, radius = 4,
+      distraction = defines.distraction.by_enemy}
+  end
+
+  test('rings: a unit ordered across a ring passes through a gatehouse its gates open for', function()
+    local combat = require('scripts.combat')
+    local crossing = require('scripts.engineers.rings.crossing')
+    local unit, _, opened, s = crossing_world()
+    combat.set_command(unit, go(300, 0))
+    assert(unit.command.destination.x == 191.5, 'not sent to the inside apron')
+    crossing.on_command_completed(unit.unit_number, defines.behavior_result.success)
+    assert(opened[1] == crossing.OPEN_TICKS and unit.command.type == defines.command.stop, 'gates not opened')
+    crossing.on_command_completed(unit.unit_number, defines.behavior_result.success)
+    assert(unit.command.destination.x == 210.5 and #opened == 2, 'not sent through')
+    unit.position = {x = 210.5, y = 0.5}
+    crossing.on_command_completed(unit.unit_number, defines.behavior_result.success)
+    assert(unit.command.destination.x == 300, 'the order was not taken up again')
+    assert(not s.crossings[unit.unit_number])
+  end)
+
+  test('rings: no complete gatehouse: the order goes out unchanged', function()
+    local combat = require('scripts.combat')
+    local unit, ring = crossing_world()
+    ring.gatehouses[2].complete = false
+    combat.set_command(unit, go(300, 0))
+    assert(unit.command.destination.x == 300)
+  end)
+
+  test('rings: an order to the wall itself or on the same side needs no crossing', function()
+    local combat = require('scripts.combat')
+    local unit = crossing_world()
+    combat.set_command(unit, go(200.5, 5.5))
+    assert(unit.command.destination.x == 200.5, 'an order onto the band went through a gatehouse')
+    combat.set_command(unit, go(-100, 50))
+    assert(unit.command.destination.x == -100)
+  end)
+
+  test('rings: a failed approach gives the order back without crossing', function()
+    local combat = require('scripts.combat')
+    local crossing = require('scripts.engineers.rings.crossing')
+    local unit, _, _, s = crossing_world()
+    combat.set_command(unit, go(300, 0))
+    crossing.on_command_completed(unit.unit_number, defines.behavior_result.fail)
+    assert(unit.command.destination.x == 300 and not s.crossings[unit.unit_number])
+  end)
+
+  test('rings: a new order while passing through keeps the crossing going', function()
+    local combat = require('scripts.combat')
+    local crossing = require('scripts.engineers.rings.crossing')
+    local unit = crossing_world()
+    combat.set_command(unit, go(300, 0))
+    crossing.on_command_completed(unit.unit_number, defines.behavior_result.success)
+    combat.set_command(unit, go(320, 10))
+    assert(unit.command.type == defines.command.stop, 'the wait at the gate was cut short')
+    crossing.on_command_completed(unit.unit_number, defines.behavior_result.success)
+    unit.position = {x = 210.5, y = 0.5}
+    crossing.on_command_completed(unit.unit_number, defines.behavior_result.success)
+    assert(unit.command.destination.x == 320, 'the newer order was lost')
+  end)
+
+  test('rings: a built segment records its gatehouse, a breach marks it broken', function()
+    local rings, _, surface, force = ring_world()
+    local crossing = require('scripts.engineers.rings.crossing')
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    for y = -8, 7 do
+      local g = ctx.soldier(nil, nil, 200.5, y + 0.5)
+      g.name, g.type = 'gate', 'gate'
+    end
+    rings.segment_built(ring, 2)
+    local house = ring.gatehouses[2]
+    assert(house and house.complete and #house.gates == 16, 'gatehouse not recorded')
+    assert(house.inside.x == 191.5 and house.outside.x == 210.5)
+    crossing.breached(ring, 2)
+    assert(not house.complete)
+  end)
+
+  test('rings: shredders and constructors ask for crossings too', function()
+    local combat = require('scripts.combat')
+    local unit = crossing_world()
+    combat.direct(unit, go(300, 0))
+    assert(unit.command.destination.x == 191.5, 'a direct command skipped the crossing')
+  end)
 end

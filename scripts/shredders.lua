@@ -20,6 +20,7 @@
 -- Everything runs from events and the existing sweep slices; a parked
 -- shredder costs nothing until its division moves.
 local names = require('scripts.names')
+local combat = require('scripts.combat')
 local divisions = require('scripts.divisions')
 local geometry = require('scripts.shredder_geometry')
 local appearance = require('scripts.appearance')
@@ -113,8 +114,8 @@ end
 local function send(record, position)
   if not record.entity.valid then return end
   record.state = 'moving'
-  record.entity.commandable.set_command{type = defines.command.go_to_location, destination = position,
-    radius = 2, distraction = defines.distraction.none}
+  combat.direct(record.entity, {type = defines.command.go_to_location, destination = position,
+    radius = 2, distraction = defines.distraction.none})
 end
 
 local function park(record)
@@ -519,8 +520,8 @@ function M.launch(record)
   s.charging[record.id] = true
   record.still = {x = p.x, y = p.y, tick = game.tick}
   draw_body(record, 'tank-squad-shredder-boost', LOOK.boost_offset, 0.5)
-  entity.commandable.set_command{type = defines.command.attack, target = target,
-    distraction = defines.distraction.none}
+  combat.direct(entity, {type = defines.command.attack, target = target,
+    distraction = defines.distraction.none})
   entity.surface.play_sound{path = 'tank-squad-shredder-boost-sound', position = entity.position}
   return true
 end

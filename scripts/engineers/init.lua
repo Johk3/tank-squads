@@ -9,6 +9,8 @@ local task_force = require('scripts.engineers.task_force')
 local loans = require('scripts.engineers.loans')
 local window = require('scripts.engineers.window')
 local rings = require('scripts.engineers.rings.rings')
+local combat = require('scripts.combat')
+local crossing = require('scripts.engineers.rings.crossing')
 local names = require('scripts.names')
 
 local M = {}
@@ -24,6 +26,8 @@ M.close_window = window.close
 M.click = window.click
 M.checked = window.checked
 M.refresh_windows = window.refresh_all
+combat.crossing = crossing.route
+M.on_crossing_completed = crossing.on_command_completed
 
 -- Once per second. Without the engineers state this is one table check.
 -- Open windows refresh; a player with constructors but no division still
@@ -51,6 +55,7 @@ end
 -- The last constructor gone lets its team go at once.
 function M.unregister(unit_number)
   constructor.unregister(unit_number)
+  crossing.forget(unit_number)
   teams.refresh()
 end
 
@@ -69,6 +74,7 @@ function M.forget_soldier(entity)
   task_force.on_soldier_died(entity)
   loans.finish(entity.unit_number)
   teams.forget(entity.unit_number)
+  crossing.forget(entity.unit_number)
 end
 
 function M.on_command_completed(unit_number, result)
@@ -90,6 +96,7 @@ function M.tick(phase)
   end
   task_force.tick(phase)
   if s.rings and next(s.rings) then rings.tick(phase) end
+  if s.crossings and (phase == nil or phase == 0) then crossing.sweep() end
 end
 
 function M.on_forces_merged(event)

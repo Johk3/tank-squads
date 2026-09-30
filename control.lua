@@ -293,6 +293,8 @@ script.on_event(defines.events.on_ai_command_completed, function(event)
   -- A finished distraction (a fight on the way) is reported on its own; the
   -- engine then resumes the original command, whose completion follows.
   if event.was_distracted then return end
+  -- A unit crossing a ring hears back at each gatehouse step first.
+  if engineers.on_crossing_completed(event.unit_number, event.result) then return end
   if shredders.on_command_completed(event.unit_number, event.result) then return end
   headquarters.on_command_completed(event.unit_number)
   if combat.on_command_completed(event.unit_number, event.result) then return end
@@ -546,6 +548,18 @@ remote.add_interface("tank-squads", {
   engineers_ring_delete = function(force_name, n) return engineers.ring_delete(game.forces[force_name].index, n) end,
   engineers_ring_again = function(force_name, n) return engineers.ring_again(game.forces[force_name].index, n) end,
   engineers_ring_tick = function() engineers.ring_tick() end,
+  engineers_go = function(unit_number, x, y)
+    local entity = game.get_entity_by_unit_number(unit_number)
+    if not (entity and entity.valid) then return false end
+    combat.set_command(entity, {type = defines.command.go_to_location, destination = {x = x, y = y}, radius = 2,
+      distraction = defines.distraction.by_enemy})
+    return true
+  end,
+  engineers_crossing = function(unit_number)
+    local s = storage.engineers
+    local entry = s and s.crossings and s.crossings[unit_number]
+    return entry and entry.phase or nil
+  end,
   cover_tick = function() cover.tick() end,
   shredders_strike = function(ids, surface_index, position, force_name, radius)
     return shredders.strike(ids, game.surfaces[surface_index], position, game.forces[force_name], radius)

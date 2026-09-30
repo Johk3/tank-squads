@@ -22,6 +22,7 @@ local crane = require('scripts.engineers.crane')
 local teams = require('scripts.engineers.teams')
 local task_force = require('scripts.engineers.task_force')
 local rings = require('scripts.engineers.rings.rings')
+local combat = require('scripts.combat')
 
 local M = {}
 
@@ -63,8 +64,8 @@ local function say(record, key)
 end
 
 local function go(record, destination, radius)
-  record.entity.commandable.set_command{type = defines.command.go_to_location, destination = destination,
-    radius = radius or 1, distraction = defines.distraction.none}
+  combat.direct(record.entity, {type = defines.command.go_to_location, destination = destination,
+    radius = radius or 1, distraction = defines.distraction.none})
 end
 
 local function stop(record)
