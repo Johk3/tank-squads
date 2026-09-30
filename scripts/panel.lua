@@ -106,7 +106,8 @@ function M.update(player_index)
   for _, record in pairs(slots) do
     if #record.members > 0 or divisions.is_reinforced(record) then populated = true; break end
   end
-  local constructors = engineers.count(player.force_index) > 0
+  -- The engineers button stays while the force has constructors or rings.
+  local constructors = engineers.count(player.force_index) > 0 or engineers.has_rings(player.force_index)
   if not populated and not constructors then
     if frame then frame.visible = false end
     -- A panel from before the window moved to the screen.
@@ -155,6 +156,11 @@ function M.update(player_index)
       -- A player's name can be long, and the widest row sets the width of
       -- every row. Short rows name the ward only in the tooltip.
       mode_caption = compact and {"tank-squads.mode-escort-short"} or escort_caption
+    end
+    local route = record and record.patrol
+    if mode == "patrol" and route and route.garrison then
+      mode_caption = {"tank-squads.mode-garrison", tonumber(string.match(route.garrison, ":(%d+)$"))}
+      mode_key = "garrison:" .. route.garrison
     end
     local signature = count .. ":" .. mode_key .. ':' .. tostring(target) .. ':' .. tostring(recruits) .. ':' .. tostring(compact)
     if button.tags.status ~= signature then

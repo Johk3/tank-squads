@@ -27,6 +27,8 @@ M.toggle_window = window.toggle
 M.close_window = window.close
 M.click = window.click
 M.checked = window.checked
+M.selected = window.selected
+M.confirmed = window.confirmed
 M.refresh_windows = window.refresh_all
 combat.crossing = crossing.route
 patrol.garrison_layout = garrison.layout
@@ -41,14 +43,30 @@ end
 M.on_crossing_completed = crossing.on_command_completed
 
 -- Once per second. Without the engineers state this is one table check.
+function M.has_rings(force_index)
+  local fs = rings.peek(force_index)
+  return fs ~= nil and next(fs.slots) ~= nil
+end
+
+-- The ring centre tool was used: the middle of the selected area.
+function M.pick_centre(event)
+  local player = game.get_player(event.player_index)
+  if not player then return end
+  local a = event.area
+  rings.set_centre(player.force, event.surface,
+    {x = (a.left_top.x + a.right_bottom.x) / 2, y = (a.left_top.y + a.right_bottom.y) / 2})
+  player.clear_cursor()
+  window.refresh(event.player_index)
+end
+
 -- Open windows refresh; a player with constructors but no division still
 -- gets the panel (and its engineers button) through update_panel.
 function M.slow_sweep(update_panel)
   local s = state.peek()
   if not s then return end
   window.refresh_all()
-  if not next(s.constructors) then
-    -- The last constructor is gone: panels are judged once more.
+  if not next(s.constructors) and not (s.rings and next(s.rings)) then
+    -- The last constructor and ring are gone: panels are judged once more.
     if s.shown then
       s.shown = nil
       for _, player in pairs(game.connected_players) do update_panel(player.index) end
@@ -57,7 +75,7 @@ function M.slow_sweep(update_panel)
   end
   s.shown = true
   for _, player in pairs(game.connected_players) do
-    if not (storage.divisions and storage.divisions[player.index]) and constructor.count(player.force_index) > 0 then
+    if not (storage.divisions and storage.divisions[player.index]) and (constructor.count(player.force_index) > 0 or M.has_rings(player.force_index)) then
       update_panel(player.index)
     end
   end

@@ -1015,4 +1015,87 @@ return function(ctx)
     ctx.handlers().load()
     assert(not wall_filtered())
   end)
+
+  local function open_window()
+    local engineers = require('scripts.engineers.init')
+    ctx.players()[1].surface_index = 1
+    engineers.toggle_window(1)
+    return ctx.players()[1].gui.screen.tank_squads_engineers.body, engineers
+  end
+
+  test('rings: the window sets spacing, count and shape for the force', function()
+    local rings = ring_world()
+    local body, engineers = open_window()
+    assert(body.ring_settings.ring_spacing.text == '200' and body.ring_settings.ring_count.text == '3')
+    local field = body.ring_settings.ring_spacing
+    field.text = '5000'
+    assert(engineers.confirmed{player_index = 1, element = field})
+    assert(rings.force_state(1).settings.spacing == 1000 and field.text == '1000', 'spacing not clamped')
+    local shape = body.ring_settings.ring_shape
+    shape.selected_index = 2
+    assert(engineers.selected{player_index = 1, element = shape})
+    assert(rings.force_state(1).settings.shape == 'circle')
+    assert(body.ring_list.ring_3 and not body.ring_list.ring_4, 'one row per ring up to the count')
+  end)
+
+  test('rings: deleting a ring from the window takes two clicks', function()
+    local rings, _, surface, force = ring_world()
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    local body, engineers = open_window()
+    assert(engineers.click{player_index = 1, element = body.ring_list.ring_delete_1})
+    assert(ring.state == 'building', 'one click deleted the ring')
+    body = ctx.players()[1].gui.screen.tank_squads_engineers.body
+    assert(engineers.click{player_index = 1, element = body.ring_list.ring_delete_1})
+    assert(ring.state == 'tearing_down', 'the second click did not delete it')
+  end)
+
+  test('rings: the auto box switches a constructor to rings', function()
+    ring_world()
+    local e = ctx.soldier(nil, nil, 10, 10)
+    e.name, e.health, e.max_health = names.constructor, 800, 800
+    local record = require('scripts.engineers.constructor').register(e)
+    local body, engineers = open_window()
+    local box = body.list['auto_' .. record.id]
+    assert(box and box.state == false, 'no auto box')
+    box.state = true
+    assert(engineers.checked{player_index = 1, element = box})
+    assert(record.autonomous)
+  end)
+
+  test('rings: a garrison dropdown puts a division on a ring', function()
+    local rings, _, surface, force = ring_world()
+    require('scripts.engineers.init')
+    defines.command.attack, defines.command.stop = 3, 4
+    defines.distraction.none = 0
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    require('scripts.divisions').assign(1, 2, {ctx.soldier(nil, nil, 150, -150)})
+    local body, engineers = open_window()
+    local drop = body.garrison.cell_2.garrison_2
+    assert(body.garrison.cell_2.visible and #drop.items == 4, 'dropdown without the rings')
+    drop.selected_index = 2
+    assert(engineers.selected{player_index = 1, element = drop})
+    assert(require('scripts.divisions').record(1, 2).patrol.garrison == ring.key)
+    require('scripts.panel').update(1)
+    local row = ctx.players()[1].gui.screen.tank_squads_divisions.body.divisions.row_2.division_2
+    assert(row.caption[5][1] == 'tank-squads.mode-garrison' and row.caption[5][2] == 1, 'panel does not show the garrison')
+  end)
+
+  test('rings: the centre tool picks the ring centre', function()
+    local rings = ring_world()
+    local engineers = require('scripts.engineers.init')
+    local player = ctx.players()[1]
+    player.cursor = 'tank-squad-ring-centre'
+    engineers.pick_centre{player_index = 1, surface = game.surfaces[1],
+      area = {left_top = {x = 10, y = 20}, right_bottom = {x = 12, y = 22}}}
+    local c = rings.force_state(1).settings.centre
+    assert(c.x == 11 and c.y == 21 and player.cursor == nil)
+  end)
+
+  test('rings: the panel and its engineers button show while the force has rings', function()
+    local rings, _, surface, force = ring_world()
+    rings.start(rings.force_state(1), force, 1, surface)
+    require('scripts.panel').update(1)
+    local frame = ctx.players()[1].gui.screen.tank_squads_divisions
+    assert(frame and frame.visible and frame.titlebar.engineers.visible)
+  end)
 end

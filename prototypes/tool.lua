@@ -22,6 +22,17 @@ data:extend{
     },
   },
   {
+    type = "selection-tool",
+    name = "tank-squad-ring-centre",
+    icon = "__base__/graphics/icons/wall.png",
+    stack_size = 1,
+    flags = {"only-in-cursor", "spawnable", "not-stackable"},
+    subgroup = "tool",
+    order = "z-tank-squad-d",
+    select = {border_color = {r = 1, g = 0.8, b = 0.2}, cursor_box_type = "entity", mode = {"nothing"}},
+    alt_select = {border_color = {r = 1, g = 0.8, b = 0.2}, cursor_box_type = "entity", mode = {"nothing"}},
+  },
+  {
     type = "shortcut",
     name = "tank-squad-command-tool",
     action = "spawn-item",

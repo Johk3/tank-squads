@@ -1085,7 +1085,7 @@ return function(ctx)
     local record = engineers.register(E.constructor_entity(5, 5))
     engineers.toggle_window(1)
     local frame = ctx.players()[1].gui.screen.tank_squads_engineers
-    assert(frame and frame.valid and frame.style.width == 300)
+    assert(frame and frame.valid and frame.style.width == 340)
     local body = frame.body
     assert(body.pool.cell_2.visible and not body.pool.cell_3.visible, 'division rows wrong')
     local box = body.pool.cell_2.pool_2

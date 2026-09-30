@@ -321,6 +321,10 @@ script.on_event(defines.events.on_ai_command_completed, function(event)
 end)
 
 script.on_event(defines.events.on_player_selected_area, function(event)
+  if event.item == "tank-squad-ring-centre" then
+    engineers.pick_centre(event)
+    return
+  end
   if event.item ~= "tank-squad-command-tool" then return end
   divisions.select_area(event.player_index, event.entities)
   panel.update(event.player_index)
@@ -485,6 +489,12 @@ end)
 
 script.on_event(defines.events.on_gui_checked_state_changed, function(event)
   if engineers.checked(event) then panel.update(event.player_index) end
+end)
+script.on_event(defines.events.on_gui_selection_state_changed, function(event)
+  if engineers.selected(event) then panel.update(event.player_index) end
+end)
+script.on_event(defines.events.on_gui_confirmed, function(event)
+  engineers.confirmed(event)
 end)
 
 remote.add_interface("tank-squads", {
