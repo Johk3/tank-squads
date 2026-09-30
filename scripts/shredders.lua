@@ -225,7 +225,8 @@ function M.unregister(unit_number)
 end
 
 -- A finished shredder leaves the barracks door. Returns false when there is
--- no room, so the recruit waits in the machine like a soldier's.
+-- no room, so the recruit waits in the machine like a soldier's. Returns
+-- the new record otherwise.
 function M.deploy(barracks_entity, rally)
   local surface, p = barracks_entity.surface, barracks_entity.position
   local position = surface.find_non_colliding_position(M.PARKED, {x = p.x, y = p.y + 2.5}, 16, 1)
@@ -234,7 +235,15 @@ function M.deploy(barracks_entity, rally)
   if not entity then return false end
   local record = M.register(entity)
   record.home_position = rally and {x = rally.x, y = rally.y} or {x = p.x, y = p.y}
-  return true
+  return record
+end
+
+-- True while the record still stands for a shredder that has not spent its
+-- charge. The record keeps its table when the entity is swapped, so a holder
+-- of the record follows the shredder through a charge.
+function M.alive(record)
+  local s = storage.shredders
+  return s ~= nil and s.units[record.id] == record and record.state ~= 'spent' and record.entity.valid
 end
 
 

@@ -42,6 +42,49 @@ function M.configure(entity, player_index, n, target)
   return b ~= nil and reinforcements.configure(b, player_index, n, target)
 end
 
+-- A shredder limit of 0 trains shredders without a limit and keeps no list.
+function M.set_shredder_limit(entity, player_index, limit)
+  local b = M.record(entity)
+  local player = game.get_player(player_index)
+  if not (b and player and b.entity.force == player.force) then return false end
+  if type(limit) ~= 'number' or limit % 1 ~= 0 or limit < 0 or limit > 1000 then return false end
+  if limit == 0 then
+    b.shredder_limit, b.shredders = nil, nil
+  else
+    b.shredder_limit, b.shredders = limit, b.shredders or {}
+  end
+  return true
+end
+
+-- The living shredders this barracks trained under its limit. Only a limited
+-- barracks keeps the list, and the count drops the lost ones from it.
+local function count_shredders(b)
+  local list = b.shredders
+  if not list then return 0 end
+  for i = #list, 1, -1 do
+    if not shredders.alive(list[i]) then table.remove(list, i) end
+  end
+  return #list
+end
+
+function M.shredders(entity)
+  local b = M.record(entity)
+  return b and count_shredders(b) or 0
+end
+
+-- The free places under the shredder limit, or nil without a limit. The
+-- sweep counts once per barracks and carries the room through deployment.
+local function shredder_room(b)
+  return b.shredder_limit and b.shredder_limit - count_shredders(b)
+end
+
+-- True when the barracks trains shredders and has no room left.
+local function shredders_full(b, room)
+  if not (room and room <= 0) then return false end
+  local recipe = b.entity.get_recipe()
+  return recipe ~= nil and recipe.name == names.shredder_recipe
+end
+
 function M.clear_player(player_index)
   for _, b in ipairs(storage.barracks or {}) do
     if b.reinforcement and b.reinforcement.player_index == player_index then reinforcements.release(b) end
@@ -156,11 +199,15 @@ local function deploy(b, tier)
   return true
 end
 
--- Shredders never join a division, so no quota holds them back.
-local function deploy_shredders(b, output, budget)
+-- Shredders never join a division, so no quota holds them back. Only the
+-- room under the barracks' own shredder limit does; mining passes no room.
+local function deploy_shredders(b, output, budget, room)
+  if room then budget = math.min(budget, room) end
   local deployed = 0
   while deployed < budget and output.get_item_count(names.shredder_recruit) > 0 do
-    if not shredders.deploy(b.entity, rally_position(b)) then break end
+    local record = shredders.deploy(b.entity, rally_position(b))
+    if not record then break end
+    if b.shredders then b.shredders[#b.shredders + 1] = record end
     output.remove{name = names.shredder_recruit, count = 1}
     animate_deploy(b)
     deployed = deployed + 1
@@ -220,7 +267,7 @@ function M.tick(phase)
       if binding then divisions.invalidate(binding.player_index, binding.division) end
     end
   end
-  local swept = {}
+  local swept, rooms = {}, {}
   for i = #storage.barracks, 1, -1 do
     local b = storage.barracks[i]
     if not b.entity.valid then
@@ -228,9 +275,9 @@ function M.tick(phase)
       reinforcements.release(b)
       table.remove(storage.barracks, i)
     elseif in_phase(b, phase) then
-      swept[#swept + 1] = b
       heal_nearby(b)
-      reinforcements.sync_production(b)
+      local room = shredder_room(b)
+      reinforcements.sync_production(b, shredders_full(b, room))
       local output = b.entity.get_output_inventory()
       if output then
         local deployed = 0
@@ -241,14 +288,19 @@ function M.tick(phase)
             deployed = deployed + 1
           end
         end
-        deployed = deployed + deploy_shredders(b, output, DEPLOYS_PER_SWEEP - deployed)
+        local made = deploy_shredders(b, output, DEPLOYS_PER_SWEEP - deployed, room)
+        deployed = deployed + made
+        if room then room = room - made end
         deployed = deployed + deploy_constructors(b, output, DEPLOYS_PER_SWEEP - deployed)
       end
+      swept[#swept + 1] = b
+      rooms[#swept] = room or false
     end
   end
-  -- A barracks whose deployment filled its quota pauses in the same sweep.
-  for _, b in ipairs(swept) do
-    if b.entity.valid then reinforcements.sync_production(b) end
+  -- A barracks whose deployment filled its quota or its shredder limit
+  -- pauses in the same sweep.
+  for i, b in ipairs(swept) do
+    if b.entity.valid then reinforcements.sync_production(b, shredders_full(b, rooms[i] or nil)) end
   end
 end
 

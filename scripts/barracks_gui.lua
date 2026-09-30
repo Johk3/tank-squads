@@ -27,6 +27,12 @@ function M.refresh(player_index)
   else
     frame.status.caption = {'tank-squads.reinforcement-off'}
   end
+  frame.shredders.set.enabled = b.entity.force == player.force
+  if b.shredder_limit then
+    frame.shredder_status.caption = {'tank-squads.shredder-status', barracks.shredders(b.entity), b.shredder_limit}
+  else
+    frame.shredder_status.caption = {'tank-squads.shredder-unlimited'}
+  end
 end
 
 function M.open(event)
@@ -56,6 +62,14 @@ function M.open(event)
   actions.add{type = 'button', name = 'disable', caption = {'tank-squads.reinforcement-disable'},
     tags = {tank_squads_reinforcement_action = 'disable'}}
   frame.add{type = 'label', name = 'status', caption = ''}
+  frame.add{type = 'line'}
+  frame.add{type = 'label', caption = {'tank-squads.shredder-limit'}}
+  local row = frame.add{type = 'flow', name = 'shredders'}
+  row.add{type = 'textfield', name = 'limit', text = tostring(b.shredder_limit or 0),
+    numeric = true, allow_decimal = false, allow_negative = false}
+  row.add{type = 'button', name = 'set', caption = {'tank-squads.shredder-limit-set'},
+    tags = {tank_squads_reinforcement_action = 'shredders'}}
+  frame.add{type = 'label', name = 'shredder_status', caption = ''}
   M.refresh(event.player_index)
 end
 
@@ -69,6 +83,13 @@ function M.click(event)
   local b = player and barracks.record(player.opened)
   if not (frame and b and frame.tags.barracks == b.entity.unit_number) then return true end
   local ok
+  if action == 'shredders' then
+    if not barracks.set_shredder_limit(b.entity, event.player_index, tonumber(frame.shredders.limit.text)) then
+      player.print({'tank-squads.shredder-limit-invalid'})
+    end
+    M.refresh(event.player_index)
+    return true
+  end
   if action == 'disable' then
     ok = barracks.configure(b.entity, event.player_index, nil)
   elseif action == 'apply' then

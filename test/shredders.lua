@@ -83,6 +83,105 @@ return function(ctx)
     assert(not b.active, 'full quota no longer pauses soldier training')
   end)
 
+  -- A barracks on the shredder recipe with a shredder limit.
+  local function limited(limit)
+    local b, output = building()
+    engine()
+    b.get_recipe = function() return {name = names.shredder_recipe} end
+    assert(barracks.set_shredder_limit(b, 1, limit))
+    return b, output
+  end
+
+  local function alive()
+    local list = {}
+    for _, record in pairs(storage.shredders and storage.shredders.units or {}) do list[#list + 1] = record end
+    return list
+  end
+
+  test('shredders: a barracks pauses at its shredder limit and resumes after a loss', function()
+    local b, output = limited(2)
+    output[names.shredder_recruit] = 3
+    barracks.tick()
+    assert(#alive() == 2, #alive() .. ' shredders deployed over a limit of 2')
+    assert(output[names.shredder_recruit] == 1, 'the recruit over the limit left the barracks')
+    assert(not b.active, 'a barracks at its shredder limit kept training')
+    assert(barracks.shredders(b) == 2)
+    shredders.unregister(alive()[1].id)
+    barracks.tick()
+    assert(#alive() == 2 and output[names.shredder_recruit] == 0, 'the lost shredder was not replaced')
+    assert(not b.active, 'the replaced shredder did not pause the barracks again')
+    shredders.unregister(alive()[1].id)
+    barracks.tick()
+    assert(b.active, 'a barracks below its shredder limit stayed paused')
+  end)
+
+  test('shredders: a spent shredder frees its slot in the limit', function()
+    local b, output = limited(1)
+    output[names.shredder_recruit] = 1
+    barracks.tick()
+    assert(not b.active)
+    local record = alive()[1]
+    assert(shredders.on_trigger{effect_id = shredders.EFFECT, source_entity = record.entity})
+    barracks.tick()
+    assert(b.active, 'a spent shredder still counted toward the limit')
+  end)
+
+  test('shredders: a charging shredder still counts toward the limit', function()
+    local _, enemy = engine()
+    local b, output = limited(1)
+    output[names.shredder_recruit] = 1
+    barracks.tick()
+    local record = alive()[1]
+    local old_id = record.id
+    local target = enemy_unit(enemy, 50, 0)
+    assert(shredders.charge(record, target, false))
+    assert(record.id ~= old_id, 'the charge did not swap the entity')
+    output[names.shredder_recruit] = 1
+    barracks.tick()
+    assert(barracks.shredders(b) == 1 and output[names.shredder_recruit] == 1, 'a charging shredder left the count')
+    assert(not b.active)
+  end)
+
+  test('shredders: limit 0 trains shredders without a limit', function()
+    local b, output = limited(0)
+    output[names.shredder_recruit] = 4
+    barracks.tick()
+    barracks.tick()
+    assert(#alive() == 4 and b.active, 'limit 0 held shredders back')
+    assert(not barracks.record(b).shredders, 'an unlimited barracks kept a shredder list')
+  end)
+
+  test('shredders: a soldier recipe ignores the shredder limit', function()
+    local b, output = limited(1)
+    output[names.shredder_recruit] = 1
+    barracks.tick()
+    assert(not b.active)
+    b.get_recipe = function() return {name = 'tank-squad-train-1'} end
+    barracks.tick()
+    assert(b.active, 'a soldier recipe paused on the shredder limit')
+  end)
+
+  test('shredders: the shredder limit takes a whole number from 0 to 1000 from the own force', function()
+    local b = building()
+    assert(barracks.set_shredder_limit(b, 1, 1000))
+    assert(barracks.set_shredder_limit(b, 1, 0))
+    assert(not barracks.set_shredder_limit(b, 1, -1))
+    assert(not barracks.set_shredder_limit(b, 1, 1001))
+    assert(not barracks.set_shredder_limit(b, 1, 2.5))
+    assert(not barracks.set_shredder_limit(b, 1, nil))
+    game.players[2] = {force = {index = 9}}
+    assert(not barracks.set_shredder_limit(b, 2, 3), 'another force set the limit')
+  end)
+
+  test('shredders: mining a barracks at its limit still deploys its shredder recruits', function()
+    local b, output = limited(1)
+    output[names.shredder_recruit] = 1
+    barracks.tick()
+    output[names.shredder_recruit] = 2
+    barracks.evacuate(b)
+    assert(output[names.shredder_recruit] == 0 and #alive() == 3, 'shredder recruits lost on mining')
+  end)
+
   test('shredders: mining a barracks deploys its shredder recruits', function()
     local b, output = building()
     engine()

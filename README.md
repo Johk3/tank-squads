@@ -67,7 +67,7 @@ Shredders are unmanned rammers. Train them at a barracks with the **Build Shredd
 - A shredder attacked while parked rams its attacker.
 - A patrolling division that sees a swarm of 15 or more attacking enemies within 40 tiles sends one shredder at it, at most one every five seconds.
 - When you walk near a large pack of enemies or a nest, up to three shredders follow 80 tiles behind you and strike as soon as you are hurt. They return to the divisions after ten quiet seconds.
-- A barracks set to build shredders keeps building them even when its linked division is full.
+- A barracks set to build shredders keeps building them even when its linked division is full. To keep a fixed number, set a shredder limit in the barracks' **Automatic reinforcements** panel. The barracks pauses when that many of its shredders are alive and replaces each one that dies or crashes. 0 means no limit.
 
 ### Constructors
 

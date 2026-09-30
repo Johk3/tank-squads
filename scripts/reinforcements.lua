@@ -93,9 +93,11 @@ function M.needs_recruit(b)
   return divisions.serving(binding.player_index, binding.division, own.recruits) < own.target
 end
 
-function M.sync_production(b)
+-- hold pauses the barracks for a reason of its own: a full shredder limit.
+-- One flag covers both pauses, so neither lifts the other.
+function M.sync_production(b, hold)
   local needed = M.needs_recruit(b)
-  if b.reinforcement and not needed and not trains_support(b) then
+  if hold or (b.reinforcement and not needed and not trains_support(b)) then
     if b.entity.active then b.reinforcement_paused = true; b.entity.active = false end
   elseif b.reinforcement_paused then
     b.entity.active = true

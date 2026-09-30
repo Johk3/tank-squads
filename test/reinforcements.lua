@@ -217,6 +217,33 @@ return function(ctx)
     assert(barracks.record(b).reinforcement == nil)
   end)
 
+  test('barracks GUI sets the shredder limit and shows the living count', function()
+    local b = building()
+    local player = game.get_player(1)
+    player.gui.relative = ctx.gui_element()
+    player.opened = b
+    defines.relative_gui_type = {assembling_machine_gui = 1}
+    defines.relative_gui_position = {right = 1}
+    local gui = require('scripts.barracks_gui')
+    gui.open{player_index = 1, entity = b}
+    local frame = player.gui.relative.tank_squads_reinforcements
+    assert(frame.shredders.limit.text == '0')
+    assert(frame.shredder_status.caption[1] == 'tank-squads.shredder-unlimited')
+    frame.shredders.limit.text = '3'
+    gui.click{player_index = 1, element = frame.shredders.set}
+    assert(barracks.record(b).shredder_limit == 3, 'the limit was not set')
+    local status = frame.shredder_status.caption
+    assert(status[1] == 'tank-squads.shredder-status' and status[2] == 0 and status[3] == 3)
+    local printed
+    player.print = function(message) printed = message end
+    frame.shredders.limit.text = ''
+    gui.click{player_index = 1, element = frame.shredders.set}
+    assert(barracks.record(b).shredder_limit == 3, 'an empty field changed the limit')
+    assert(printed and printed[1] == 'tank-squads.shredder-limit-invalid', 'no message for an empty field')
+    gui.open{player_index = 1, entity = b}
+    assert(player.gui.relative.tank_squads_reinforcements.shredders.limit.text == '3', 'the window forgot the limit')
+  end)
+
   test('the barracks window shows its own quota and the panel adds them up', function()
     divisions.assign(1, 2, {soldier()})
     local b, output = building()
