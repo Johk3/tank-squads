@@ -6,9 +6,12 @@
 --
 -- record = {entity, id, force_index, surface_index, state, since, said,
 --   cluster, centre, fails, retries, crane, release_tick, done_tick,
---   released, paused_since, calm_since, task_force, task_force_result, home}
+--   released, paused_since, calm_since, task_force, task_force_result, home,
+--   autonomous, segment, dismantle, rings_version}
 -- state is 'waiting', 'seeking', 'moving', 'building', 'paused',
 -- 'task_force', 'healing' or 'idle'.
+-- An autonomous constructor builds rings (rings/rings.lua) instead of the
+-- player's ghosts: tear-down first, then ring ghosts, then a new segment.
 local names = require('scripts.names')
 local config = require('scripts.config')
 local divisions = require('scripts.divisions')
@@ -18,6 +21,7 @@ local ghosts = require('scripts.engineers.ghosts')
 local crane = require('scripts.engineers.crane')
 local teams = require('scripts.engineers.teams')
 local task_force = require('scripts.engineers.task_force')
+local rings = require('scripts.engineers.rings.rings')
 
 local M = {}
 
@@ -72,6 +76,7 @@ local function release(record)
   crane.stop(record)
   ghosts.release(record.cluster)
   record.cluster, record.centre, record.fails, record.retries = nil, nil, nil, nil
+  record.segment, record.dismantle = nil, nil
 end
 
 function M.reset(record)
@@ -189,12 +194,24 @@ local function walk_to_cluster(record)
 end
 
 function M.seek(record)
-  local cluster = ghosts.claim(record, M.CLUSTER_RADIUS, M.CLUSTER_MAX)
-  if not cluster then set(record, 'idle'); return end
+  local cluster, mode
+  if record.autonomous then
+    cluster, mode = rings.claim(record, M.CLUSTER_RADIUS, M.CLUSTER_MAX)
+    if not cluster then
+      if mode == 'planning' then set(record, 'seeking'); return end
+      return M.park(record)
+    end
+  else
+    cluster = ghosts.claim(record, M.CLUSTER_RADIUS, M.CLUSTER_MAX)
+    if not cluster then set(record, 'idle'); return end
+  end
+  record.dismantle = mode == 'dismantle' or nil
   local sx, sy = 0, 0
   for _, entry in ipairs(cluster) do sx, sy = sx + entry.position.x, sy + entry.position.y end
   record.cluster, record.fails, record.retries = cluster, 0, 0
   record.centre = {x = sx / #cluster, y = sy / #cluster}
+  -- Taking walls down needs no task force.
+  if record.dismantle then return walk_to_cluster(record) end
   local entity = record.entity
   local structures = M.nest(entity, record.centre)
   if not structures then return walk_to_cluster(record) end
@@ -210,6 +227,31 @@ function M.seek(record)
     set(record, 'seeking')
     say(record, 'too-strong')
   end
+end
+
+-- An autonomous constructor with nothing left parks at the nearest
+-- barracks or headquarters until the rings change.
+function M.park(record)
+  set(record, 'idle')
+  record.rings_version = rings.version(record.force_index)
+  local home = M.home(record, true)
+  if home then go(record, home.position, M.HOME_RADIUS) end
+end
+
+-- Switches a constructor between rings (true) and the player's ghosts.
+-- Its claims are let go; one away healing or with a task force picks up
+-- the new work when it comes back.
+function M.set_autonomous(unit_number, value)
+  local s = state.peek()
+  local record = s and s.constructors[unit_number]
+  if not record then return nil end
+  value = value and true or nil
+  if record.autonomous == value then return value end
+  record.autonomous = value
+  if record.state ~= 'healing' and record.state ~= 'task_force' and record.state ~= 'waiting' then
+    M.reset(record)
+  end
+  return value
 end
 
 -- Once per second: health, a running task force, the escort, enemies, then
@@ -295,6 +337,13 @@ function M.check(record, cfg)
   if record.state == 'seeking' then
     M.seek(record)
   elseif record.state == 'idle' then
+    if record.autonomous then
+      -- Parked: the rings changed, or blocks may have expired.
+      if rings.version(record.force_index) ~= record.rings_version or tick - record.since >= ghosts.RECHECK then
+        M.seek(record)
+      end
+      return
+    end
     -- An idle constructor searches again when a ghost joined its registry
     -- since it went idle, and once per RECHECK for expired blocks and
     -- ghosts robots no longer reach.

@@ -1,5 +1,6 @@
 return function(ctx)
   local test = ctx.test
+  local names = require('scripts.names')
   local geometry = require('scripts.engineers.rings.geometry')
 
   local function square(radius)
@@ -463,5 +464,97 @@ return function(ctx)
     assert(ghosts.claim(record, 3, 9, {ring = ring.key, segment = 1}) == nil, 'another segment was claimed')
     assert(ghosts.claim(record, 3, 9, {ring = ring.key, segment = 2}), 'own segment not claimed')
     assert(ghosts.count(1, 1) == 0, 'the window counts ring ghosts or covered ghosts')
+  end)
+
+  -- An autonomous constructor at (x, y) with no escort needed, in a ring
+  -- world where segments scan as empty ground and no enemy is near. The
+  -- last value returned puts the replaced functions back; every test that
+  -- uses this calls it at its end.
+  local function autonomous_at(x, y)
+    local rings, s = ring_world()
+    s.min_team = 0
+    local obstacles = require('scripts.engineers.rings.obstacles')
+    local layout = require('scripts.engineers.rings.layout')
+    local constructor = require('scripts.engineers.constructor')
+    local saved = {scan = obstacles.scan, enemy_near = constructor.enemy_near, plan = layout.plan}
+    obstacles.scan = function() return {bulges = {}, crossings = {}, water = {}} end
+    constructor.enemy_near = function() return false end
+    local function restore()
+      obstacles.scan, constructor.enemy_near, layout.plan = saved.scan, saved.enemy_near, saved.plan
+    end
+    local e = ctx.soldier(nil, nil, x, y)
+    e.name, e.health, e.max_health = names.constructor, 800, 800
+    local record = constructor.register(e)
+    constructor.set_autonomous(record.id, true)
+    return record, constructor, rings, s, restore
+  end
+
+  test('rings: an autonomous constructor plans the segment nearest it and claims its ghosts', function()
+    local record, constructor, _, s, restore = autonomous_at(250, 0)
+    local ok, err = pcall(function()
+      constructor.seek(record)
+      assert(record.state == 'moving', 'state ' .. record.state)
+      assert(record.segment and record.segment.index == 2, 'planned the wrong segment')
+      assert(#record.cluster == 9, #record.cluster .. ' ghosts claimed')
+      for _, entry in ipairs(record.cluster) do assert(s.ring_ghosts[entry.id].segment == 2) end
+    end)
+    restore()
+    assert(ok, err)
+  end)
+
+  test('rings: one segment is planned per tick however many constructors ask', function()
+    local record, constructor, _, _, restore = autonomous_at(250, 0)
+    local ok, err = pcall(function()
+      -- Segments with nothing to place: no ghost is left for the second
+      -- constructor to help with.
+      require('scripts.engineers.rings.layout').plan = function() return {} end
+      constructor.seek(record)
+      local e = ctx.soldier(nil, nil, -250, 0)
+      e.name, e.health, e.max_health = names.constructor, 800, 800
+      local other = constructor.register(e)
+      constructor.set_autonomous(other.id, true)
+      constructor.seek(other)
+      assert(other.state == 'seeking' and not other.segment, 'a second segment was planned in the same tick')
+      game.tick = game.tick + 1
+      constructor.seek(other)
+      assert(other.segment and other.segment.index == 8, 'the second constructor did not take the west side')
+    end)
+    restore()
+    assert(ok, err)
+  end)
+
+  test('rings: with every ring done an autonomous constructor parks, and a change wakes it', function()
+    local record, constructor, rings, _, restore = autonomous_at(250, 0)
+    local ok, err = pcall(function()
+      rings.set(1, 'count', 1)
+      local ring = rings.start(rings.force_state(1), game.forces[1], 1, game.surfaces[1])
+      for _, seg in ipairs(ring.segments) do seg.state = 'built' end
+      ring.state = 'built'
+      constructor.seek(record)
+      assert(record.state == 'idle', 'state ' .. record.state)
+      assert(record.rings_version == rings.version(1))
+      game.tick = game.tick + 60
+      constructor.check(record, {retreat = 0})
+      assert(record.state == 'idle', 'woke without a change')
+      rings.set(1, 'count', 2)
+      constructor.check(record, {retreat = 0})
+      assert(record.state == 'moving' and record.segment and record.segment.ring == rings.key(1, 2),
+        'did not start ring 2')
+    end)
+    restore()
+    assert(ok, err)
+  end)
+
+  test('rings: switching a constructor to manual lets go of its ring claims', function()
+    local record, constructor, _, s, restore = autonomous_at(250, 0)
+    local ok, err = pcall(function()
+      constructor.seek(record)
+      local claimed = record.cluster[1].id
+      constructor.set_autonomous(record.id, false)
+      assert(not record.autonomous and not record.segment and not s.claims[claimed])
+      assert(record.state == 'seeking')
+    end)
+    restore()
+    assert(ok, err)
   end)
 end

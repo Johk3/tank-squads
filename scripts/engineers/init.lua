@@ -16,6 +16,7 @@ local M = {}
 M.register = constructor.register
 M.deploy = constructor.deploy
 M.count = constructor.count
+M.set_autonomous = constructor.set_autonomous
 M.on_ghost = ghosts.add
 M.set_pool = teams.set_pool
 M.toggle_window = window.toggle

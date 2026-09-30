@@ -383,6 +383,36 @@ function M.find(fs, surface_index, position)
   return nil
 end
 
+-- Work for an autonomous constructor: ring ghosts, its own segment first,
+-- or a new segment planned for it (one per tick for all constructors).
+-- Returns a cluster and 'build', or nil and 'planning' (ask again next
+-- second) or 'done' (nothing left).
+function M.claim(record, radius, max)
+  local own = record.segment
+  if own then
+    local cluster = ghosts.claim(record, radius, max, {ring = own.ring, segment = own.index, near = own.near})
+    if cluster then return cluster, 'build' end
+  end
+  local cluster = ghosts.claim(record, radius, max, {ring = true})
+  if cluster then return cluster, 'build' end
+  local entity = record.entity
+  local ring = M.current(M.force_state(record.force_index), entity.force, entity.surface)
+  if not ring or ring.surface_index ~= record.surface_index then return nil, 'done' end
+  local tick, s = game.tick, state.get()
+  if s.plan_tick == tick then return nil, 'planning' end
+  local i = M.next_segment(ring, entity.position, tick)
+  if not i then return nil, M.waiting(ring, tick) and 'planning' or 'done' end
+  s.plan_tick = tick
+  local result = M.plan_segment(ring, i)
+  local seg = geometry.segment(ring, i)
+  record.segment = {ring = ring.key, index = i, near = geometry.to_position(ring, seg.side, (seg.lo + seg.hi) / 2, 0)}
+  if result == 'placed' then
+    cluster = ghosts.claim(record, radius, max, {ring = ring.key, segment = i, near = record.segment.near})
+    if cluster then return cluster, 'build' end
+  end
+  return nil, 'planning'
+end
+
 ghosts.on_ring_gone = M.ghost_gone
 
 return M
