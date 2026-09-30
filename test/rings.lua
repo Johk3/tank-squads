@@ -611,6 +611,32 @@ return function(ctx)
     assert(ok, err)
   end)
 
+  test('rings: a claim on its own segment does not rank every chunk of ghosts', function()
+    local record, constructor, rings, s, restore = autonomous_at(250, 0)
+    local ghosts = require('scripts.engineers.ghosts')
+    local chunk_distance2, calls = ghosts.chunk_distance2, 0
+    local ok, err = pcall(function()
+      constructor.seek(record)
+      constructor.reset(record)
+      record.segment = {ring = rings.key(1, 1), index = 2}
+      local ring = rings.by_key(rings.key(1, 1))
+      while ring.placing and ring.placing[2] do rings.place_pending(ring, 2, rings.PLACE_BATCH) end
+      -- Player ghosts in 2000 chunks far away.
+      local surface = game.surfaces[1]
+      for i = 1, 2000 do
+        ghosts.add(surface.create_entity{name = 'entity-ghost', inner_name = 'stone-wall',
+          position = {x = 5000 + (i % 50) * 32, y = 5000 + math.floor(i / 50) * 32}})
+      end
+      ghosts.chunk_distance2 = function(...) calls = calls + 1; return chunk_distance2(...) end
+      local cluster = rings.claim(record, 3, 9)
+      assert(cluster and s.ring_ghosts[cluster[1].id].segment == 2, 'own segment not claimed')
+    end)
+    ghosts.chunk_distance2 = chunk_distance2
+    restore()
+    assert(ok, err)
+    assert(calls <= 50, calls .. ' chunk distances for a claim on one segment')
+  end)
+
   test('rings: a segment\'s ghosts go up along the ring from the end nearest its constructor', function()
     local rings = require('scripts.engineers.rings.rings')
     local layout = require('scripts.engineers.rings.layout')

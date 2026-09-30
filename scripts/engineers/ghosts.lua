@@ -38,28 +38,130 @@ local function distance2(a, b)
   return dx * dx + dy * dy
 end
 
--- The accepted entry nearest the position. Chunks are visited nearest
--- first; the search stops at the first chunk farther than the best entry.
--- `accept` may drop the entry it is given from its chunk. An optional
--- `score` of an entry's position replaces the squared distance; it must
--- never be below it, or the search stops too early.
-function M.nearest(chunks, position, accept, score)
-  local order = {}
-  for key, chunk in pairs(chunks) do
-    order[#order + 1] = {chunk = chunk, key = key, d = M.chunk_distance2(chunk.cx, chunk.cy, position)}
+-- The number of chunks in a bucket, kept by insert and drop. Saves from
+-- before it was kept count once.
+function M.chunk_count(bucket)
+  local n = bucket.chunk_count
+  if not n then
+    n = 0
+    for _ in pairs(bucket.chunks) do n = n + 1 end
+    bucket.chunk_count = n
   end
-  table.sort(order, function(a, b)
-    if a.d ~= b.d then return a.d < b.d end
-    return a.key < b.key
-  end)
+  return n
+end
+
+-- Chunks nearest first, then by key: a binary heap.
+local function sooner(a, b)
+  if a.d ~= b.d then return a.d < b.d end
+  return a.key < b.key
+end
+
+local function push(heap, item)
+  local i = #heap + 1
+  heap[i] = item
+  while i > 1 do
+    local parent = math.floor(i / 2)
+    if not sooner(heap[i], heap[parent]) then break end
+    heap[i], heap[parent] = heap[parent], heap[i]
+    i = parent
+  end
+end
+
+local function pop(heap)
+  local top, n = heap[1], #heap
+  heap[1] = heap[n]
+  heap[n] = nil
+  n = n - 1
+  local i = 1
+  while true do
+    local l, r, m = 2 * i, 2 * i + 1, i
+    if l <= n and sooner(heap[l], heap[m]) then m = l end
+    if r <= n and sooner(heap[r], heap[m]) then m = r end
+    if m == i then break end
+    heap[i], heap[m] = heap[m], heap[i]
+    i = m
+  end
+  return top
+end
+
+-- The accepted entry nearest the position. Chunks are visited nearest
+-- first, then by key; the search stops at the first chunk farther than the
+-- best entry. `accept` may drop the entry it is given from its chunk. An
+-- optional `score` of an entry's position replaces the squared distance;
+-- it must never be below it, or the search stops too early. `count` is the
+-- number of chunks, counted when not given.
+--
+-- The chunks are found in square rings round the position's chunk, one ring
+-- ahead of the visits: every chunk of ring r lies at least (r - 1) chunks
+-- away, so the nearest chunk found is visited only when no unfound chunk
+-- can come before it. Rings that would hold more cells than there are
+-- chunks give way to one pass over all of them.
+function M.nearest(chunks, position, accept, score, count)
+  if not count then
+    count = 0
+    for _ in pairs(chunks) do count = count + 1 end
+  end
+  local pcx, pcy = M.chunk_of(position)
+  local heap, found, seen, r = {}, 0, {}, -1
+  local function add(key, chunk)
+    seen[key], found = true, found + 1
+    push(heap, {chunk = chunk, key = key, d = M.chunk_distance2(chunk.cx, chunk.cy, position)})
+  end
+  local function look(x, y)
+    local key = M.key(x, y)
+    local chunk = chunks[key]
+    if chunk then add(key, chunk) end
+  end
+  local function expand()
+    r = r + 1
+    if (2 * r + 1) ^ 2 >= count then
+      for key, chunk in pairs(chunks) do
+        if not seen[key] then add(key, chunk) end
+      end
+      found = count
+    elseif r == 0 then
+      look(pcx, pcy)
+    else
+      for x = pcx - r, pcx + r do
+        look(x, pcy - r)
+        look(x, pcy + r)
+      end
+      for y = pcy - r + 1, pcy + r - 1 do
+        look(pcx - r, y)
+        look(pcx + r, y)
+      end
+    end
+  end
   local best, best_d
-  for _, o in ipairs(order) do
+  while true do
+    while found < count and (not heap[1] or (r * M.CHUNK) ^ 2 <= heap[1].d) do expand() end
+    if not heap[1] then break end
+    local o = pop(heap)
     if best_d and o.d > best_d then break end
     for _, entry in pairs(o.chunk.entries) do
       if accept(entry) then
         local d = score and score(entry.position) or distance2(entry.position, position)
         if not best_d or d < best_d or (d == best_d and entry.id < best.id) then best, best_d = entry, d end
       end
+    end
+  end
+  return best
+end
+
+-- The accepted entry of `set` ({[id] = {position}}) nearest the position,
+-- found through each entry's own chunk. The same entry as M.nearest when
+-- `accept` takes only entries of the set.
+function M.nearest_in(chunks, set, position, accept, score)
+  local ids = {}
+  for id in pairs(set) do ids[#ids + 1] = id end
+  local best, best_d
+  for _, id in ipairs(ids) do
+    local g = set[id]
+    local chunk = g and chunks[M.key(M.chunk_of(g.position))]
+    local entry = chunk and chunk.entries[id]
+    if entry and accept(entry) then
+      local d = score and score(entry.position) or distance2(entry.position, position)
+      if not best_d or d < best_d or (d == best_d and entry.id < best.id) then best, best_d = entry, d end
     end
   end
   return best
@@ -115,6 +217,7 @@ local function insert(bucket, entity)
     bucket.chunks[key] = chunk
   end
   if chunk.entries[id] then return end
+  if chunk.count == 0 and bucket.chunk_count then bucket.chunk_count = bucket.chunk_count + 1 end
   chunk.entries[id] = {entity = entity, id = id, position = {x = p.x, y = p.y}, chunk = key}
   chunk.count, bucket.count = chunk.count + 1, bucket.count + 1
 end
@@ -128,7 +231,10 @@ local function drop(bucket, entry, built)
   if not (chunk and chunk.entries[entry.id]) then return end
   chunk.entries[entry.id] = nil
   chunk.count, bucket.count = chunk.count - 1, bucket.count - 1
-  if chunk.count == 0 then bucket.chunks[entry.chunk] = nil end
+  if chunk.count == 0 then
+    bucket.chunks[entry.chunk] = nil
+    if bucket.chunk_count then bucket.chunk_count = bucket.chunk_count - 1 end
+  end
   local s = state.get()
   s.claims[entry.id], s.blocked[entry.id] = nil, nil
   if M.on_ring_gone and s.ring_ghosts and s.ring_ghosts[entry.id] then
@@ -165,7 +271,9 @@ end
 -- about the seed, and a covered seed is not asked about again for RECHECK
 -- ticks. With a filter only ring ghosts are taken, robots or not:
 -- filter.ring == true any ring's, or filter.ring == key with
--- filter.segment one segment's. filter.near moves the search centre,
+-- filter.segment one segment's, whose ghosts filter.ghosts may list
+-- ({[id] = {position}}) so the search reads only those. filter.near moves
+-- the search centre,
 -- filter.score ranks the seeds (see nearest), filter.skip[ring .. ':' ..
 -- segment] leaves those segments' ghosts out, and filter.within (squared
 -- tiles) is the farthest a seed may lie. Returns the cluster, or nil.
@@ -197,7 +305,12 @@ function M.claim(record, radius, max, filter)
   end
   local position = filter and filter.near or entity.position
   for _ = 1, M.ATTEMPTS do
-    local seed = M.nearest(bucket.chunks, position, free, filter and filter.score)
+    local seed
+    if filter and filter.ghosts and filter.ring ~= true then
+      seed = M.nearest_in(bucket.chunks, filter.ghosts, position, free, filter.score)
+    else
+      seed = M.nearest(bucket.chunks, position, free, filter and filter.score, M.chunk_count(bucket))
+    end
     if not seed then return nil end
     if filter and filter.within and distance2(seed.position, position) > filter.within then return nil end
     if filter or #surface.find_logistic_networks_by_construction_area(seed.position, force) == 0 then

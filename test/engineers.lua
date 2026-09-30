@@ -272,6 +272,35 @@ return function(ctx)
     assert(ghosts.nearest(chunks, {x = 0, y = 0}, function() return false end) == nil)
   end)
 
+  test('engineers: nearest ghost visits only the chunks around the position', function()
+    local ghosts = require('scripts.engineers.ghosts')
+    -- One ghost in each of 100 x 100 chunks, 8 tiles into its chunk.
+    local points = {}
+    for cx = 0, 99 do
+      for cy = 0, 99 do points[#points + 1] = {x = cx * 32 + 8, y = cy * 32 + 8} end
+    end
+    local chunks = chunks_of(points)
+    local chunk_distance2, calls = ghosts.chunk_distance2, 0
+    ghosts.chunk_distance2 = function(...) calls = calls + 1; return chunk_distance2(...) end
+    local ok, err = pcall(function()
+      -- (1608, 1608) is ghost 50 * 100 + 51 = 5051, in chunk (50, 50).
+      local found = ghosts.nearest(chunks, {x = 1610, y = 1611}, every)
+      assert(found and found.id == 5051, 'wrong nearest ghost: ' .. tostring(found and found.id))
+    end)
+    ghosts.chunk_distance2 = chunk_distance2
+    assert(ok, err)
+    assert(calls <= 100, calls .. ' chunk distances for one nearest ghost')
+  end)
+
+  test('engineers: nearest ghost ties go to the lower id across chunks', function()
+    local ghosts = require('scripts.engineers.ghosts')
+    -- Four ghosts 4 tiles from (0, 0), one in each of the four chunks round it.
+    local chunks = chunks_of{{x = 4, y = 0}, {x = -4, y = 0}, {x = 0, y = 4}, {x = 0, y = -4}, {x = 0.5, y = -3.9}}
+    assert(ghosts.nearest(chunks, {x = 0, y = 0}, every).id == 5)
+    assert(ghosts.nearest(chunks, {x = 0, y = 0}, function(e) return e.id ~= 5 end).id == 1)
+    assert(ghosts.nearest(chunks, {x = 0, y = 0}, function(e) return e.id > 2 and e.id ~= 5 end).id == 3)
+  end)
+
   test('engineers: a cluster is the seed and its nearest accepted neighbours', function()
     local ghosts = require('scripts.engineers.ghosts')
     local points = {}

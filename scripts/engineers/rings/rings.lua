@@ -532,8 +532,9 @@ function M.claim(record, radius, max)
   local own = record.segment
   if own then
     local ring = M.by_key(own.ring)
+    local seg = ring and ring.segments[own.index]
     local filter = {ring = own.ring, segment = own.index, near = position,
-      score = ring and geometry.sweep_score(ring, position)}
+      score = ring and geometry.sweep_score(ring, position), ghosts = seg and seg.ghosts}
     local cluster = ghosts.claim(record, radius, max, filter)
     if cluster then return cluster, 'build' end
     -- Nothing placed is left: the next batch of its segment goes up now.
@@ -572,7 +573,7 @@ function M.claim(record, radius, max)
   record.segment = {ring = ring.key, index = i}
   if result == 'placed' then
     cluster = ghosts.claim(record, radius, max, {ring = ring.key, segment = i, near = position,
-      score = geometry.sweep_score(ring, position)})
+      score = geometry.sweep_score(ring, position), ghosts = ring.segments[i].ghosts})
     if cluster then return cluster, 'build' end
   end
   return nil, 'planning'
