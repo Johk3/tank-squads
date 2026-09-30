@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.37.0
+Date: 2026-09-30
+  Features:
+    - Shredders charge straight over water and cliffs. A charge that ends over water lands on the nearest shore.
+    - Shredders park 80 tiles behind their division instead of 120.
+    - A shredder's crash deals 2,000 damage instead of 1,500.
+  Bugfixes:
+    - Veterans no longer chase enemies off their patrol route or formation and get drawn into nests, and patrol and escort alarms no longer send them to the front. A veteran now stops to shoot any enemy within its weapon range, then goes on, and breaks off once the enemy leaves that range.
+    - A veteran that calls for help no longer falls back toward the enemies without firing. It falls back away from them and shoots at enemies in range on the way.
+---------------------------------------------------------------------------------------------------
 Version: 0.36.0
 Date: 2026-09-30
   Features:
