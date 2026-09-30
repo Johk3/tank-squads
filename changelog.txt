@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.33.0
+Date: 2026-09-30
+  Features:
+    - A patrolling division that sees a swarm of 15 or more enemies of an attack group within 40 tiles sends one shredder at the middle of the swarm, at most one every five seconds. The division can still call its other shredders in when it takes losses.
+  Changes:
+    - Shredders drive calmly at a soldier's pace and park 120 tiles behind their division instead of 60. Shredders following a player keep 80 tiles back instead of 40.
+  Bugfixes:
+    - A charging shredder stuck on its way, for example against another nest, rams the enemy blocking it instead of standing still.
+---------------------------------------------------------------------------------------------------
 Version: 0.32.0
 Date: 2026-09-29
   Features:

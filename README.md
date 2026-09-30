@@ -60,11 +60,13 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 
 Shredders are unmanned rammers. Train them at a barracks with the **Build Shredder** recipe. They never join a division and take no orders:
 
-- They split evenly between all your team's divisions and park 60 tiles behind each one, on the side of the nearest barracks or headquarters.
+- They split evenly between all your team's divisions and drive calmly at a soldier's pace to park 120 tiles behind each one, on the side of the nearest barracks or headquarters.
 - When a division loses half its soldiers within 30 seconds, or its last soldier, its shredders lock onto the strongest enemies nearby, charge at 60 tiles a second and ram them. Each crash deals 1,500 damage and bursts into shrapnel that hits every enemy within 8 tiles for 600 damage. Shrapnel never hurts friends.
 - If a target dies before the crash, the shredder picks the next enemy nearby. With none left, it rejoins the divisions.
+- A shredder stuck on its way, for example against another nest, rams the enemy blocking it.
 - A shredder attacked while parked rams its attacker.
-- When you walk near a large pack of enemies or a nest, up to three shredders follow 40 tiles behind you and strike as soon as you are hurt. They return to the divisions after ten quiet seconds.
+- A patrolling division that sees a swarm of 15 or more attacking enemies within 40 tiles sends one shredder at it, at most one every five seconds.
+- When you walk near a large pack of enemies or a nest, up to three shredders follow 80 tiles behind you and strike as soon as you are hurt. They return to the divisions after ten quiet seconds.
 - A barracks set to build shredders keeps building them even when its linked division is full.
 
 ### Constructors
