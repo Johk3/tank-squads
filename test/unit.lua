@@ -5,7 +5,10 @@ local commands = require("scripts.commands")
 local barracks = require("scripts.barracks")
 local names = require("scripts.names")
 local entities, players, draws, surface, handlers, charted_lookup, event_filters
-local passed, failed = 0, 0
+local passed, failed, skipped = 0, 0, 0
+-- test/unit.py sets these: UNIT_FILTER runs only the tests whose name
+-- contains it, and UNIT_VERBOSE prints a line for every passing test too.
+local filter, verbose = UNIT_FILTER, UNIT_VERBOSE
 
 -- The game rejects a child name that matches a LuaGuiElement method or
 -- attribute, because children are read as attributes of their parent.
@@ -213,9 +216,12 @@ local function building()
 end
 
 local function test(name, run)
+  if filter and not name:find(filter, 1, true) then skipped = skipped + 1; return end
   reset()
   local ok, err = pcall(run)
-  if ok then passed = passed + 1; print("PASS " .. name)
+  if ok then
+    passed = passed + 1
+    if verbose then print("PASS " .. name) end
   else failed = failed + 1; print("FAIL " .. name .. ": " .. tostring(err)) end
 end
 
@@ -1370,5 +1376,10 @@ require('test.engineers'){test = test, soldier = soldier, building = building, g
 require('test.rings'){test = test, soldier = soldier, building = building, gui_element = gui_element,
   handlers = function() return handlers end, players = function() return players end,
   draws = function() return draws end, filters = function() return event_filters end}
-print(string.format("%d passed, %d failed", passed, failed))
+if filter then
+  print(string.format("%d passed, %d failed, %d not matching %q", passed, failed, skipped, filter))
+  assert(passed + failed > 0, "no test name contains " .. filter)
+else
+  print(string.format("%d passed, %d failed", passed, failed))
+end
 assert(failed == 0, "regression tests failed")
