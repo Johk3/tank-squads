@@ -1,4 +1,21 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.38.0
+Date: 2026-09-30
+  Features:
+    - Shredders show on the map and reveal the map around them. A shredder locked onto an enemy draws a bright red line to its target and rings it on the map.
+    - Every division, not only patrols, sends a shredder at a swarm of 15 or more attacking enemies it sees.
+    - A division that passes within 40 tiles of a nest of three or more spawners and worms now and then throws one shredder at it, spawner first, at most one a minute.
+  Changes:
+    - A constructor's task force borrows soldiers in no division first. It borrows from a division only when the division has at least six soldiers within 150 tiles of the nest and none of them is fighting, and the division keeps at least half its soldiers and at least four. A patrol also keeps one soldier per 32 tiles of its route and lends nothing for two minutes after it met enemies. Ring garrisons never lend.
+    - The divisions that escort constructors no longer keep shredders.
+  Bugfixes:
+    - Far-away divisions are no longer pulled off their posts to clear a nest for a constructor.
+    - A borrowed soldier that falls below the retreat health goes back at once to heal instead of waiting at the nest.
+    - A constructor no longer gets stuck in front of a wall it cannot place, for example because a tank stands on it. The wall waits a minute while it builds elsewhere, and each further failure doubles the wait, up to 30 minutes.
+    - Constructors clear cliffs under wall ghosts.
+    - A constructor paused by enemies that stay for over a minute leaves that work for later and drives home.
+    - A hurt soldier whose trip to heal failed tries again after one minute instead of three.
+---------------------------------------------------------------------------------------------------
 Version: 0.37.1
 Date: 2026-09-30
   Bugfixes:
