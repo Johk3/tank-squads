@@ -543,6 +543,9 @@ remote.add_interface("tank-squads", {
   engineers_ring_plan = function(force_name, n, i) return engineers.ring_plan(game.forces[force_name], n, i) end,
   engineers_ring_info = function(force_name, n) return engineers.ring_info(game.forces[force_name].index, n) end,
   engineers_set_autonomous = function(unit_number, value) return engineers.set_autonomous(unit_number, value) end,
+  engineers_ring_delete = function(force_name, n) return engineers.ring_delete(game.forces[force_name].index, n) end,
+  engineers_ring_again = function(force_name, n) return engineers.ring_again(game.forces[force_name].index, n) end,
+  engineers_ring_tick = function() engineers.ring_tick() end,
   cover_tick = function() cover.tick() end,
   shredders_strike = function(ids, surface_index, position, force_name, radius)
     return shredders.strike(ids, game.surfaces[surface_index], position, game.forces[force_name], radius)

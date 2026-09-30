@@ -622,4 +622,90 @@ return function(ctx)
       assert(types.wall and types.gate and #filters == 2, event .. ' has the wrong filters')
     end
   end)
+
+  -- A wall of the ring's force at a world position, with the calls the
+  -- tear-down makes.
+  local function ring_wall(x, y, name)
+    local w = ctx.soldier(nil, nil, x, y)
+    w.name, w.type = name or 'stone-wall', name == 'gate' and 'gate' or 'wall'
+    w.force_index, w.surface_index = 1, 1
+    w.order_deconstruction = function() w.marked = true end
+    w.destroy = function() w.valid = false end
+    return w
+  end
+
+  test('rings: deleting a ring removes its ghosts at once and starts the tear-down', function()
+    local rings, s, surface, force = ring_world()
+    local fs = rings.force_state(1)
+    local ring = rings.start(fs, force, 1, surface)
+    ring.segments[2].state = 'placed'
+    rings.place(ring, 2, {{x = 200.5, y = 0.5, name = 'stone-wall', dir = 'east', a = 0}}, surface, force)
+    local id = next(ring.segments[2].ghosts)
+    local ghost = ring.segments[2].ghosts[id].entity
+    local told, saved = nil, rings.on_teardown
+    rings.on_teardown = function(r) told = r end
+    assert(rings.delete(1, 1))
+    rings.on_teardown = saved
+    assert(ring.state == 'tearing_down' and ring.teardown == 1 and told == ring)
+    assert(not ghost.valid and not s.ring_ghosts[id] and ring.segments[2].live == 0)
+    assert(not rings.delete(1, 1), 'a ring was deleted twice')
+  end)
+
+  test('rings: the tear-down marks walls segment by segment, then the ring is deleted', function()
+    local rings, _, surface, force = ring_world()
+    local dismantle = require('scripts.engineers.rings.dismantle')
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    local walls = {ring_wall(200.5, 0.5), ring_wall(200.5, 1.5, 'gate'), ring_wall(150.5, 0.5)}
+    rings.delete(1, 1)
+    for _ = 1, ring.count do rings.sweep_teardown(ring, game.tick) end
+    assert(walls[1].marked and walls[2].marked and not walls[3].marked, 'wrong walls marked')
+    assert(dismantle.count(ring.key) == 2)
+    rings.sweep_teardown(ring, game.tick)
+    assert(ring.state == 'tearing_down', 'deleted with walls standing')
+    walls[1].valid, walls[2].valid = false, false
+    game.tick = game.tick + rings.PURGE
+    rings.sweep_teardown(ring, game.tick)
+    assert(ring.state == 'deleted' and #ring.labels == 0, 'not deleted after the last wall went')
+    assert(force.printed[#force.printed][1] == 'tank-squads.ring-removed')
+    assert(rings.again(1, 1) and rings.force_state(1).slots[1] == nil, 'build again kept the slot')
+  end)
+
+  test('rings: autonomous constructors take walls down before building', function()
+    local record, constructor, rings, _, restore = autonomous_at(250, 0)
+    local ok, err = pcall(function()
+      local ring = rings.start(rings.force_state(1), game.forces[1], 1, game.surfaces[1])
+      local wall = ring_wall(200.5, 0.5)
+      rings.delete(1, 1)
+      for _ = 1, ring.count do rings.sweep_teardown(ring, game.tick) end
+      constructor.seek(record)
+      assert(record.dismantle and record.state == 'moving' and record.cluster[1].entity == wall)
+      local crane = require('scripts.engineers.crane')
+      assert(crane.place(record) == 1 and not wall.valid, 'the crane did not take the wall down')
+    end)
+    restore()
+    assert(ok, err)
+  end)
+
+  test('rings: an open crossing that has gone is walled up', function()
+    local rings, _, surface, force = ring_world()
+    local obstacles = require('scripts.engineers.rings.obstacles')
+    local saved = {scan = obstacles.scan, present = obstacles.crossing_present}
+    obstacles.scan = function() return {bulges = {}, crossings = {}, water = {}} end
+    obstacles.crossing_present = function() return false end
+    local ok, err = pcall(function()
+      local ring = rings.start(rings.force_state(1), force, 1, surface)
+      for _, seg in ipairs(ring.segments) do seg.state = 'built' end
+      ring.state = 'built'
+      local tag = {valid = true}
+      tag.destroy = function() tag.valid = false end
+      ring.crossings['2:1:30'] = {side = 1, a0 = 30, a1 = 30, segment = 2, tag = tag, due = 0}
+      rings.recheck_crossings(ring, 10)
+      assert(not ring.crossings['2:1:30'] and not tag.valid, 'the crossing was kept')
+      local seg = ring.segments[2]
+      assert(seg.state == 'placed' and seg.live == 4, seg.state .. ' ' .. seg.live)
+      assert(ring.state == 'building')
+    end)
+    obstacles.scan, obstacles.crossing_present = saved.scan, saved.present
+    assert(ok, err)
+  end)
 end

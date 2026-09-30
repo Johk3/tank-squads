@@ -18,6 +18,7 @@ local ghosts = require('scripts.engineers.ghosts')
 local geometry = require('scripts.engineers.rings.geometry')
 local layout = require('scripts.engineers.rings.layout')
 local obstacles = require('scripts.engineers.rings.obstacles')
+local dismantle = require('scripts.engineers.rings.dismantle')
 
 local M = {}
 
@@ -31,6 +32,8 @@ M.GAP = 80
 M.RETRY = 2 * 60
 M.CROSSING_CHECK = 5 * 3600
 M.LABEL_DEPTH = 12
+-- Ticks between counting off walls robots took during a tear-down.
+M.PURGE = 10 * 60
 
 -- Set by crossing.lua (on_segment_built, on_breach) and garrison.lua
 -- (on_teardown).
@@ -383,11 +386,14 @@ function M.find(fs, surface_index, position)
   return nil
 end
 
--- Work for an autonomous constructor: ring ghosts, its own segment first,
--- or a new segment planned for it (one per tick for all constructors).
--- Returns a cluster and 'build', or nil and 'planning' (ask again next
--- second) or 'done' (nothing left).
+-- Work for an autonomous constructor: walls of a ring being torn down,
+-- then ring ghosts, its own segment first, or a new segment planned for it
+-- (one per tick for all constructors). Returns a cluster and 'dismantle'
+-- or 'build', or nil and 'planning' (ask again next second) or 'done'
+-- (nothing left).
 function M.claim(record, radius, max)
+  local taken = dismantle.claim(record, radius, max)
+  if taken then return taken, 'dismantle' end
   local own = record.segment
   if own then
     local cluster = ghosts.claim(record, radius, max, {ring = own.ring, segment = own.index, near = own.near})
@@ -460,6 +466,125 @@ function M.on_wall_mined(entity)
   local p = entity.position
   local ring = M.find(fs, entity.surface_index, p)
   if ring and (ring.state == 'building' or ring.state == 'built') then ring.released[tile_key(p)] = true end
+end
+
+-- Deletes ring n: its unbuilt ghosts go at once; its walls are marked for
+-- deconstruction segment by segment (sweep_teardown) and autonomous
+-- constructors take them down. False when ring n is not standing.
+function M.delete(force_index, n)
+  local fs = M.peek(force_index)
+  local ring = fs and fs.slots[n]
+  if not ring or (ring.state ~= 'building' and ring.state ~= 'built') then return false end
+  local s = state.get()
+  for _, seg in ipairs(ring.segments) do
+    for id, g in pairs(seg.ghosts) do
+      if s.ring_ghosts then s.ring_ghosts[id] = nil end
+      if g.entity.valid then g.entity.destroy() end
+    end
+    seg.ghosts, seg.live = {}, 0
+  end
+  ring.state, ring.teardown, ring.gatehouses = 'tearing_down', 1, {}
+  M.clear_crossings(ring)
+  if M.on_teardown then M.on_teardown(ring) end
+  M.bump(fs)
+  return true
+end
+
+-- A deleted slot is free again; the next ring there is planned afresh
+-- from the current settings.
+function M.again(force_index, n)
+  local fs = M.peek(force_index)
+  local ring = fs and fs.slots[n]
+  if not ring or ring.state ~= 'deleted' then return false end
+  fs.slots[n] = nil
+  M.bump(fs)
+  return true
+end
+
+function M.finish_teardown(ring)
+  dismantle.clear(ring.key)
+  M.clear_labels(ring)
+  ring.state, ring.teardown, ring.purge_tick = 'deleted', nil, nil
+  ring.segments, ring.bulges, ring.released, ring.gatehouses, ring.garrison = {}, {}, {}, {}, nil
+  local force = game.forces[ring.force_index]
+  if force then force.print({'tank-squads.ring-removed', ring.n}) end
+  M.bump(M.peek(ring.force_index))
+end
+
+-- One segment per call: its walls and gates are marked for deconstruction
+-- and registered. After the last segment, the ring is deleted once no wall
+-- is left; walls robots took are counted off every PURGE ticks.
+function M.sweep_teardown(ring, tick)
+  if ring.teardown <= ring.count then
+    local i = ring.teardown
+    ring.teardown = i + 1
+    local surface, force = game.surfaces[ring.surface_index], game.forces[ring.force_index]
+    local seg = geometry.segment(ring, i)
+    local found = surface.find_entities_filtered{area = obstacles.band_area(ring, seg), type = {'wall', 'gate'},
+      force = force}
+    for _, wall in pairs(found) do
+      local p = wall.position
+      if geometry.in_band(ring, p.x, p.y) then
+        local side, along = geometry.to_frame(ring, p.x, p.y)
+        if geometry.segment_of(ring, side, along) == i then
+          wall.order_deconstruction(force)
+          dismantle.add(ring, wall)
+        end
+      end
+    end
+    return
+  end
+  if dismantle.count(ring.key) > 0 and tick >= (ring.purge_tick or 0) then
+    ring.purge_tick = tick + M.PURGE
+    dismantle.purge(ring.key)
+  end
+  if dismantle.count(ring.key) == 0 then M.finish_teardown(ring) end
+end
+
+-- An open crossing whose belt, pipe or rail has gone is walled up: its
+-- tiles are planned and placed, and its map tag goes.
+function M.recheck_crossings(ring, tick)
+  for key, c in pairs(ring.crossings) do
+    if tick >= c.due then
+      c.due = tick + M.CROSSING_CHECK
+      local surface, force = game.surfaces[ring.surface_index], game.forces[ring.force_index]
+      if not obstacles.crossing_present(ring, surface, force, c) then
+        local found = obstacles.scan(ring, surface, force, c.segment)
+        if found then
+          if c.tag and c.tag.valid then c.tag.destroy() end
+          ring.crossings[key] = nil
+          local tiles = layout.plan(ring, c.segment, {bulges = ring.bulges, crossings = found.crossings,
+            water = found.water})
+          local seg = ring.segments[c.segment]
+          local before = seg.live
+          M.place(ring, c.segment, tiles, surface, force, {a0 = c.a0, a1 = c.a1})
+          if seg.live > before then
+            seg.state, ring.state = 'placed', 'building'
+            M.bump(M.peek(ring.force_index))
+          end
+        end
+      end
+    end
+  end
+end
+
+-- Every sweep slice (all of them when phase is nil) a ring being torn
+-- down marks one more segment. Once per second each standing ring checks
+-- one placed segment for vanished ghosts, and its open crossings.
+function M.tick(phase)
+  local s = state.peek()
+  if not (s and s.rings) then return end
+  local tick = game.tick
+  for _, fs in pairs(s.rings) do
+    for _, ring in pairs(fs.slots) do
+      if ring.state == 'tearing_down' then
+        M.sweep_teardown(ring, tick)
+      elseif (phase == nil or phase == 0) and (ring.state == 'building' or ring.state == 'built') then
+        M.audit(ring)
+        M.recheck_crossings(ring, tick)
+      end
+    end
+  end
 end
 
 ghosts.on_ring_gone = M.ghost_gone

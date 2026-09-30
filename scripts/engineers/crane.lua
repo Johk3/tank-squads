@@ -5,6 +5,7 @@
 local names = require('scripts.names')
 local appearance = require('scripts.appearance')
 local ghosts = require('scripts.engineers.ghosts')
+local dismantle = require('scripts.engineers.rings.dismantle')
 
 local M = {}
 
@@ -55,8 +56,21 @@ end
 -- Sets down the claimed walls. Trees and rocks on a ghost are cleared
 -- first. A ghost under a unit stays claimed for the next cycle, up to
 -- RETRIES cycles; one that cannot be revived is blocked. Returns the
--- number of walls built.
+-- number of walls built. A constructor taking a ring down destroys the
+-- claimed walls instead.
 function M.place(record)
+  if record.dismantle then
+    local taken = 0
+    for _, entry in ipairs(record.cluster or {}) do
+      if entry.entity.valid then
+        entry.entity.destroy{raise_destroy = true}
+        taken = taken + 1
+      end
+      dismantle.taken(entry)
+    end
+    record.cluster, record.retries = {}, 0
+    return taken
+  end
   local surface = record.entity.surface
   local kept, built = {}, 0
   for _, entry in ipairs(record.cluster or {}) do

@@ -89,6 +89,7 @@ function M.tick(phase)
     teams.tick(phase)
   end
   task_force.tick(phase)
+  if s.rings and next(s.rings) then rings.tick(phase) end
 end
 
 function M.on_forces_merged(event)
@@ -173,5 +174,9 @@ function M.ring_info(force_index, n)
   return {state = ring.state, radius = ring.radius, count = ring.count, built = built, live = live,
     released = released, bulges = #ring.bulges, crossings = crossings}
 end
+
+function M.ring_delete(force_index, n) return rings.delete(force_index, n) end
+function M.ring_again(force_index, n) return rings.again(force_index, n) end
+function M.ring_tick() rings.tick(nil) end
 
 return M
