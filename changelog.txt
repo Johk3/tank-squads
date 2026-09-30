@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.34.2
+Date: 2026-09-30
+  Bugfixes:
+    - Engineer escorts are shared out per surface, so constructors on two planets no longer wait forever for soldiers that are on the other one.
+    - Merging a force with rings no longer crashes the game. Its walls and ghosts stay as ordinary entities of the new force, and its garrisons stop.
+    - A scout team pulling back to heal no longer waits forever for a hurt tank that is stuck far away: the retreat ends after three minutes without progress, as a convoy's does.
+  Optimisations:
+    - Large armies run faster: dealing shredders to divisions, surrounding a nest with a big division, and veterans picking their covers each cost far less time in large divisions.
+    - Constructors find the nearest wall ghost without ranking every ghost chunk on the map, which speeds up ring building on large maps.
+---------------------------------------------------------------------------------------------------
 Version: 0.34.1
 Date: 2026-09-30
   Changes:
