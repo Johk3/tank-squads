@@ -345,24 +345,105 @@ local function hold_call(s, vip_id, vip, soldier, by_id)
   return false
 end
 
--- Takes free soldiers near the veteran as covers, up to `wanted`.
-local function recruit(s, vip_id, vip, soldier, pool, wanted)
-  local position, reach = soldier.position, M.REACH * M.REACH
-  local candidates = {}
+-- Recruiting looks up the pool in square cells this wide, a power of two so
+-- the cell of a position is exact.
+local CELL = 8
+
+-- The pool of one sweep by cell, each soldier's position and surface read
+-- once. Held soldiers stay in: one let go later in the sweep is free again.
+local function pool_cells(pool)
+  local cells = {}
   for _, e in ipairs(pool) do
-    local id = e.unit_number
-    if not s.held[id] and e.surface_index == soldier.surface_index then
-      local distance = geometry.distance_squared(e.position, position)
-      if distance <= reach then candidates[#candidates + 1] = {id = id, d = distance} end
+    local p = e.position
+    local cx, cy = math.floor(p.x / CELL), math.floor(p.y / CELL)
+    local column = cells[cx] or {}
+    cells[cx] = column
+    local cell = column[cy] or {}
+    column[cy] = cell
+    cell[#cell + 1] = {id = e.unit_number, position = p, surface_index = e.surface_index}
+  end
+  return cells
+end
+
+local function collect(s, cells, x, y, surface_index, position, reach, found)
+  local column = cells[x]
+  local cell = column and column[y]
+  if not cell then return end
+  for _, entry in ipairs(cell) do
+    local id = entry.id
+    if not s.held[id] and entry.surface_index == surface_index then
+      local distance = geometry.distance_squared(entry.position, position)
+      if distance <= reach then found[#found + 1] = {id = id, d = distance} end
     end
   end
+end
+
+-- The free soldiers within REACH of the position, or at least the `count`
+-- nearest of them: square rings of cells outwards, until `count` stand
+-- within the distance every unvisited cell is beyond, or REACH is covered.
+-- The bound trails the ring by one cell to allow for rounding.
+local function candidates_near(s, cells, surface_index, position, reach, count)
+  local cx, cy = math.floor(position.x / CELL), math.floor(position.y / CELL)
+  local found = {}
+  local r = 0
+  collect(s, cells, cx, cy, surface_index, position, reach, found)
+  while (r - 1) * CELL < M.REACH do
+    r = r + 1
+    for x = cx - r, cx + r do
+      collect(s, cells, x, cy - r, surface_index, position, reach, found)
+      collect(s, cells, x, cy + r, surface_index, position, reach, found)
+    end
+    for y = cy - r + 1, cy + r - 1 do
+      collect(s, cells, cx - r, y, surface_index, position, reach, found)
+      collect(s, cells, cx + r, y, surface_index, position, reach, found)
+    end
+    local bound, inside = ((r - 1) * CELL) ^ 2, 0
+    for _, c in ipairs(found) do
+      if c.d <= bound then inside = inside + 1 end
+    end
+    if inside >= count then break end
+  end
+  return found
+end
+
+local function before(a, b)
+  if a.d ~= b.d then return a.d < b.d end
+  return a.id < b.id
+end
+
+-- The first `count` candidates, nearest first, the lower unit number on a
+-- tie: the start of the sorted list, without sorting all of it.
+local function nearest(candidates, count)
+  local out = {}
+  for _, c in ipairs(candidates) do
+    local n = #out
+    if n < count or before(c, out[n]) then
+      if n == count then
+        out[n] = nil
+        n = n - 1
+      end
+      local i = n
+      while i > 0 and before(c, out[i]) do
+        out[i + 1] = out[i]
+        i = i - 1
+      end
+      out[i + 1] = c
+    end
+  end
+  return out
+end
+
+-- Takes free soldiers near the veteran as covers, up to `wanted`. The
+-- nearest come first, the lower unit number on a tie. `lookup.pool` is the
+-- sweep's pool; its cells are built on the first call.
+local function recruit(s, vip_id, vip, soldier, lookup, wanted)
+  lookup.cells = lookup.cells or pool_cells(lookup.pool)
+  local candidates = candidates_near(s, lookup.cells, soldier.surface_index, soldier.position,
+    M.REACH * M.REACH, wanted - #vip.covers)
   if #vip.covers + #candidates < M.MIN_COVERS then return end
-  table.sort(candidates, function(a, b)
-    if a.d ~= b.d then return a.d < b.d end
-    return a.id < b.id
-  end)
-  for i = 1, math.min(wanted - #vip.covers, #candidates) do
-    local id = candidates[i].id
+  local chosen = nearest(candidates, wanted - #vip.covers)
+  for i = 1, #chosen do
+    local id = chosen[i].id
     vip.covers[#vip.covers + 1] = id
     s.held[id] = vip_id
   end
@@ -457,6 +538,7 @@ local function sweep(s, player_index, n, record)
   end
   table.sort(vips, by_rank)
   local share = math.min(M.MAX_COVERS, math.floor(#pool / math.max(1, #vips)))
+  local lookup = {pool = pool}
   for _, v in ipairs(vips) do
     local vip = d.vips[v.id]
     if not vip then
@@ -471,7 +553,7 @@ local function sweep(s, player_index, n, record)
     else
       if #vip.covers < share and share >= M.MIN_COVERS and not (vip.retry and tick < vip.retry) then
         local before = #vip.covers
-        recruit(s, v.id, vip, v.entity, pool, share)
+        recruit(s, v.id, vip, v.entity, lookup, share)
         -- Short of its share, it looks again only after a while.
         if #vip.covers < share then vip.retry = tick + M.RETRY_TICKS end
         if #vip.covers ~= before then changed = true end

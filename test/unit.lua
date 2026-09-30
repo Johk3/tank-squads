@@ -1366,7 +1366,7 @@ require('test.nuclear'){test = test, soldier = soldier, players = function() ret
 require('test.transition'){test = test, soldier = soldier, building = building, players = function() return players end}
 require('test.shredder_geometry'){test = test}
 require('test.cover'){test = test, soldier = soldier, handlers = function() return handlers end,
-  players = function() return players end}
+  players = function() return players end, count_reads = count_reads}
 require('test.shredders'){test = test, soldier = soldier, building = building,
   handlers = function() return handlers end, players = function() return players end,
   draws = function() return draws end, count_reads = count_reads}

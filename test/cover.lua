@@ -109,6 +109,25 @@ return function(ctx)
     assert(held(many) == cover.MAX_COVERS, 'more than five covers')
   end)
 
+  test('cover: a large division recruits covers without a pool scan per veteran', function()
+    setup()
+    -- 1200 soldiers 3 tiles apart in a square, every third a veteran.
+    local list = {}
+    for i = 1, 1200 do
+      local x, y = (i % 35) * 3, math.floor(i / 35) * 3
+      list[i] = i % 3 == 0 and veteran(x, y, 3) or private(x, y)
+    end
+    divisions.assign(1, 1, list)
+    divisions.refresh()
+    local reads = {}
+    for i, e in ipairs(list) do reads[i] = ctx.count_reads(e, 'position') end
+    cover.tick()
+    local total = 0
+    for _, r in ipairs(reads) do total = total + r.n end
+    assert(held(list) > 400, 'test setup: only ' .. held(list) .. ' covers')
+    assert(total <= 3 * 1200, total .. ' position reads to cover 400 veterans')
+  end)
+
   test('cover: a small or spread-out division gives no covers', function()
     setup()
     local v, one = veteran(0, 0), private(3, 0)
