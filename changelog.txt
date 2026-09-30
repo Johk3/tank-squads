@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.36.0
+Date: 2026-09-30
+  Features:
+    - A barracks can keep a set number of shredders alive. Set the shredder limit in the barracks' Automatic reinforcements panel. The barracks pauses when that many of the shredders it trained are alive, and replaces each one that is destroyed or crashes. 0, the default, trains shredders without a limit.
+---------------------------------------------------------------------------------------------------
 Version: 0.35.0
 Date: 2026-09-30
   Features:
