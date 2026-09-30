@@ -169,15 +169,16 @@ end
 
 -- A circle's gatehouse is an axis-aligned block at its point on the circle:
 -- gate rows run east-west near north and south, north-south near east and
--- west. u runs along (ux, uy), depth outward along (nx, ny).
+-- west. u runs along (ux, uy), depth outward along (nx, ny). A gate facing
+-- east stands in an east-west row, one facing north in a north-south row.
 function M.circle_house(ring, gate_along)
   local angle = gate_along / ring.radius
   local x, y = M.to_tile(ring, 0, gate_along, 0)
   local s, c = math.sin(angle), math.cos(angle)
   if math.abs(c) >= math.abs(s) then
-    return {x = x, y = y, ux = 1, uy = 0, nx = 0, ny = c > 0 and -1 or 1, dir = 'north'}
+    return {x = x, y = y, ux = 1, uy = 0, nx = 0, ny = c > 0 and -1 or 1, dir = 'east'}
   end
-  return {x = x, y = y, ux = 0, uy = 1, nx = s > 0 and 1 or -1, ny = 0, dir = 'east'}
+  return {x = x, y = y, ux = 0, uy = 1, nx = s > 0 and 1 or -1, ny = 0, dir = 'north'}
 end
 
 -- The point before a segment's gatehouse, 'inside' or 'outside' the ring.

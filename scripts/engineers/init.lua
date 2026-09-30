@@ -164,12 +164,20 @@ function M.reconcile()
   for _, record in pairs(s.constructors) do
     if record.entity.valid then ghosts.scan(record.entity.surface) end
   end
-  -- Ring labels from older versions are drawn at an older size.
+  -- Ring labels from older versions are drawn at an older size, and a ring
+  -- being torn down lost its labels when it was deleted. Gates of older
+  -- versions stand crosswise to the wall line, in one row instead of three.
   for force_index, fs in pairs(s.rings or {}) do
     local force = game.forces[force_index]
     for _, ring in pairs(fs.slots) do
       local surface = game.surfaces[ring.surface_index]
-      if force and surface and ring.state ~= 'deleted' then rings.draw_labels(ring, force, surface) end
+      if force and surface and (ring.state == 'building' or ring.state == 'built') then
+        rings.draw_labels(ring, force, surface)
+        rings.turn_gates(ring)
+        rings.widen_gates(ring)
+      else
+        rings.clear_labels(ring)
+      end
     end
   end
 end
@@ -245,6 +253,18 @@ function M.ring_reset(force)
   storage.engineers.rings[force.index] = nil
 end
 function M.ring_again(force_index, n) return rings.again(force_index, n) end
+
+-- Engine tests: the upgrade of older gates. Returns gates turned and gate
+-- ghosts added.
+function M.ring_fix_gates(force_index)
+  local fs = rings.peek(force_index)
+  local turned, added = 0, 0
+  for _, ring in pairs(fs and fs.slots or {}) do
+    turned = turned + rings.turn_gates(ring)
+    added = added + rings.widen_gates(ring)
+  end
+  return {turned = turned, added = added}
+end
 function M.ring_tick() rings.tick(nil) end
 function M.clearing_tick() clearing.tick(nil) end
 

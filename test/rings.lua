@@ -119,9 +119,9 @@ return function(ctx)
   test('rings: circle gatehouses are axis-aligned blocks', function()
     local ring = circle(300)
     local north = geometry.circle_house(ring, 0)
-    assert(north.dir == 'north' and north.ux == 1 and north.ny == -1)
+    assert(north.dir == 'east' and north.ux == 1 and north.ny == -1)
     local east = geometry.circle_house(ring, geometry.TAU * 300 / 4)
-    assert(east.dir == 'east' and east.uy == 1 and east.nx == 1)
+    assert(east.dir == 'north' and east.uy == 1 and east.nx == 1)
   end)
 
   test('rings: aprons stand 9 tiles inside and 10 outside the gatehouse', function()
@@ -167,7 +167,7 @@ return function(ctx)
     assert(not at(ring, map, 1, a, -2) and not at(ring, map, 1, a, 5))
   end)
 
-  test('rings: a gatehouse is one row of 16 gates, flanked by bastions, lane clear', function()
+  test('rings: a gatehouse is 16 gates wide in three rows, flanked by bastions, lane clear', function()
     local ring = square(200)
     local tiles = layout.plan(ring, 2, {})
     local map = by_tile(tiles)
@@ -175,13 +175,14 @@ return function(ctx)
     for _, t in ipairs(tiles) do
       if t.name == 'gate' then
         gates = gates + 1
-        assert(t.dir == 'east', 'a gate in an east wall faces ' .. t.dir)
+        -- A gate facing north stands in a north-south wall line.
+        assert(t.dir == 'north', 'a gate in an east wall faces ' .. t.dir)
       end
     end
-    assert(gates == 16, gates .. ' gates')
+    assert(gates == 48, gates .. ' gates')
     for u = -8, 7 do
-      assert(at(ring, map, 1, u, 0).name == 'gate', 'gate missing at ' .. u)
-      for _, d in ipairs({-3, -2, -1, 1, 2, 3, 4}) do
+      for d = -1, 1 do assert(at(ring, map, 1, u, d).name == 'gate', 'gate missing at ' .. u .. ',' .. d) end
+      for _, d in ipairs({-3, -2, 2, 3, 4}) do
         assert(not at(ring, map, 1, u, d), 'lane blocked at ' .. u .. ',' .. d)
       end
     end
@@ -228,7 +229,7 @@ return function(ctx)
     end
   end)
 
-  test('rings: a circle segment keeps walls on the band and gates in one straight row', function()
+  test('rings: a circle segment keeps walls on the band and gates in straight rows', function()
     local ring = circle(300)
     local gates, rows = 0, {}
     for _, t in ipairs(layout.plan(ring, 1, {})) do
@@ -236,13 +237,13 @@ return function(ctx)
         gates = gates + 1
         local y = math.floor(t.y)
         rows[y] = (rows[y] or 0) + 1
-        assert(t.dir == 'north')
+        assert(t.dir == 'east')
       else
         local _, _, d = geometry.to_frame(ring, t.x, t.y)
         assert(d > -5 and d < 6, 'wall off the band at depth ' .. d)
       end
     end
-    assert(gates == 16, gates .. ' gates')
+    assert(gates == 48, gates .. ' gates')
     for y, n in pairs(rows) do assert(n == 16, 'gate row ' .. y .. ' has ' .. n) end
   end)
 
@@ -321,8 +322,7 @@ return function(ctx)
     local ring = square(200)
     local o = {crossings = {{side = 1, a0 = -176, a1 = -175, rail = true}, {side = 1, a0 = -110, a1 = -110, rail = false}}}
     local map = by_tile(layout.plan(ring, 1, o))
-    assert(at(ring, map, 1, -176, 0).name == 'gate', 'rail gate missing')
-    for _, d in ipairs({-1, 1}) do assert(not at(ring, map, 1, -176, d), 'rail gate doubled in row ' .. d) end
+    for d = -1, 1 do assert(at(ring, map, 1, -176, d).name == 'gate', 'rail gate missing in row ' .. d) end
     for d = 3, 4 do assert(not at(ring, map, 1, -176, d), 'teeth on the rail') end
     for d = -3, 6 do assert(not at(ring, map, 1, -110, d), 'belt gap closed in row ' .. d) end
   end)
@@ -348,9 +348,9 @@ return function(ctx)
 
   test('rings: gate direction follows the wall line', function()
     local ring = square(200)
-    assert(layout.gate_dir(ring, 200.5, 0.5) == 'east')
-    assert(layout.gate_dir(ring, 0.5, 200.5) == 'north')
-    assert(layout.gate_dir(circle(300), 0.5, -299.5) == 'north')
+    assert(layout.gate_dir(ring, 200.5, 0.5) == 'north')
+    assert(layout.gate_dir(ring, 0.5, 200.5) == 'east')
+    assert(layout.gate_dir(circle(300), 0.5, -299.5) == 'east')
   end)
 
   -- A world where rings can be started and ghosts placed, outside the engine.
@@ -828,6 +828,7 @@ return function(ctx)
     assert(rings.delete(1, 1))
     rings.on_teardown = saved
     assert(ring.state == 'tearing_down' and ring.teardown == 1 and told == ring)
+    assert(#ring.labels == 0, 'the map still names a ring being torn down')
     assert(not ghost.valid and not s.ring_ghosts[id] and ring.segments[2].live == 0)
     assert(not rings.delete(1, 1), 'a ring was deleted twice')
   end)

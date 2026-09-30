@@ -276,6 +276,90 @@ function M.place(ring, i, tiles, surface, force, only)
   end
 end
 
+local function horizontal(direction)
+  return direction == defines.direction.east or direction == defines.direction.west
+end
+
+-- Older versions placed gates crosswise to the wall line, so they never
+-- joined. Turns every gate ghost on a standing ring's band to face along
+-- it; a built gate is built again facing the right way. Returns how many were turned.
+function M.turn_gates(ring)
+  local surface, force = game.surfaces[ring.surface_index], game.forces[ring.force_index]
+  if not (surface and force) or (ring.state ~= 'building' and ring.state ~= 'built') then return 0 end
+  local turned = 0
+  for i = 1, ring.count do
+    local found = surface.find_entities_filtered{area = obstacles.band_area(ring, geometry.segment(ring, i)),
+      force = force, type = {'gate', 'entity-ghost'}}
+    for _, e in pairs(found) do
+      local p = e.position
+      if e.valid and (e.type == 'gate' or e.ghost_type == 'gate') and geometry.in_band(ring, p.x, p.y) then
+        local want = defines.direction[layout.gate_dir(ring, p.x, p.y)]
+        if horizontal(e.direction) ~= horizontal(want) then
+          if e.type == 'entity-ghost' then
+            e.direction = want
+          else
+            local name, position, health = e.name, {x = p.x, y = p.y}, e.health
+            e.destroy()
+            local gate = surface.create_entity{name = name, position = position, direction = want, force = force}
+            if gate then gate.health = health end
+          end
+          turned = turned + 1
+        end
+      end
+    end
+  end
+  return turned
+end
+
+-- Depth runs outward along these on a square's sides.
+local NORMAL = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}}
+
+-- Older versions built gates in the middle wall row only. Beside every
+-- gate or gate ghost there of a planned segment, the rows inside and
+-- outside get gate ghosts, and the segment is built again. Returns how many
+-- ghosts went up.
+function M.widen_gates(ring)
+  local surface, force = game.surfaces[ring.surface_index], game.forces[ring.force_index]
+  if not (surface and force) or (ring.state ~= 'building' and ring.state ~= 'built') then return 0 end
+  local added, touched = 0, {}
+  for i = 1, ring.count do
+    local planned = ring.segments[i].state
+    if planned == 'placed' or planned == 'built' then
+      local seg = geometry.segment(ring, i)
+      local found = surface.find_entities_filtered{area = obstacles.band_area(ring, seg), force = force,
+        type = {'gate', 'entity-ghost'}}
+      for _, e in pairs(found) do
+        local p = e.position
+        if e.valid and (e.type == 'gate' or e.ghost_type == 'gate') then
+          local side, along, depth = geometry.to_frame(ring, p.x, p.y)
+          if math.abs(depth) < 0.5 and geometry.segment_of(ring, side, along) == i then
+            local n = ring.shape == 'circle' and geometry.circle_house(ring, seg.gate) or nil
+            local nx, ny = n and n.nx or NORMAL[side][1], n and n.ny or NORMAL[side][2]
+            for _, d in ipairs({-1, 1}) do
+              local tile = {x = p.x + d * nx, y = p.y + d * ny, name = 'gate', dir = layout.gate_dir(ring, p.x, p.y)}
+              local box = {{tile.x - 0.4, tile.y - 0.4}, {tile.x + 0.4, tile.y + 0.4}}
+              if not ring.released[tile_key(tile)]
+                  and surface.count_entities_filtered{area = box, type = {'gate', 'wall', 'entity-ghost'}} == 0 then
+                local ghost = M.create_ghost(surface, force, tile)
+                if ghost then
+                  M.tag(ring, i, ghost)
+                  added, touched[i] = added + 1, true
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  for i in pairs(touched) do ring.segments[i].state = 'placed' end
+  if next(touched) then
+    ring.state = 'building'
+    M.bump(M.peek(ring.force_index))
+  end
+  return added
+end
+
 function M.clear_crossings(ring)
   for _, c in pairs(ring.crossings) do
     if c.tag and c.tag.valid then c.tag.destroy() end
@@ -650,6 +734,7 @@ function M.delete(force_index, n)
     seg.ghosts, seg.live, seg.pending = {}, 0, nil
   end
   ring.state, ring.teardown, ring.gatehouses, ring.placing = 'tearing_down', 1, {}, nil
+  M.clear_labels(ring)
   M.clear_crossings(ring)
   if M.on_teardown then M.on_teardown(ring) end
   M.bump(fs)

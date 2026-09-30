@@ -22,12 +22,11 @@ end
 
 -- A gatehouse around its centre, u tiles along and d rows out. Returns
 -- true and the tile's content inside the block, false outside it. The
--- gates are one row on the middle wall row, so they join into one gate;
--- the wall rows beside them stay open.
+-- gates fill the three wall rows.
 local function house(u, d)
   if u < -geometry.HOUSE_HALF or u > geometry.HOUSE_HALF - 1 or d < -3 or d > 4 then return false end
   if u >= -geometry.GATE_HALF and u <= geometry.GATE_HALF - 1 then
-    return true, d == 0 and 'gate' or nil
+    return true, (d >= -1 and d <= 1) and 'gate' or nil
   end
   return true, 'wall'
 end
@@ -98,7 +97,7 @@ function M.cell(ring, seg, a, d, x, y, o, house_ok)
   local side = seg.side
   for _, c in ipairs(o.crossings) do
     if c.side == side and a >= c.a0 and a <= c.a1 then
-      return (c.rail and d == 0) and 'gate' or nil
+      return (c.rail and d >= -1 and d <= 1) and 'gate' or nil
     end
   end
   local b = geometry.bulge_at(o.bulges, side, a)
@@ -140,6 +139,13 @@ function M.circle_box(ring, seg, d0, d1)
   return x0 - 1, y0 - 1, x1 + 1, y1 + 1
 end
 
+-- The gate direction on a square's side. A gate facing north stands in a
+-- north-south wall line (sides 1 and 3), one facing east in an east-west
+-- line (sides 2 and 4).
+function M.side_dir(side)
+  return (side == 1 or side == 3) and 'north' or 'east'
+end
+
 -- The tiles of segment i: {x, y (entity position), name, dir, a}.
 -- obstacles = {bulges, crossings, water}, each optional.
 function M.plan(ring, i, obstacles)
@@ -171,7 +177,7 @@ function M.plan(ring, i, obstacles)
     end
   end
   if ring.shape ~= 'circle' then
-    local dir = (seg.side == 1 or seg.side == 3) and 'east' or 'north'
+    local dir = M.side_dir(seg.side)
     for a = seg.lo, seg.hi do
       -- Rows beyond the teeth hold walls only beside a bulge.
       local rows = 4
@@ -204,7 +210,7 @@ end
 -- The direction of a gate at a world position of the ring.
 function M.gate_dir(ring, x, y)
   local side, along = geometry.to_frame(ring, x, y)
-  if ring.shape ~= 'circle' then return (side == 1 or side == 3) and 'east' or 'north' end
+  if ring.shape ~= 'circle' then return M.side_dir(side) end
   local seg = geometry.segment(ring, geometry.segment_of(ring, 0, along))
   return geometry.circle_house(ring, seg.gate).dir
 end
