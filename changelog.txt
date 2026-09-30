@@ -1,4 +1,16 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.34.1
+Date: 2026-09-30
+  Changes:
+    - Constructors drive straight through forests and rock fields: trees and rocks fall under their tracks, leaving stumps. Walls, buildings and water still stop them.
+    - Constructors reveal the map around them, like soldiers.
+    - Ring gatehouses have one row of 16 gates that join into a single gate, instead of three parallel rows. A rail crossing gets one row of rail gates. Rings already built keep their gates.
+    - Constructors on rings share the work: each finishes its own stretch of wall from one end to the other, takes up nearby stretches nobody works on, and starts the nearest new stretch rather than crossing the map to help another constructor.
+    - The "Ring n" map labels are half as large.
+    - The divisions panel is titled "Tank Squads".
+  Bugfixes:
+    - A constructor building a ring stands clear of the wall, so it no longer walls itself in. One already stuck there is moved out.
+---------------------------------------------------------------------------------------------------
 Version: 0.34.0
 Date: 2026-09-30
   Features:
