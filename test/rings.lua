@@ -1182,4 +1182,15 @@ return function(ctx)
     assert(cluster and mode == 'build', 'no cluster: ' .. tostring(mode))
     assert(seg.live == 2 * rings.PLACE_BATCH and ring.segments[2].state == 'unplanned', 'a new segment was planned')
   end)
+
+  test('rings: the engine test reset removes a force rings with their map labels', function()
+    local rings, _, surface, force = ring_world()
+    local engineers = require('scripts.engineers.init')
+    local before = #ctx.draws()
+    rings.set_centre(force, surface, {x = 5, y = 5})
+    rings.start(rings.force_state(1), force, 1, surface)
+    engineers.ring_reset(force)
+    for k = before + 1, #ctx.draws() do assert(not ctx.draws()[k].valid, 'a ring render was left on the map') end
+    assert(rings.peek(1) == nil, 'the rings stayed')
+  end)
 end

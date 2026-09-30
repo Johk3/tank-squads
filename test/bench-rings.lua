@@ -55,6 +55,7 @@ end)
 for _, e in ipairs(created) do if e.valid then e.destroy{raise_destroy = true} end end
 for _, e in pairs(s.find_entities_filtered{area = area, type = {'wall', 'gate', 'entity-ghost'}}) do e.destroy() end
 for _, t in pairs(force.find_chart_tags(s, area)) do t.destroy() end
+remote.call('tank-squads', 'engineers_ring_reset', 'player')
 storage.engineers = old
 if not ok then error(err) end
 return 'PASS ring benchmarks completed'

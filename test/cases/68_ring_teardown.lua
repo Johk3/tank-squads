@@ -33,8 +33,8 @@ end)
 for _, e in pairs(s.find_entities_filtered{area = area, type = {'wall', 'gate', 'entity-ghost'}}) do e.destroy() end
 if c.valid then c.destroy{raise_destroy = true} end
 for _, t in pairs(force.find_chart_tags(s, area)) do t.destroy() end
+remote.call('tank-squads', 'engineers_ring_reset', 'player')
 if storage.engineers then
-  if storage.engineers.rings then storage.engineers.rings[force.index] = nil end
   storage.engineers.dismantle, storage.engineers.min_team = nil, nil
 end
 if not ok then error(err) end

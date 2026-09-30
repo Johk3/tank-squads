@@ -26,6 +26,6 @@ local ok, err = pcall(function()
 end)
 for _, e in pairs(s.find_entities_filtered{area = area, type = {'wall', 'gate', 'entity-ghost'}}) do e.destroy() end
 for _, t in pairs(force.find_chart_tags(s, area)) do t.destroy() end
-if storage.engineers and storage.engineers.rings then storage.engineers.rings[force.index] = nil end
+remote.call('tank-squads', 'engineers_ring_reset', 'player')
 if not ok then error(err) end
 return 'PASS: a ring wall killed by the enemy gets a ring ghost again'

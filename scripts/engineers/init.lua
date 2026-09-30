@@ -219,6 +219,20 @@ function M.ring_info(force_index, n)
 end
 
 function M.ring_delete(force_index, n) return rings.delete(force_index, n) end
+
+-- Engine tests: drops the force's rings with their map labels, centre mark
+-- and crossing tags, so a case leaves nothing on the test map.
+function M.ring_reset(force)
+  local fs = rings.peek(force.index)
+  if not fs then return end
+  for _, ring in pairs(fs.slots) do
+    rings.clear_labels(ring)
+    rings.clear_crossings(ring)
+  end
+  if fs.mark and fs.mark.valid then fs.mark.destroy() end
+  if fs.mark_circle and fs.mark_circle.valid then fs.mark_circle.destroy() end
+  storage.engineers.rings[force.index] = nil
+end
 function M.ring_again(force_index, n) return rings.again(force_index, n) end
 function M.ring_tick() rings.tick(nil) end
 

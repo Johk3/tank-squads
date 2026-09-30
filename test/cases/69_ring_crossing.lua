@@ -4,7 +4,7 @@ local area = {{2860, -140}, {3140, 140}}
 local function cleanup()
   for _, e in pairs(s.find_entities_filtered{area = area, type = {'wall', 'gate', 'entity-ghost', 'unit'}}) do e.destroy() end
   for _, t in pairs(force.find_chart_tags(s, area)) do t.destroy() end
-  if storage.engineers and storage.engineers.rings then storage.engineers.rings[force.index] = nil end
+  remote.call('tank-squads', 'engineers_ring_reset', 'player')
   storage.case69 = nil
   game.speed = 1
 end
