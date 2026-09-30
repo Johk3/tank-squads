@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.34.3
+Date: 2026-09-30
+  Locale:
+    - The shredder description says shredders park 120 tiles behind their division, as they do, not 60.
+    - The ring spacing tooltip says each ring lies at least 80 tiles beyond the ring before it.
+---------------------------------------------------------------------------------------------------
 Version: 0.34.2
 Date: 2026-09-30
   Bugfixes:
