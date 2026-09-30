@@ -9,7 +9,8 @@
 --   blocked[ghost unit_number] = tick until which no constructor takes it
 --   teams[constructor unit_number] = {members, state, present} (teams.lua)
 --   team_of[soldier unit_number] = constructor unit_number
---   signatures[force_index] = the pool and constructors the last split saw
+--   signatures[force_index .. ':' .. surface_index] = the pool and
+--     constructors the last split saw
 --   task_forces[id] = task force record (task_force.lua)
 --   next_task_force = the last task force id
 --   min_team = test override of constructor.MIN_TEAM

@@ -545,6 +545,31 @@ return function(ctx)
     assert(s.teams[c2.id] == nil and #s.teams[c1.id].members == 5, 'soldiers of a gone constructor not dealt again')
   end)
 
+  test('engineers: each constructor gets the pool soldiers on its own surface', function()
+    local E = ctx.engineers
+    local own = E.engine()
+    local divisions = require('scripts.divisions')
+    local teams = require('scripts.engineers.teams')
+    local constructor = require('scripts.engineers.constructor')
+    local function none() return {} end
+    local other = {index = 2, find_entities_filtered = none, find_units = none}
+    game.surfaces[2] = other
+    local here = {soldier(nil, nil, 1, 0), soldier(nil, nil, 2, 0)}
+    local there = {soldier(nil, other, 1, 0), soldier(nil, other, 2, 0)}
+    divisions.assign(1, 3, {here[1], here[2], there[1], there[2]})
+    teams.set_pool(1, 3, true)
+    local c1 = constructor.register(E.constructor_entity(40, 0))
+    local hull = soldier(own, other, 40, 0)
+    hull.name, hull.type = names.constructor, 'unit'
+    local c2 = constructor.register(hull)
+    teams.refresh()
+    local s = storage.engineers
+    for _, e in ipairs(here) do assert(s.team_of[e.unit_number] == c1.id, 'a soldier went to a constructor elsewhere') end
+    for _, e in ipairs(there) do assert(s.team_of[e.unit_number] == c2.id, 'a soldier went to a constructor elsewhere') end
+    teams.tick()
+    assert(teams.present(c1.id) == 2 and teams.present(c2.id) == 2)
+  end)
+
   test('engineers: a patrol gives no post to a soldier on loan', function()
     local E = ctx.engineers
     E.engine()

@@ -76,26 +76,32 @@ local function new_state(surface_index)
   return {formation = 'defensive', surface_index = surface_index, history = {}, available = false}
 end
 
--- Active constructors per force, sorted by unit number. A constructor away
--- healing has no team.
+-- Active constructors per force and surface, sorted by unit number. A
+-- team fights only on its constructor's surface, so the pool is dealt per
+-- surface. A constructor away healing has no team.
 local function active(s)
   local ids = {}
   for id in pairs(s.constructors) do ids[#ids + 1] = id end
   table.sort(ids)
-  local by_force = {}
+  local groups = {}
   for _, id in ipairs(ids) do
     local record = s.constructors[id]
     if record.entity.valid and record.state ~= 'healing' then
-      local list = by_force[record.force_index] or {}
-      by_force[record.force_index] = list
-      list[#list + 1] = id
+      local key = record.force_index .. ':' .. record.entity.surface_index
+      local group = groups[key]
+      if not group then
+        group = {force_index = record.force_index, surface_index = record.entity.surface_index, constructors = {}}
+        groups[key] = group
+      end
+      group.constructors[#group.constructors + 1] = id
     end
   end
-  return by_force
+  return groups
 end
 
--- The armed soldiers of the force's pool divisions, by unit number.
-local function pool(force_index)
+-- The armed soldiers of the force's pool divisions on the surface, by unit
+-- number.
+local function pool(force_index, surface_index)
   local out = {}
   local veterans = storage.veterans or {}
   for player_index, pstate in pairs(storage.divisions or {}) do
@@ -105,7 +111,7 @@ local function pool(force_index)
         local record = pstate.slots[n]
         if record and record.mode == 'engineer' then
           for _, e in ipairs(divisions.cached(player_index, n)) do
-            if e.valid and names.soldier_set[e.name] then
+            if e.valid and e.surface_index == surface_index and names.soldier_set[e.name] then
               local veteran = veterans[e.unit_number]
               out[#out + 1] = {id = e.unit_number, strength = threat.strength(e.name, veteran and veteran.rank)}
             end
@@ -176,24 +182,24 @@ end
 function M.refresh()
   local s = state.peek()
   if not s then return end
-  local by_force, seen = active(s), {}
-  for force_index, constructors in pairs(by_force) do
-    local soldiers = pool(force_index)
+  local groups, seen = active(s), {}
+  for key, group in pairs(groups) do
+    local soldiers = pool(group.force_index, group.surface_index)
     local parts = {}
-    for _, c in ipairs(constructors) do parts[#parts + 1] = c; seen[c] = true end
+    for _, c in ipairs(group.constructors) do parts[#parts + 1] = c; seen[c] = true end
     parts[#parts + 1] = '|'
     for _, x in ipairs(soldiers) do parts[#parts + 1] = x.id end
     local signature = table.concat(parts, ',')
-    if s.dirty or s.signatures[force_index] ~= signature then
-      s.signatures[force_index] = signature
-      apply(s, M.split(soldiers, constructors, M.CAP))
+    if s.dirty or s.signatures[key] ~= signature then
+      s.signatures[key] = signature
+      apply(s, M.split(soldiers, group.constructors, M.CAP))
     end
   end
   local gone = {}
   for c in pairs(s.teams) do if not seen[c] then gone[#gone + 1] = c end end
   for _, c in ipairs(gone) do dissolve(s, c) end
-  for force_index in pairs(s.signatures) do
-    if not by_force[force_index] then s.signatures[force_index] = nil end
+  for key in pairs(s.signatures) do
+    if not groups[key] then s.signatures[key] = nil end
   end
   s.dirty = false
 end
