@@ -1101,12 +1101,122 @@ return function(ctx)
     assert(reads <= shredders.LOOSE * shredders.SWARM_SCANS, reads .. ' group reads for loose units')
   end)
 
-  test('shredders: only patrolling divisions look out for swarms', function()
+  test('shredders: every division but the engineer escort looks out for swarms', function()
     patrol_swarm(shredders.SWARM_UNITS)
     divisions.record(1, 1).mode = 'idle'
     game.tick = game.tick + 60
     shredders.tick()
-    assert(charging_count() == 0, 'an idle division intercepted a swarm')
+    assert(charging_count() == 1, 'an idle division let a swarm pass')
+  end)
+
+  test('shredders: the engineer escort keeps no shredders', function()
+    building()
+    engine()
+    division(1, 200, 4)
+    shredder(0, 1)
+    shredders.tick()
+    assert(storage.shredders.groups['1:1'], 'no group for division 1')
+    divisions.record(1, 1).mode = 'engineer'
+    shredders.tick()
+    assert(storage.shredders.groups['1:1'] == nil, 'the engineer escort kept its group')
+    for _, r in pairs(storage.shredders.units) do assert(r.group == nil, 'a shredder stayed with the escort') end
+  end)
+
+  -- A patrol of four at x = 200 with two shredders, and `count` nest
+  -- structures 20 tiles away.
+  local function nest_near(count)
+    building()
+    local _, enemy = engine()
+    local members = division(1, 200, 4)
+    divisions.record(1, 1).mode = 'patrol'
+    shredder(0, 1)
+    shredder(0, 2)
+    shredders.tick()
+    local structures = {}
+    for i = 1, count do
+      local e = enemy_unit(enemy, 220 + i, 2, 350)
+      e.type = i == count and 'unit-spawner' or 'turret'
+      structures[i] = e
+    end
+    return members, structures
+  end
+
+  local function rolls(value)
+    local old = math.random
+    math.random = function() return value end
+    return function() math.random = old end
+  end
+
+  test('shredders: a division throws one shredder at a dangerous nest, spawner first', function()
+    local _, structures = nest_near(shredders.NEST_DANGER)
+    local restore = rolls(0)
+    game.tick = game.tick + 60
+    shredders.tick()
+    restore()
+    assert(charging_count() == 1, charging_count() .. ' shredders thrown at the nest')
+    for _, r in pairs(storage.shredders.units) do
+      if r.state == 'igniting' then assert(r.target == structures[#structures], 'did not aim at the spawner') end
+    end
+    game.tick = game.tick + 60
+    restore = rolls(0)
+    shredders.tick()
+    restore()
+    assert(charging_count() == 1, 'a second shredder went within the cooldown')
+  end)
+
+  test('shredders: a small nest or an unlucky roll throws nothing', function()
+    nest_near(shredders.NEST_DANGER - 1)
+    local restore = rolls(0)
+    game.tick = game.tick + 60
+    shredders.tick()
+    restore()
+    assert(charging_count() == 0, 'a small nest drew a shredder')
+  end)
+
+  test('shredders: a missed roll looks at the nest again after a while', function()
+    nest_near(shredders.NEST_DANGER)
+    local restore = rolls(0.99)
+    game.tick = game.tick + 60
+    shredders.tick()
+    restore()
+    assert(charging_count() == 0, 'thrown despite the roll')
+    restore = rolls(0)
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(charging_count() == 0, 'rolled again at once')
+    game.tick = game.tick + shredders.NEST_REROLL
+    shredders.tick()
+    restore()
+    assert(charging_count() == 1, 'never rolled again')
+  end)
+
+  test('shredders: a shredder from an older save gets its map icon when registered again', function()
+    engine()
+    local e, record = shredder(0, 0)
+    record.marker.destroy()
+    record.marker = nil
+    assert(shredders.register(e) == record)
+    assert(record.marker and record.marker.valid, 'no map icon after the migration')
+  end)
+
+  test('shredders: every shredder shows on the map, and a lock draws a line to its target', function()
+    local _, enemy = engine()
+    local e, record = shredder(0, 0)
+    local marker = record.marker
+    assert(marker and marker.valid and marker.args.render_mode == 'chart' and marker.args.target == e
+      and marker.args.color,
+      'no map icon for a parked shredder')
+    local target = enemy_unit(enemy, 10, 0)
+    assert(shredders.charge(record, target, true))
+    assert(not marker.valid, 'the old icon stayed behind')
+    assert(record.marker.valid and record.marker.args.target == record.entity, 'the charger has no map icon')
+    local line, ring = record.renders.map_line, record.renders.map_target
+    assert(line and line.args.render_mode == 'chart' and line.args.to == target and line.args.from == record.entity,
+      'no map line to the target')
+    assert(ring and ring.args.render_mode == 'chart' and ring.args.target == target, 'the target is not ringed')
+    shredders.stand_down(record)
+    assert(not line.valid and not ring.valid, 'the map line outlived the charge')
+    assert(record.marker.valid and record.marker.args.target == record.entity, 'the parked shredder lost its icon')
   end)
 
   test('shredders: a lookout without ready shredders searches nothing', function()

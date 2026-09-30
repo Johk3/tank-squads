@@ -51,11 +51,13 @@ local function rebuild(phases)
   for s = 0, cycle - 1 do slices[s] = {} end
   for p = 0, phases - 1 do coverage[p] = {} end
   -- Positions are read in each soldier's own slice, not all at once here.
-  -- A headquarters and a constructor see like a soldier.
+  -- A headquarters, a constructor and a shredder see like a soldier.
   for id, record in pairs(storage.weapons or {}) do slices[id % cycle][id] = {entity = record.entity} end
   for id, record in pairs(storage.headquarters or {}) do slices[id % cycle][id] = {entity = record.entity} end
   local engineers = storage.engineers
   for id, record in pairs(engineers and engineers.constructors or {}) do slices[id % cycle][id] = {entity = record.entity} end
+  local shredders = storage.shredders
+  for id, record in pairs(shredders and shredders.units or {}) do slices[id % cycle][id] = {entity = record.entity} end
   storage.vision = {layout = LAYOUT, phases = phases, slices = slices, occupied = {}, coverage = coverage}
   return storage.vision
 end
@@ -118,7 +120,8 @@ local function read(state, soldier)
 end
 
 -- Called by weapons.register and weapons.unregister, and by the same calls
--- in scripts/headquarters.lua and scripts/engineers/constructor.lua, so no
+-- in scripts/headquarters.lua, scripts/engineers/constructor.lua and
+-- scripts/shredders.lua, so no
 -- slice scans the whole soldier registry. A new soldier is read at once, so
 -- it has vision from its first second.
 function M.track(entity)

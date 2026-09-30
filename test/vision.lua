@@ -261,6 +261,22 @@ return function(ctx)
     assert(#calls == 2 * vision.RADIUS + 1, 'soldier registered before vision was not tracked')
   end)
 
+  test('vision: shredders are charted like soldiers, also after a rebuild', function()
+    local force = setup()
+    local calls, charted, clear = watch(force)
+    sweep(1)
+    local e = soldier(nil, nil, 16, 16)
+    e.name = require('scripts.names').shredder
+    require('scripts.shredders').register(e)
+    sweep(1)
+    assert_area(charted, 0, 0)
+    storage.vision = nil
+    sweep(vision.READ_SECONDS)
+    clear()
+    sweep(1)
+    assert(#calls == 2 * vision.RADIUS + 1, 'a shredder was not tracked after a rebuild')
+  end)
+
   test('vision: the map setting switches charting off and back on', function()
     local force = setup()
     local calls, charted, clear = watch(force)

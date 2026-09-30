@@ -24,6 +24,7 @@ local combat = require('scripts.combat')
 local divisions = require('scripts.divisions')
 local geometry = require('scripts.shredder_geometry')
 local appearance = require('scripts.appearance')
+local vision = require('scripts.vision')
 
 local M = {}
 
@@ -55,10 +56,18 @@ M.LANDING = 64
 M.SWARM_UNITS, M.SWARM_RADIUS, M.SWARM_COOLDOWN, M.SWARM_SCANS, M.SWARM_LIMIT, M.LOOSE = 15, 40, 5 * 60, 2, 45, 8
 local TARGETS = {'unit', 'unit-spawner', 'turret'}
 local LOOK = appearance.shredder
+-- A division that sees at least NEST_DANGER spawners and worms within
+-- NEST_LOOK tiles of a soldier throws one shredder at them now and then:
+-- each sighting has a THROW_CHANCE, a miss looks again after NEST_REROLL
+-- ticks, and a throw rests the group's nest lookout for NEST_COOLDOWN.
+M.NEST_LOOK, M.NEST_DANGER, M.THROW_CHANCE, M.NEST_REROLL, M.NEST_COOLDOWN = 40, 3, 0.5, 10 * 60, 60 * 60
 M.DANGER_UNITS, M.DANGER_RADIUS, M.NEST_RADIUS = 10, 40, 50
 M.SHADOW_SIZE, M.SHADOW_REACH, M.SHADOW_BACK, M.SHADOW_STRIKE, M.SHADOW_DRIFT = 3, 200, 80, 30, 20
 M.CALM = 10 * 60
 local NESTS = {'unit-spawner', 'turret'}
+-- The map shows every shredder; a locked one draws a bright line to its
+-- target and rings it.
+M.MAP_LOCK_COLOR = {1, 0.12, 0.05}
 local PLAYER_TYPES = {character = true, car = true, ['spider-vehicle'] = true}
 
 function M.state()
@@ -160,10 +169,33 @@ local function draw_body(record, animation, offset, speed)
     orientation_target = record.target, oriented_offset = {0, offset}, render_layer = 'object'}, speed)
 end
 
+local function replace(record, key, object)
+  local old = record.renders[key]
+  if old and old.valid then old.destroy() end
+  record.renders[key] = object
+end
+
 local function draw_lock(record)
-  local target = record.target
+  local target, entity = record.target, record.entity
+  local forces = {entity.force}
   draw(record, 'lock', {animation = 'tank-squad-shredder-lock', target = target, surface = target.surface,
-    render_layer = 'higher-object-above', forces = {record.entity.force}}, 0.5)
+    render_layer = 'higher-object-above', forces = forces}, 0.5)
+  replace(record, 'map_line', rendering.draw_line{color = M.MAP_LOCK_COLOR, width = 4, from = entity, to = target,
+    surface = entity.surface, forces = forces, render_mode = 'chart'})
+  replace(record, 'map_target', rendering.draw_circle{color = M.MAP_LOCK_COLOR, radius = 3, width = 4, filled = false,
+    target = target, surface = entity.surface, forces = forces, render_mode = 'chart'})
+end
+
+-- The shredder's icon on the map for its force, at a fixed screen size. A
+-- charging shredder's icon is drawn larger. The icon rides on the entity,
+-- so it goes with it; a swap draws it again for the new unit.
+local function mark(record)
+  local entity = record.entity
+  if record.marker and record.marker.valid then record.marker.destroy() end
+  record.marker = rendering.draw_text{text = '[img=entity/' .. M.PARKED .. ']', use_rich_text = true,
+    color = {1, 1, 1}, target = entity, surface = entity.surface, forces = {entity.force}, render_mode = 'chart',
+    alignment = 'center', vertical_alignment = 'middle', scale = entity.name == M.PARKED and 1 or 1.6,
+    scale_with_zoom = true}
 end
 
 -- Replaces the entity with the other shredder prototype in place. The
@@ -187,6 +219,9 @@ local function swap(record, name)
   s.units[old_id], s.doomed[old_id] = nil, nil
   record.entity, record.id = new, new.unit_number
   s.units[record.id] = record
+  vision.forget(old_id)
+  vision.track(new)
+  mark(record)
   local holder = (record.group and s.groups[record.group]) or (record.shadow and s.shadows[record.shadow])
   if holder then
     for i, id in ipairs(holder.members) do if id == old_id then holder.members[i] = record.id end end
@@ -201,7 +236,12 @@ function M.register(entity)
   if not (entity and entity.valid and names.shredder_set[entity.name]) then return nil end
   local s = M.state()
   local record = s.units[entity.unit_number]
-  if record then return record end
+  if record then
+    -- Shredders from older saves get their map icon and vision here.
+    if not (record.marker and record.marker.valid) then mark(record) end
+    vision.track(entity)
+    return record
+  end
   -- Force and surface are kept on the record, so the split reads no entity
   -- of a settled army. A shredder teleported to another surface by another
   -- mod keeps its old split until it registers again.
@@ -209,6 +249,8 @@ function M.register(entity)
     force_index = entity.force_index, surface_index = entity.surface_index}
   s.units[record.id] = record
   s.dirty = true
+  vision.track(entity)
+  mark(record)
   -- A charger cloned or found on an upgrade has no charge left to finish.
   if entity.name == M.CHARGING then
     record.state = 'stranded'
@@ -225,6 +267,8 @@ function M.unregister(unit_number)
   leave(record)
   unlock(record)
   clear_renders(record)
+  if record.marker and record.marker.valid then record.marker.destroy() end
+  vision.forget(unit_number)
   s.units[unit_number] = nil
   s.doomed[unit_number] = nil
   if s.stranded then s.stranded[unit_number] = nil end
@@ -301,9 +345,16 @@ end
 -- reuses the cached members. A division counts when it has an armed
 -- soldier. A division may span surfaces: its group stays on its surface
 -- while an armed soldier is there, else moves to the first armed soldier's.
+-- The engineer escort keeps no shredders: its soldiers guard constructors.
 function M.update_group(player_index, n)
   local s = M.state()
   local key = player_index .. ':' .. n
+  local pstate = storage.divisions and storage.divisions[player_index]
+  local slot = pstate and pstate.slots[n]
+  if slot and slot.mode == 'engineer' then
+    if s.groups[key] then M.drop_group(key) end
+    return
+  end
   local player = game.get_player(player_index)
   local members = player and divisions.cached(player_index, n) or {}
   local old = s.groups[key] and s.groups[key].surface_index
@@ -343,9 +394,7 @@ function M.update_group(player_index, n)
   if not group.ordered or geometry.distance2(group.ordered, group.point) > M.DRIFT * M.DRIFT then
     M.post(group)
   end
-  local pstate = storage.divisions and storage.divisions[player_index]
-  local slot = pstate and pstate.slots[n]
-  if slot and slot.mode == 'patrol' then M.lookout(group, here, player.force) end
+  if slot then M.lookout(group, here, player.force) end
 end
 
 -- Pooled shredders with no division to serve wait at their rally point.
@@ -681,6 +730,7 @@ function M.reap()
   for id in pairs(s.doomed) do
     local record = s.units[id]
     if record and record.entity.valid then record.entity.destroy() end
+    vision.forget(id)
     s.units[id], s.doomed[id] = nil, nil
   end
 end
@@ -851,13 +901,49 @@ function M.answer_swarm(group, surface, position, force, enemies)
   return true
 end
 
--- A patrolling division's lookout, in its own slice: SWARM_SCANS soldiers
--- in turn look around them. Costs nothing while its shredders are away or
--- resting after an interception.
+-- Spawners and worms around the position when at least NEST_DANGER of
+-- them stand within NEST_LOOK tiles: the nearest spawner no shredder aims
+-- at, else the nearest such worm, or nil. A count first, so a division far
+-- from nests builds no list.
+function M.nest_target(surface, position, enemies)
+  local query = {position = position, radius = M.NEST_LOOK, force = enemies, type = NESTS, limit = M.NEST_DANGER}
+  if #enemies == 0 or surface.count_entities_filtered(query) < M.NEST_DANGER then return nil end
+  query.limit = nil
+  local locks, best, best_d, best_spawner = M.state().locks, nil, nil, nil
+  for _, e in ipairs(surface.find_entities_filtered(query)) do
+    if not (e.unit_number and locks[e.unit_number]) then
+      local spawner, d = e.type == 'unit-spawner', geometry.distance2(e.position, position)
+      if not best or (spawner and not best_spawner) or (spawner == best_spawner and d < best_d) then
+        best, best_d, best_spawner = e, d, spawner
+      end
+    end
+  end
+  return best
+end
+
+-- Looks for a dangerous nest around the position; now and then throws one
+-- shredder at it. Returns true when one went.
+function M.answer_nest(group, surface, position, enemies)
+  local tick = game.tick
+  local target = M.nest_target(surface, position, enemies)
+  if not target then return false end
+  if math.random() >= M.THROW_CHANCE then
+    group.nest_tick = tick - M.NEST_COOLDOWN + M.NEST_REROLL
+    return false
+  end
+  if not intercept(group, target) then return false end
+  group.nest_tick = tick
+  return true
+end
+
+-- A division's lookout, in its own slice: SWARM_SCANS soldiers in turn look
+-- around them for a swarm and for a dangerous nest. Costs nothing while its
+-- shredders are away or both lookouts rest.
 function M.lookout(group, here, force)
   local tick = game.tick
-  if group.swarm_tick and tick - group.swarm_tick < M.SWARM_COOLDOWN then return false end
-  if not has_ready(group) then return false end
+  local swarm = not (group.swarm_tick and tick - group.swarm_tick < M.SWARM_COOLDOWN)
+  local nest = not (group.nest_tick and tick - group.nest_tick < M.NEST_COOLDOWN)
+  if not (swarm or nest) or not has_ready(group) then return false end
   local soldiers = {}
   for _, e in ipairs(here) do if names.soldier_set[e.name] then soldiers[#soldiers + 1] = e end end
   if #soldiers == 0 then return false end
@@ -865,7 +951,12 @@ function M.lookout(group, here, force)
   group.lookout = (turn + M.SWARM_SCANS) % #soldiers
   for i = 1, math.min(M.SWARM_SCANS, #soldiers) do
     local soldier = soldiers[(turn + i - 1) % #soldiers + 1]
-    if M.answer_swarm(group, soldier.surface, soldier.position, force, enemies) then return true end
+    local surface, position = soldier.surface, soldier.position
+    if swarm and M.answer_swarm(group, surface, position, force, enemies) then return true end
+    if nest and group.surface_index == surface.index and M.answer_nest(group, surface, position, enemies) then
+      return true
+    end
+    nest = not (group.nest_tick and tick - group.nest_tick < M.NEST_COOLDOWN)
   end
   return false
 end
