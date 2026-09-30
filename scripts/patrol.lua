@@ -444,7 +444,7 @@ function M.on_damaged(event)
     local id = soldier.unit_number
     if id ~= victim and r.posts[id] and soldier.surface_index == surface_index
       and soldier.name ~= names.headquarters and not busy(r, id) and not retreat.is_away(r, id)
-      and not cover.held(id) then
+      and not cover.held(id) and not cover.steady(soldier) then
       local d = geometry.distance_squared(soldier.position, position)
       if d <= reach then candidates[#candidates + 1] = {soldier = soldier, id = id, d = d} end
     end

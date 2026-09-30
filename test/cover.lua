@@ -11,6 +11,8 @@ return function(ctx)
     dofile('control.lua')
     defines.distraction.none = defines.distraction.none or 0
     defines.command.attack = defines.command.attack or 3
+    defines.command.compound = defines.command.compound or 4
+    defines.compound_command = defines.compound_command or {return_last = 1}
     game.surfaces[1].find_units = function() return {} end
   end
 
@@ -322,6 +324,84 @@ return function(ctx)
       sweep()
     end
     assert(not cover.held(v.unit_number), 'the call did not end once the enemies were gone')
+  end)
+
+  test('cover: a veteran on patrol is never drawn off its route; a private is', function()
+    setup()
+    local v, p = veteran(0, 0), private(50, 0)
+    divisions.assign(1, 1, {v, p})
+    patrol.add_waypoint(1, 1, {x = 0, y = 0}, game.surfaces[1])
+    patrol.add_waypoint(1, 1, {x = 100, y = 0}, game.surfaces[1])
+    patrol.start(1, 1)
+    assert(v.command.type == defines.command.go_to_location and v.command.distraction == defines.distraction.none,
+      'the veteran can be drawn off its route')
+    assert(p.command.distraction == defines.distraction.by_enemy, 'the private no longer fights on its way')
+  end)
+
+  test('cover: a veteran stops to shoot an enemy in range and breaks off once it leaves', function()
+    setup()
+    local v = veteran(0, 0)
+    divisions.assign(1, 1, {v})
+    patrol.add_waypoint(1, 1, {x = 0, y = 0}, game.surfaces[1])
+    patrol.add_waypoint(1, 1, {x = 100, y = 0}, game.surfaces[1])
+    patrol.start(1, 1)
+    local leg = v.command
+    v.commandable.command = leg
+    local enemy = soldier('enemy', nil, 10, 0)
+    local asked
+    game.surfaces[1].find_nearest_enemy = function(q)
+      asked = q.max_distance
+      local p = enemy.position
+      if math.sqrt(p.x * p.x + p.y * p.y) <= q.max_distance then return enemy end
+      return nil
+    end
+    sweep()
+    assert(asked == cover.GUARD_RANGE, 'the veteran looked beyond its range')
+    local c = v.command
+    assert(c.type == defines.command.compound, 'the veteran did not stop to shoot')
+    assert(c.commands[1].type == defines.command.attack and c.commands[1].target == enemy
+      and c.commands[1].distraction == defines.distraction.none, 'the veteran did not attack the enemy in range')
+    assert(c.commands[2] == leg, 'the veteran will not go on with its leg')
+    -- The enemy runs off toward its nest: the veteran does not follow.
+    enemy.position = {x = cover.GUARD_RANGE + cover.SLACK + 5, y = 0}
+    v.command = nil
+    game.tick = 60
+    sweep()
+    assert(v.command == leg, 'the veteran chased an enemy out of its range')
+  end)
+
+  test('cover: a patrol alarm leaves veterans out of the responders', function()
+    setup()
+    local v, victim, p = veteran(0, 0), private(10, 0), private(-10, 0)
+    divisions.assign(1, 1, {v, victim, p})
+    patrol.add_waypoint(1, 1, {x = 0, y = 0}, game.surfaces[1])
+    patrol.add_waypoint(1, 1, {x = 100, y = 0}, game.surfaces[1])
+    patrol.start(1, 1)
+    local enemy = soldier('enemy', nil, 20, 0)
+    local force = victim.force
+    force.is_enemy = function(other) return other == enemy.force end
+    patrol.on_damaged{entity = victim, cause = enemy}
+    assert(p.command.type == defines.command.attack_area, 'test setup: the private did not respond')
+    assert(v.command.type ~= defines.command.attack_area, 'the veteran went to the front line')
+  end)
+
+  test('cover: a veteran never falls back toward the enemies', function()
+    setup()
+    local v = veteran(0, 0)
+    -- The helpers stand beyond the enemies.
+    local helpers = {private(0, -80), private(5, -80), private(-5, -80)}
+    local enemies = {}
+    for i = 1, cover.DANGER_COUNT do
+      local e = soldier('enemy', nil, i, -30)
+      e.type = 'unit'
+      enemies[i] = e
+    end
+    game.surfaces[1].find_units = function() return enemies end
+    divisions.assign(1, 1, with({v}, helpers))
+    sweep()
+    local c = v.command
+    assert(cover.held(v.unit_number) and c.type == defines.command.go_to_location, 'no call')
+    assert(c.destination.y >= cover.FALLBACK - 1, 'the veteran fell back toward the enemies: ' .. c.destination.y)
   end)
 
   test('cover: a stuck cover far away is let go, a following one is kept', function()

@@ -280,7 +280,8 @@ function formations.defensive(state, members, character, moved, characters, cfg)
       local target = state.responders and state.responders[id]
       if target ~= nil then
         kept[id], count = target, count + 1
-      else
+      elseif not cover.steady(soldier) then
+        -- A veteran stays off the front line.
         candidates[#candidates + 1] = soldier
       end
     end

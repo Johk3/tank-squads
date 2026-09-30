@@ -68,6 +68,11 @@ M.FALLBACK = 48
 M.CALM_SWEEPS = 5
 M.TIMEOUT = 60 * 60
 M.COOLDOWN = 10 * 60
+-- A veteran shoots whatever comes within its weapon's range, and breaks
+-- off a fight that leaves that range by SLACK tiles. A unit without attack
+-- parameters uses GUARD_RANGE.
+M.SLACK = 4
+M.GUARD_RANGE = 20
 
 -- Set by control.lua to reinforcements.assign_job, which needs modules that
 -- require this one.
@@ -200,6 +205,45 @@ local function whole_division(record)
   return record.mode == "escort" and record.escort ~= nil and record.escort.assault ~= nil
 end
 
+-- True for a veteran that stays off the front line: its division runs a job
+-- this module watches, and the veteran is not lent out. Its orders never
+-- draw it toward an enemy (combat.steady); `guard` makes it shoot instead.
+function M.steady(entity)
+  local veterans = storage.veterans
+  local veteran = veterans and veterans[entity.unit_number]
+  if not (veteran and veteran.rank and veteran.rank >= M.RANK) then return false end
+  if loans.on_loan(entity.unit_number) then return false end
+  local _, n, record = divisions.owner(entity.unit_number)
+  return record ~= nil and n ~= 0 and not whole_division(record)
+end
+
+-- Weapon ranges by prototype name. Prototypes are the same on every peer.
+local ranges = {}
+local function range_of(soldier)
+  local range = ranges[soldier.name]
+  if not range then
+    local attack = soldier.prototype.attack_parameters
+    range = attack and attack.range or M.GUARD_RANGE
+    ranges[soldier.name] = range
+  end
+  return range
+end
+
+-- The veteran stops to shoot the nearest enemy within its range, then goes
+-- on with its order. It never walks toward an enemy: a fight whose target
+-- left its range is broken off.
+local function guard(soldier)
+  local range, position = range_of(soldier), soldier.position
+  local target = combat.target(soldier.unit_number)
+  if target then
+    local reach = range + M.SLACK
+    if geometry.distance_squared(target.position, position) <= reach * reach then return end
+    combat.disengage(soldier)
+  end
+  local enemy = soldier.surface.find_nearest_enemy{position = position, max_distance = range, force = soldier.force}
+  if enemy then combat.engage(soldier, enemy) end
+end
+
 local function unit_vector(dx, dy)
   local length = math.sqrt(dx * dx + dy * dy)
   if length < 1e-6 then return nil end
@@ -270,7 +314,8 @@ end
 -- Calls for help: the nearest soldiers of the division that are not
 -- veterans, and the division's shredders, attack the enemies. The veteran
 -- falls back behind the helpers, or towards the shredders' backline or
--- away from the enemies when nobody can come.
+-- away from the enemies when nobody can come. It never walks toward the
+-- enemies to get there: it falls back straight away from them instead.
 local function call(s, d, vip_id, vip, soldier, enemies, pool)
   local position = soldier.position
   local centre = geometry.centroid_points(enemies)
@@ -308,6 +353,13 @@ local function call(s, d, vip_id, vip, soldier, enemies, pool)
     point = backline
   else
     local away = unit_vector(position.x - centre.x, position.y - centre.y) or {x = 0, y = 1}
+    point = {x = position.x + away.x * M.FALLBACK, y = position.y + away.y * M.FALLBACK}
+  end
+  -- Measured along the line from the enemies to the veteran: a point behind
+  -- the helpers on the enemies' far side counts as toward them.
+  local ax, ay = position.x - centre.x, position.y - centre.y
+  if (point.x - centre.x) * ax + (point.y - centre.y) * ay < ax * ax + ay * ay then
+    local away = unit_vector(ax, ay) or {x = 0, y = 1}
     point = {x = position.x + away.x * M.FALLBACK, y = position.y + away.y * M.FALLBACK}
   end
   s.held[vip_id] = vip_id
@@ -577,6 +629,7 @@ local function sweep(s, player_index, n, record)
         lead(vip, v.entity, by_id, audits[v.id])
       end
     end
+    guard(v.entity)
   end
   if changed then reform(record) end
   if not next(d.vips) then s.divisions[key] = nil end

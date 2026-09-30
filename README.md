@@ -122,7 +122,8 @@ The highest-ranking soldier carries the division's insignia.
 Veterans, Elites and Legends are protected by their division:
 
 - **Cover:** two to five lower-ranked soldiers within 32 tiles walk at the veteran's sides, and stay out of the division's escort formation or patrol posts while they do. The division's soldiers are shared out between its veterans, highest rank first. A small or spread-out division gives no cover.
-- **Call for help:** a veteran without cover that sees ten or more enemies within 40 tiles calls the nearest soldiers of its division and the division's shredders to attack them. The veteran falls back behind them, or to the shredders' backline when nobody can come, and returns to its job once the fight is over.
+- **Held back:** a veteran never leaves its route or formation to chase an enemy, and never answers a patrol or escort alarm. It stops to shoot any enemy within its weapon range, then goes on. It breaks off a fight once the enemy moves out of range, so it is never drawn into a nest.
+- **Call for help:** a veteran without cover that sees ten or more enemies within 40 tiles calls the nearest soldiers of its division and the division's shredders to attack them. The veteran falls back behind them, or to the shredders' backline when nobody can come, and returns to its job once the fight is over. It never walks toward the enemies to fall back, and it still shoots at enemies in range on the way.
 - Scouting and nest assaults use every soldier, so nobody covers then. A new order ends a call for help, and cover forms again under the new order.
 
 ---

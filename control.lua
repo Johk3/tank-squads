@@ -27,6 +27,7 @@ local engineers = require("scripts.engineers.init")
 
 veterans.on_promoted = transition.roll
 cover.assign_job = reinforcements.assign_job
+combat.steady = cover.steady
 
 local function on_built(event)
   local entity = event.entity

@@ -38,9 +38,26 @@ end
 -- gatehouse. Returns true when it sent the unit there itself.
 M.crossing = nil
 
+-- Set by control.lua to cover.steady: true for a veteran that must never be
+-- drawn toward an enemy. Its moves and waits take no distraction; the cover
+-- sweep stops it to shoot what comes into range (M.engage).
+M.steady = nil
+
+local function undistracted(command)
+  local out = {}
+  for key, value in pairs(command) do out[key] = value end
+  out.distraction = defines.distraction.none
+  return out
+end
+
 -- `direct_path` sends the order as it is, without a ring crossing.
 function M.set_command(entity, command, direct_path)
   M.forget(entity.unit_number)
+  if M.steady and command.distraction == defines.distraction.by_enemy
+      and (command.type == defines.command.go_to_location or command.type == defines.command.stop)
+      and M.steady(entity) then
+    command = undistracted(command)
+  end
   if M.crossing and not direct_path and M.crossing(entity, command, 'combat') then return end
   if entity.name == names.headquarters then
     entity.commandable.set_command(unarmed(command))
@@ -105,6 +122,39 @@ local function defend(entity, enemy, building_shot)
       resume,
     },
   }
+end
+
+-- Stops to shoot a target already in range, then resumes the order. False
+-- while the soldier already fights.
+function M.engage(entity, target)
+  local current = storage.combat and storage.combat[entity.unit_number]
+  if current and current.target.valid then return false end
+  storage.combat = storage.combat or {}
+  local resume = resumption(current and current.resume or entity.commandable.command)
+  storage.combat[entity.unit_number] = {target = target, resume = resume}
+  entity.commandable.set_command{
+    type = defines.command.compound,
+    structure_type = defines.compound_command.return_last,
+    commands = {
+      {type = defines.command.attack, target = target, distraction = defines.distraction.none},
+      resume,
+    },
+  }
+  return true
+end
+
+-- The target of the soldier's fight, or nil.
+function M.target(unit_number)
+  local current = storage.combat and storage.combat[unit_number]
+  return current and current.target.valid and current.target or nil
+end
+
+-- Breaks off the fight and resumes the order it interrupted.
+function M.disengage(entity)
+  local current = storage.combat and storage.combat[entity.unit_number]
+  if not current then return end
+  storage.combat[entity.unit_number] = nil
+  entity.commandable.set_command(resumption(current.resume))
 end
 
 -- Spitters and worms leave acid pools: point-sized fire entities that slow
