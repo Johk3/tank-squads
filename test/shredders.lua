@@ -19,6 +19,7 @@ return function(ctx)
     game.forces = {own, enemy}
     local surface = game.surfaces[1]
     surface.play_sound = function() end
+    surface.find_non_colliding_position = function(_, position) return position end
     surface.create_entity = function(args)
       local e = soldier(args.force, nil, args.position.x, args.position.y)
       e.name, e.type = args.name, 'unit'
@@ -255,7 +256,7 @@ return function(ctx)
     return calls
   end
 
-  test('shredders: a group parks 120 tiles behind its division toward home', function()
+  test('shredders: a group parks 80 tiles behind its division toward home', function()
     building()
     engine()
     division(1, 200)
@@ -263,8 +264,8 @@ return function(ctx)
     shredders.tick()
     local group = storage.shredders.groups['1:1']
     assert(group, 'no group for division 1')
-    -- Centre (200, 1.5), home (0, 0): 120 tiles toward home is about (80.0, 0.6).
-    assert(math.abs(group.point.x - 80) < 0.1 and math.abs(group.point.y - 0.6) < 0.1, 'backline not toward home')
+    -- Centre (200, 1.5), home (0, 0): 80 tiles toward home is about (120.0, 0.9).
+    assert(math.abs(group.point.x - 120) < 0.1 and math.abs(group.point.y - 0.9) < 0.1, 'backline not toward home')
     assert(record.group == '1:1' and e.command.type == defines.command.go_to_location, 'shredder not sent')
     assert(e.command.distraction == defines.distraction.none, 'shredder can be distracted on its way')
   end)
@@ -879,6 +880,25 @@ return function(ctx)
     local record = shredders.register(e)
     shredders.tick(1)
     assert(record.entity.name == names.shredder and record.state == 'parked', 'invisible charger left posted')
+  end)
+
+  test('shredders: a charger over water lands on the nearest ground, or waits for it', function()
+    local _, _, surface = engine()
+    local e = surface.create_entity{name = names.shredder_charging, position = {x = 0, y = 0},
+      force = ctx.players()[1].force}
+    local record = shredders.register(e)
+    local asked
+    surface.find_non_colliding_position = function(name, position, radius)
+      asked = {name = name, radius = radius}
+      return nil
+    end
+    shredders.tick(1)
+    assert(record.state == 'stranded' and record.entity.name == names.shredder_charging, 'parked unit put on water')
+    assert(asked.name == names.shredder and asked.radius == shredders.LANDING, 'landing not searched')
+    surface.find_non_colliding_position = function() return {x = 9, y = 0} end
+    shredders.tick(1)
+    assert(record.entity.name == names.shredder and record.state == 'parked', 'charger never landed')
+    assert(record.entity.position.x == 9, 'parked unit not on the ground found')
   end)
 
   test('shredders: shredders of a merged force join the new force', function()

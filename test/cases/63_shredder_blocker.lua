@@ -3,13 +3,14 @@ if not t then
   local s = game.surfaces['shredder-blocker'] or game.create_surface('shredder-blocker', {width = 192, height = 128, autoplace_controls = {}})
   s.request_to_generate_chunks({0, 0}, 4)
   s.force_generate_chunk_requests()
-  --[[ The target nest stands on an island, so no path reaches it. A nest
-       beside the shredder is too far from the target for any retarget. ]]
+  --[[ The target nest stands inside a ring of void, which even a charge
+       cannot cross, so no path reaches it. A nest beside the shredder is
+       too far from the target for any retarget. ]]
   local tiles = {}
   for x = -20, 90 do
     for y = -30, 30 do
       local d = math.sqrt((x - 80) ^ 2 + y ^ 2)
-      tiles[#tiles + 1] = {name = (d > 6 and d < 12) and 'water' or 'grass-1', position = {x, y}}
+      tiles[#tiles + 1] = {name = (d > 6 and d < 12) and 'out-of-map' or 'grass-1', position = {x, y}}
     end
   end
   s.set_tiles(tiles)

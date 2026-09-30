@@ -2,7 +2,7 @@
 -- shredders over groups. Pure functions without runtime API access.
 local M = {}
 
-M.BACK = 120
+M.BACK = 80
 -- Slot spacing. Slot i sits RING * sqrt(i - 1) tiles out on a sunflower
 -- spiral, so neighbours stay about RING tiles apart at any count.
 M.RING = 2.5

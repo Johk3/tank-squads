@@ -63,11 +63,17 @@ local charging = unit(names.shredder_charging, 1.0, invisible(), {
       starting_speed = 0.2, max_range = 6}},
     {type = 'direct', action_delivery = {type = 'instant', target_effects = {
       {type = 'script', effect_id = 'tank-squad-shredder-impact'},
-      {type = 'damage', damage = {amount = 1500, type = 'physical'}},
+      {type = 'damage', damage = {amount = 2000, type = 'physical'}},
     }}},
   }},
 })
 charging.flags[#charging.flags + 1] = 'not-on-map'
+-- A charge flies over water and cliffs: the charger collides only with the
+-- edge of the map and with space, so its paths cross everything else.
+-- Attacks still find it through the trigger target layer, as they find a
+-- spider.
+charging.collision_mask = {layers = {trigger_target = true, out_of_map = true, empty_space = true},
+  not_colliding_with_itself = true}
 
 local camera
 for _, e in ipairs(data.raw.projectile['atomic-rocket'].action.action_delivery.target_effects) do

@@ -46,6 +46,7 @@ M.RETARGETS = 5
 -- nest in its way. With nothing to ram, it waits for its path up to
 -- STUCK_TICKS, then counts its target as unreachable.
 M.STALL_TICKS, M.STALL_DISTANCE, M.BLOCK_RADIUS, M.STUCK_TICKS = 30, 1, 4, 10 * 60
+M.LANDING = 64
 -- A patrol that sees SWARM_UNITS enemy units of attack groups on the move
 -- within SWARM_RADIUS tiles of a soldier sends one shredder at them, at
 -- most once every SWARM_COOLDOWN ticks. Each slice looks around
@@ -166,12 +167,19 @@ local function draw_lock(record)
 end
 
 -- Replaces the entity with the other shredder prototype in place. The
--- record follows the new unit number, in its group or shadow too.
+-- record follows the new unit number, in its group or shadow too. A charger
+-- flies over water and cliffs, so the parked unit lands on the nearest
+-- ground it fits within LANDING tiles.
 local function swap(record, name)
   local old = record.entity
   if old.name == name then return old end
   local s = M.state()
-  local new = old.surface.create_entity{name = name, position = old.position, force = old.force}
+  local position = old.position
+  if name == M.PARKED then
+    position = old.surface.find_non_colliding_position(name, position, M.LANDING, 0.5)
+    if not position then return nil end
+  end
+  local new = old.surface.create_entity{name = name, position = position, force = old.force}
   if not new then return nil end
   new.health = old.health / old.max_health * new.max_health
   old.destroy()
