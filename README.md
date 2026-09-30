@@ -20,7 +20,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 - **Healing retreat.** Badly damaged escort, scout and patrol soldiers drive back to the nearest barracks or mobile headquarters in guarded convoys, heal, and return to their post. A scout team that takes too much damage pulls back together.
 - **Automatic reinforcements.** Link a barracks to a division and set how many of its soldiers it keeps there. It replaces its losses automatically and pauses when its quota is full. Each barracks has its own division and quota, so several barracks with different recipes can feed one division.
 - **Division insignias.** Divisions 1–9 each carry their own insignia: Iron Vanguard, Ashguard, Stormbreakers, Pathfinders, Siege Hammers, Night Watch, Dust Wolves, Steel Serpents and Last Bastion. It flies over the division, shows on the map and heads its row in the division window. Your whole team sees it.
-- **Veterans.** Every unit has its own name. Soldiers earn experience from their kills, weighted by how tough the enemy was, and rise from Recruit to Trained, Seasoned, Veteran, Elite and Legend. Each rank makes a soldier faster, hit harder and shrug off more damage. Point at a unit to see its name, rank, experience and kills.
+- **Veterans.** Every soldier has its own name. Soldiers earn experience from their kills, weighted by how tough the enemy was, and rise from Recruit to Trained, Seasoned, Veteran, Elite and Legend. Each rank makes a soldier faster, hit harder and shrug off more damage. Point at a unit to see its name, rank, experience and kills.
 - **Map vision.** Soldiers keep the map live around themselves, so you can watch fights from the map view without radars.
 - **Multiplayer ready.** Selections, divisions, route overlays and labels are private to each player. Everything is per force.
 
@@ -77,14 +77,14 @@ Constructors are unmanned wall-laying vehicles. Train them at a barracks with th
 - Constructors drive straight through forests and rock fields: trees and rocks fall under their tracks. Walls, buildings and water still stop them. Like soldiers, they reveal the map around them.
 - Open the **Engineers** window with the constructor button on the division panel. It appears once you have a constructor. Tick the divisions that escort your constructors: their soldiers are shared out between the constructors, up to eight each. Any new order to a division takes it out of the escort.
 - A constructor with fewer than two escorts waits at the nearest barracks or headquarters. Enemies within 80 tiles pause the work until five seconds after the fight. A damaged constructor repairs at a barracks.
-- When a nest lies next to the walls, the constructor borrows soldiers from nearby idle divisions, the spare soldiers of patrols (a patrol keeps one soldier per 64 tiles of its route) and soldiers in no division. They clear the nest, then return to their jobs. Their divisions' shredders join in if they take heavy losses.
+- When a nest lies next to the walls, the constructor borrows soldiers from nearby idle divisions, the spare soldiers of patrols (a patrol keeps one soldier per 64 tiles of its route, and at least two) and soldiers in no division. They clear the nest, then return to their jobs. Their divisions' shredders join in if they take heavy losses.
 
 ### Rings
 
 Constructors can also build fortress rings round your base, ring after ring outward.
 
 - Tick **auto** next to a constructor in the Engineers window. Constructors on auto build only rings and leave your own wall ghosts to the others. They share the work, each finishing its own stretch of the ring from one end to the other and then starting the nearest free stretch, and park at a barracks or headquarters when every ring is done.
-- The **Rings** area of the window sets the shape (square or circle), the spacing between rings (100 to 1,000 tiles; ring *n* has radius *n* times the spacing), how many rings to build (1 to 20) and the centre, which you pick on the map with the centre tool. Until you pick one, rings go round your force's spawn. New settings apply to rings not started yet.
+- The **Rings** area of the window sets the shape (square or circle), the spacing between rings (100 to 1,000 tiles; ring *n* has radius *n* times the spacing, and lies at least 80 tiles beyond the ring before it), how many rings to build (1 to 20) and the centre, which you pick on the map with the centre tool. Until you pick one, rings go round your force's spawn. New settings apply to rings not started yet.
 - A ring has three rows of wall, a gap and two rows of checkerboard dragon teeth, with a bastion every 32 tiles and solid corners. Gatehouses with one row of 16 gates, flanked by bastions, stand every 128 tiles on small rings and closer together on large ones. Each ring is numbered on the map. Constructors stand clear of the wall while they build, so they never wall themselves in.
 - A ring bulges out round your buildings, blueprints and cliffs, and ends at water. Trees and rocks are cleared. A straight rail through the ring gets a row of rail gates; a belt or pipe leaves an open crossing, marked on the map and walled up once you replace it with an underground belt or pipe.
 - A ring wall the enemy destroys is rebuilt. A ring wall or ghost you remove yourself stays open.
@@ -141,7 +141,7 @@ Veterans, Elites and Legends are protected by their division:
 | Escort | Select a numbered division, press the escort shortcut, then pick a player and a formation |
 | Reinforce | Open a barracks and use the **Automatic reinforcements** panel |
 
-All keys can be rebound in the controls menu. Each soldier belongs to one division at a time. Drag-selecting soldiers never takes them out of their division; an order to the selection does, but only from a patrolling, scouting or escorting division. Starting a patrol or scouting on a drag selection turns it into the lowest free division.
+All keys can be rebound in the controls menu. Each soldier belongs to one division at a time. Drag-selecting soldiers never takes them out of their division; an order to the selection does, but only from a patrolling, scouting, escorting or engineer escort division. Starting a patrol or scouting on a drag selection turns it into the lowest free division.
 
 ---
 
@@ -188,11 +188,11 @@ In testing, 200 carriers in constant combat cost about **0.02 ms per tick** of s
 
 Veteran ranks add no per-tick work. Cover adds one read per soldier per second for a division without veterans. A covered veteran costs one position read per second, and its covers are sent again only when the veteran has moved 4 tiles. Kills are counted from enemy deaths only, a Recruit's shots cost no extra engine calls, and names and ranks are shown on a card while you point at a unit rather than drawn over every tank.
 
-Rings are planned one 64 to 128-tile segment at a time and their wall ghosts are placed 64 per slice, and wall hits reach the script only while a ring has a garrison.
+Rings are planned one segment at a time: the stretch round one gatehouse, 64 to 128 tiles, or a whole side of a small square ring. Wall ghosts go up in batches of 64, not a whole ring at once. Wall hits reach the script only while a ring has a garrison.
 
 A mobile headquarters' camp moves only when it parks, because the engine takes a few milliseconds to move a roboport with such a large reach. Its once-a-second sweep is otherwise light.
 
-An electric tank adds two script calls per shot, one as it fires and one on impact. A nuclear tank adds one script call per second while a target is in range. Elite and Legend regeneration runs in the existing once-a-second sweep.
+An electric tank adds two script calls per shot, one as it fires and one on impact. A nuclear tank adds two script calls per shot, at most one shot a second. Elite and Legend regeneration runs in the existing once-a-second sweep.
 
 ---
 
