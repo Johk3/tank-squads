@@ -246,9 +246,9 @@ return function(ctx)
     game.tick = game.tick + 60
     present = retreat.sweep(state, members, c)
     assert(#present == 1, 'retreated again during the cooldown')
-    game.tick = game.tick + retreat.TIMEOUT
+    game.tick = game.tick + retreat.COOLDOWN - 60
     present = retreat.sweep(state, members, c)
-    assert(#present == 0, 'cooldown never expired')
+    assert(#present == 0, 'the hurt soldier waited longer than the cooldown')
   end)
 
   test('retreat: a convoy still closing in or healing is not timed out', function()

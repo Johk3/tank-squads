@@ -9,11 +9,14 @@ local headquarters = require("scripts.headquarters")
 
 local M = {}
 
--- A convoy that makes no progress for this long rejoins, and its unhealed
--- soldiers wait this long before retreating again. Progress is closing in on
--- the barracks or standing in its healing radius, so a long walk at a large
--- search range is never cut short. Matches escort.LEG_TIMEOUT.
+-- A convoy that makes no progress for this long rejoins. Progress is
+-- closing in on the barracks or standing in its healing radius, so a long
+-- walk at a large search range is never cut short. Matches
+-- escort.LEG_TIMEOUT.
 M.TIMEOUT = 3 * 3600
+-- Soldiers of a convoy that ended unhealed wait this long before they try
+-- again, so a hurt soldier is never left at its post for minutes.
+M.COOLDOWN = 60 * 60
 -- Keeps the convoy well inside the barracks' 12-tile healing radius.
 M.ARRIVAL_RADIUS = 6
 M.HEAL_RADIUS = 12
@@ -114,7 +117,7 @@ end
 
 local function release(r, unit, soldier, context, unhealed)
   r.away[unit] = nil
-  if unhealed then r.cooldown[unit] = game.tick + M.TIMEOUT end
+  if unhealed then r.cooldown[unit] = game.tick + M.COOLDOWN end
   context.on_rejoin(soldier)
 end
 
