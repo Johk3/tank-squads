@@ -610,7 +610,9 @@ local function healed(present, rejoin_at)
 end
 
 -- The same progress rule as a convoy: closing in on the barracks, or
--- standing in its healing radius, is progress.
+-- standing in its healing radius, is progress. Only soldiers still below the
+-- rejoin health count, as healed soldiers leave a convoy: healed soldiers
+-- waiting at the barracks never keep a soldier stuck far away going.
 local function withdraw_step(team, members, present, ctx)
   local w = team.withdraw
   if not w.barracks.valid then
@@ -633,10 +635,13 @@ local function withdraw_step(team, members, present, ctx)
   if retreat.follow(w) then
     for _, e in ipairs(present) do w.resend[e.unit_number] = true end
   end
+  -- healed() above leaves at least one soldier below the rejoin health.
   local closest
   for _, e in ipairs(present) do
-    local d = geometry.distance(e.position, w.destination)
-    if not closest or d < closest then closest = d end
+    if e.health / e.max_health < ctx.cfg.rejoin then
+      local d = geometry.distance(e.position, w.destination)
+      if not closest or d < closest then closest = d end
+    end
   end
   if closest <= retreat.heal_radius(w) or closest < w.best - 1 then w.best, w.progress = closest, game.tick end
   if game.tick - w.progress >= retreat.TIMEOUT then

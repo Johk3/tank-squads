@@ -487,6 +487,23 @@ return function(ctx)
     assert(list[1].command and list[1].command.destination.x == 100, 'displaced soldier not sent back')
   end)
 
+  test('scout healing: a withdraw ends at the timeout when a hurt soldier stays stuck far away', function()
+    local b = depot(100, 0)
+    local list = {tank('carrier', 100, 0), tank('carrier', 102, 0), tank('carrier', 300, 0)}
+    list[3].health = 160 -- 40 %: above the convoy threshold, below the rejoin health
+    local state = {surface_index = 1}
+    teams.form(state, list)
+    local team = state.teams[1]
+    team.withdraw = {barracks = b, destination = {x = 100, y = 0}, best = 200, progress = game.tick, resend = {}}
+    local c = context(list, {x = 400, y = 0})
+    teams.on_command_completed(state, list[3].unit_number, fail())
+    local start = game.tick
+    game.tick = start + retreat.TIMEOUT + 1
+    teams.sweep(state, 1, c)
+    assert(not team.withdraw, 'healed soldiers at the barracks kept a stuck withdraw alive')
+    assert(team.withdraw_after == game.tick + retreat.TIMEOUT, 'a stuck withdraw ended without the cooldown')
+  end)
+
   test('scout healing: one hurt soldier leaves in a convoy without stalling the hop', function()
     depot(100, 0)
     local list = scouting({'carrier', 'carrier', 'carrier'})
