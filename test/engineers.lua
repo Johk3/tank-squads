@@ -171,6 +171,33 @@ return function(ctx)
     assert(constructor.count(1) == 0)
   end)
 
+  test('engineers: a moving constructor crushes the trees and rocks under its hull', function()
+    engine()
+    local constructor = require('scripts.engineers.constructor')
+    local e = constructor_entity(0, 0)
+    local record = constructor.register(e)
+    local fallen = {}
+    local function obstacle(x, y, kind, rock)
+      local o = soldier(nil, nil, x, y)
+      o.name, o.type, o.force = kind .. x, kind, 'neutral'
+      o.prototype = {count_as_rock_for_filtered_deconstruction = rock}
+      o.die = function(force, cause)
+        assert(force == e.force and cause == e, 'crushed without the constructor as the cause')
+        o.valid = false
+        fallen[#fallen + 1] = o.name
+      end
+      return o
+    end
+    obstacle(1, 1, 'tree')
+    obstacle(-1, 0, 'simple-entity', true)
+    obstacle(1, -1, 'simple-entity', false)
+    obstacle(4, 0, 'tree')
+    assert(constructor.crush(record) == 2, 'crushed ' .. table.concat(fallen, ','))
+    assert(constructor.crush(record) == 0, 'a standing constructor searched again')
+    e.position = {x = 3, y = 0}
+    assert(constructor.crush(record) == 1 and fallen[3] == 'tree4', 'the tree ahead still stands')
+  end)
+
   test('engineers: a barracks deploys constructor recruits even with a full quota', function()
     local barracks = require('scripts.barracks')
     local divisions = require('scripts.divisions')

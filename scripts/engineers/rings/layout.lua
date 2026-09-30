@@ -21,11 +21,13 @@ local function base(d, x, y)
 end
 
 -- A gatehouse around its centre, u tiles along and d rows out. Returns
--- true and the tile's content inside the block, false outside it.
+-- true and the tile's content inside the block, false outside it. The
+-- gates are one row on the middle wall row, so they join into one gate;
+-- the wall rows beside them stay open.
 local function house(u, d)
   if u < -geometry.HOUSE_HALF or u > geometry.HOUSE_HALF - 1 or d < -3 or d > 4 then return false end
   if u >= -geometry.GATE_HALF and u <= geometry.GATE_HALF - 1 then
-    return true, (d >= -1 and d <= 1) and 'gate' or nil
+    return true, d == 0 and 'gate' or nil
   end
   return true, 'wall'
 end
@@ -96,7 +98,7 @@ function M.cell(ring, seg, a, d, x, y, o, house_ok)
   local side = seg.side
   for _, c in ipairs(o.crossings) do
     if c.side == side and a >= c.a0 and a <= c.a1 then
-      return (c.rail and d >= -1 and d <= 1) and 'gate' or nil
+      return (c.rail and d == 0) and 'gate' or nil
     end
   end
   local b = geometry.bulge_at(o.bulges, side, a)

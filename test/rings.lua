@@ -156,7 +156,7 @@ return function(ctx)
     assert(not at(ring, map, 1, a, -2) and not at(ring, map, 1, a, 5))
   end)
 
-  test('rings: a gatehouse is 16 gates wide in three rows, flanked by bastions, lane clear', function()
+  test('rings: a gatehouse is one row of 16 gates, flanked by bastions, lane clear', function()
     local ring = square(200)
     local tiles = layout.plan(ring, 2, {})
     local map = by_tile(tiles)
@@ -167,9 +167,12 @@ return function(ctx)
         assert(t.dir == 'east', 'a gate in an east wall faces ' .. t.dir)
       end
     end
-    assert(gates == 48, gates .. ' gates')
+    assert(gates == 16, gates .. ' gates')
     for u = -8, 7 do
-      for d = 2, 4 do assert(not at(ring, map, 1, u, d), 'lane blocked at ' .. u .. ',' .. d) end
+      assert(at(ring, map, 1, u, 0).name == 'gate', 'gate missing at ' .. u)
+      for _, d in ipairs({-3, -2, -1, 1, 2, 3, 4}) do
+        assert(not at(ring, map, 1, u, d), 'lane blocked at ' .. u .. ',' .. d)
+      end
     end
     for _, u in ipairs({-14, -9, 8, 13}) do
       for d = -3, 4 do assert(at(ring, map, 1, u, d).name == 'stone-wall', 'bastion hole at ' .. u .. ',' .. d) end
@@ -206,11 +209,15 @@ return function(ctx)
     end
     local map = by_tile(tiles)
     for side = 1, 4 do
-      for a = -198, 204 do assert(at(ring, map, side, a, -1), 'inner wall open at side ' .. side .. ' along ' .. a) end
+      for a = -198, 204 do
+        local gate = at(ring, map, side, a, 0)
+        assert(at(ring, map, side, a, -1) or (gate and gate.name == 'gate'),
+          'inner wall open at side ' .. side .. ' along ' .. a)
+      end
     end
   end)
 
-  test('rings: a circle segment keeps walls on the band and gates in straight rows', function()
+  test('rings: a circle segment keeps walls on the band and gates in one straight row', function()
     local ring = circle(300)
     local gates, rows = 0, {}
     for _, t in ipairs(layout.plan(ring, 1, {})) do
@@ -224,8 +231,47 @@ return function(ctx)
         assert(d > -5 and d < 6, 'wall off the band at depth ' .. d)
       end
     end
-    assert(gates == 48, gates .. ' gates')
+    assert(gates == 16, gates .. ' gates')
     for y, n in pairs(rows) do assert(n == 16, 'gate row ' .. y .. ' has ' .. n) end
+  end)
+
+  -- Every planned tile's standing spots, inside and outside: on that side
+  -- of the ring, and no planned tile under the constructor's hull.
+  local function check_stands(ring, count)
+    local tiles = {}
+    for i = 1, count or geometry.segment_count(ring) do
+      for _, t in ipairs(layout.plan(ring, i, {})) do tiles[#tiles + 1] = t end
+    end
+    local map = by_tile(tiles)
+    for _, t in ipairs(tiles) do
+      for _, where in ipairs({'inside', 'outside'}) do
+        local p = geometry.stand(ring, t.x, t.y, where)
+        local side = geometry.side(ring, p.x, p.y)
+        assert(side == where, where .. ' stand for ' .. t.x .. ',' .. t.y .. ' is ' .. side)
+        for x = math.floor(p.x - 0.9), math.floor(p.x + 0.9) do
+          for y = math.floor(p.y - 0.9), math.floor(p.y + 0.9) do
+            assert(not map[x .. ',' .. y], where .. ' stand for ' .. t.x .. ',' .. t.y .. ' is on a wall at ' .. x .. ',' .. y)
+          end
+        end
+      end
+    end
+  end
+
+  test('rings: a constructor stands off the band on its own side of a square', function()
+    check_stands(square(200))
+  end)
+
+  test('rings: a constructor stands off the band on its own side of a circle', function()
+    check_stands(circle(300))
+  end)
+
+  test('rings: a constructor stands in the pocket or beyond the legs of a bulge', function()
+    local ring = square(200)
+    ring.bulges = {{side = 1, a0 = -180, a1 = -170, depth = 20, kind = 'bulge'}}
+    check_stands(ring, 1)
+    local p = geometry.stand(ring, 220.5, -175.5, 'inside')
+    local _, a, d = geometry.to_frame(ring, p.x, p.y)
+    assert(a >= -180 and a <= -170 and d == 15, 'front stand at ' .. a .. ',' .. d)
   end)
 
   test('rings: a bulge carries the full wall round an obstacle', function()
@@ -264,7 +310,8 @@ return function(ctx)
     local ring = square(200)
     local o = {crossings = {{side = 1, a0 = -176, a1 = -175, rail = true}, {side = 1, a0 = -110, a1 = -110, rail = false}}}
     local map = by_tile(layout.plan(ring, 1, o))
-    for d = -1, 1 do assert(at(ring, map, 1, -176, d).name == 'gate', 'rail gate missing in row ' .. d) end
+    assert(at(ring, map, 1, -176, 0).name == 'gate', 'rail gate missing')
+    for _, d in ipairs({-1, 1}) do assert(not at(ring, map, 1, -176, d), 'rail gate doubled in row ' .. d) end
     for d = 3, 4 do assert(not at(ring, map, 1, -176, d), 'teeth on the rail') end
     for d = -3, 6 do assert(not at(ring, map, 1, -110, d), 'belt gap closed in row ' .. d) end
   end)
@@ -495,11 +542,103 @@ return function(ctx)
       constructor.seek(record)
       assert(record.state == 'moving', 'state ' .. record.state)
       assert(record.segment and record.segment.index == 2, 'planned the wrong segment')
-      assert(#record.cluster == 9, #record.cluster .. ' ghosts claimed')
+      assert(#record.cluster > 0 and #record.cluster <= 9, #record.cluster .. ' ghosts claimed')
       for _, entry in ipairs(record.cluster) do assert(s.ring_ghosts[entry.id].segment == 2) end
     end)
     restore()
     assert(ok, err)
+  end)
+
+  test('rings: a second constructor leaves the first one\'s segment alone and plans its own', function()
+    local record, constructor, _, s, restore = autonomous_at(250, 0)
+    local ok, err = pcall(function()
+      constructor.seek(record)
+      assert(record.segment.index == 2)
+      local e = ctx.soldier(nil, nil, 250, 10)
+      e.name, e.health, e.max_health = names.constructor, 800, 800
+      local other = constructor.register(e)
+      constructor.set_autonomous(other.id, true)
+      game.tick = game.tick + 1
+      constructor.seek(other)
+      assert(other.segment and other.segment.index ~= 2, 'the second constructor joined segment 2')
+      for _, entry in ipairs(other.cluster) do
+        assert(s.ring_ghosts[entry.id].segment == other.segment.index, 'claimed a ghost of another segment')
+      end
+    end)
+    restore()
+    assert(ok, err)
+  end)
+
+  test('rings: ghosts nobody works on come before a farther new segment', function()
+    local record, constructor, _, s, restore = autonomous_at(250, 0)
+    local ok, err = pcall(function()
+      constructor.seek(record)
+      -- The first constructor goes away and lets its segment go.
+      constructor.unregister(record.id)
+      local e = ctx.soldier(nil, nil, 250, 10)
+      e.name, e.health, e.max_health = names.constructor, 800, 800
+      local other = constructor.register(e)
+      constructor.set_autonomous(other.id, true)
+      game.tick = game.tick + 1
+      constructor.seek(other)
+      assert(other.cluster and s.ring_ghosts[other.cluster[1].id].segment == 2, 'the left segment was not taken up')
+      assert(not other.segment, 'planned a new segment with work at hand')
+    end)
+    restore()
+    assert(ok, err)
+  end)
+
+  test('rings: a constructor sweeps its segment from where it stands, all rows at once', function()
+    local record, constructor, rings, s, restore = autonomous_at(250, 0)
+    local ok, err = pcall(function()
+      constructor.seek(record)
+      constructor.reset(record)
+      record.segment = {ring = rings.key(1, 1), index = 2}
+      record.entity.position = {x = 195.5, y = -40.5}
+      local ring = rings.by_key(rings.key(1, 1))
+      while ring.placing and ring.placing[2] do rings.place_pending(ring, 2, rings.PLACE_BATCH) end
+      local cluster = rings.claim(record, 3, 9)
+      local geometry = require('scripts.engineers.rings.geometry')
+      local rows = {}
+      for _, entry in ipairs(cluster) do
+        local _, a, d = geometry.to_frame(ring, entry.position.x, entry.position.y)
+        assert(math.abs(a + 41) <= 3, 'claimed along ' .. a .. ', away from the constructor')
+        rows[d] = true
+      end
+      assert(rows[-1] and rows[1], 'the cluster does not cross the band')
+    end)
+    restore()
+    assert(ok, err)
+  end)
+
+  test('rings: a segment\'s ghosts go up along the ring from the end nearest its constructor', function()
+    local rings = require('scripts.engineers.rings.rings')
+    local layout = require('scripts.engineers.rings.layout')
+    for _, ring in ipairs({square(200), circle(300)}) do
+      local seg = geometry.segment(ring, 2)
+      local near_hi = geometry.to_position(ring, seg.side, seg.hi + 20, -10)
+      local tiles = rings.sweep_order(ring, 2, layout.plan(ring, 2, {}), near_hi)
+      for k = 2, #tiles do assert(tiles[k].a <= tiles[k - 1].a, ring.shape .. ': out of order at ' .. k) end
+      local near_lo = geometry.to_position(ring, seg.side, seg.lo - 20, -10)
+      tiles = rings.sweep_order(ring, 2, tiles, near_lo)
+      for k = 2, #tiles do assert(tiles[k].a >= tiles[k - 1].a, ring.shape .. ': out of order at ' .. k) end
+    end
+  end)
+
+  test('rings: the sweep ranks rows across the band below tiles along it', function()
+    local geometry = require('scripts.engineers.rings.geometry')
+    for _, ring in ipairs({square(200), circle(300)}) do
+      local from = geometry.stand(ring, 200.5, -40.5, 'inside')
+      local score = geometry.sweep_score(ring, from)
+      local _, a = geometry.to_frame(ring, from.x, from.y)
+      local deep = geometry.to_position(ring, ring.shape == 'circle' and 0 or 1, a, 4)
+      local beside = geometry.to_position(ring, ring.shape == 'circle' and 0 or 1, a + 3, -1)
+      assert(score(deep) < score(beside), ring.shape .. ': the far row ranks below the next tile along')
+      for _, p in ipairs({deep, beside, {x = 0, y = 0}, {x = -200, y = 40}}) do
+        local dx, dy = p.x - from.x, p.y - from.y
+        assert(score(p) >= dx * dx + dy * dy - 1e-9, 'the score is below the squared distance')
+      end
+    end
   end)
 
   test('rings: one segment is planned per tick however many constructors ask', function()

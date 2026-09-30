@@ -156,7 +156,7 @@ function M.draw_labels(ring, force, surface)
   for _, p in ipairs(points) do
     ring.labels[#ring.labels + 1] = rendering.draw_text{text = {'tank-squads.ring-label', ring.n}, surface = surface,
       target = geometry.to_position(ring, p[1], p[2], M.LABEL_DEPTH), color = {1, 1, 1}, forces = {force},
-      render_mode = 'chart', alignment = 'center', scale = 3, scale_with_zoom = true}
+      render_mode = 'chart', alignment = 'center', scale = 1.5, scale_with_zoom = true}
   end
 end
 
@@ -297,9 +297,29 @@ local function add_crossings(ring, i, list, force, surface)
   end
 end
 
+-- Tiles in the order they go up: along the ring, from the segment end
+-- nearest `from` (the planning constructor), so it builds in one sweep.
+function M.sweep_order(ring, i, tiles, from)
+  local seg = geometry.segment(ring, i)
+  local dir = 1
+  if from then
+    local lo = geometry.to_position(ring, seg.side, seg.lo, 0)
+    local hi = geometry.to_position(ring, seg.side, seg.hi, 0)
+    local function d2(p) return (p.x - from.x) ^ 2 + (p.y - from.y) ^ 2 end
+    if d2(hi) < d2(lo) then dir = -1 end
+  end
+  table.sort(tiles, function(p, q)
+    if p.a ~= q.a then return (p.a - q.a) * dir < 0 end
+    if p.x ~= q.x then return p.x < q.x end
+    return p.y < q.y
+  end)
+  return tiles
+end
+
 -- Plans segment i and places its ghosts. Returns 'generating' (its chunks
 -- were requested), 'placed', or 'built' when there was nothing to place.
-function M.plan_segment(ring, i)
+-- `from` is where the planning constructor stands.
+function M.plan_segment(ring, i, from)
   local surface, force = game.surfaces[ring.surface_index], game.forces[ring.force_index]
   local seg = ring.segments[i]
   local found = obstacles.scan(ring, surface, force, i)
@@ -309,7 +329,8 @@ function M.plan_segment(ring, i)
   end
   for _, b in ipairs(found.bulges) do ring.bulges[#ring.bulges + 1] = b end
   add_crossings(ring, i, found.crossings, force, surface)
-  local tiles = layout.plan(ring, i, {bulges = ring.bulges, crossings = found.crossings, water = found.water})
+  local tiles = M.sweep_order(ring, i,
+    layout.plan(ring, i, {bulges = ring.bulges, crossings = found.crossings, water = found.water}), from)
   seg.state = 'placed'
   if tiles[1] then
     seg.pending = {tiles = tiles, next = 1}
@@ -443,49 +464,115 @@ function M.find(fs, surface_index, position)
   return nil
 end
 
+-- Where the constructor stands to build at a position on a ring's band:
+-- off the band, on the side of the ring it is on now. Nil off every band.
+function M.stand(record, position)
+  local fs = M.peek(record.force_index)
+  local ring = fs and M.find(fs, record.surface_index, position)
+  if not ring then return nil end
+  local p = record.entity.position
+  return geometry.stand(ring, position.x, position.y, (geometry.side(ring, p.x, p.y)))
+end
+
+-- The segments other constructors of the force are working on, as
+-- ring .. ':' .. index.
+local function taken_by_others(record)
+  local s = state.peek()
+  local out = {}
+  for id, other in pairs(s and s.constructors or {}) do
+    if id ~= record.id and other.force_index == record.force_index and other.segment then
+      out[other.segment.ring .. ':' .. other.segment.index] = true
+    end
+  end
+  return out
+end
+
+local function distance2(a, b)
+  local dx, dy = a.x - b.x, a.y - b.y
+  return dx * dx + dy * dy
+end
+
+local function middle(ring, i)
+  local seg = geometry.segment(ring, i)
+  return geometry.to_position(ring, seg.side, (seg.lo + seg.hi) / 2, 0)
+end
+
+-- Places a batch of the nearest segment still placing on the
+-- constructor's surface and not in `skip`, within `within` squared tiles
+-- of its middle. True when a ghost went up.
+local function place_nearest(record, skip, within)
+  local position = record.entity.position
+  local best_ring, best_i, best_d
+  for _, ring in pairs(M.force_state(record.force_index).slots) do
+    if ring.placing and ring.surface_index == record.surface_index then
+      for i in pairs(ring.placing) do
+        if not skip[ring.key .. ':' .. i] then
+          local d = distance2(middle(ring, i), position)
+          if d <= within and (not best_d or d < best_d) then best_ring, best_i, best_d = ring, i, d end
+        end
+      end
+    end
+  end
+  return best_ring ~= nil and M.place_pending(best_ring, best_i, M.PLACE_BATCH) > 0
+end
+
 -- Work for an autonomous constructor: walls of a ring being torn down,
--- then ring ghosts, its own segment first, or a new segment planned for it
--- (one per tick for all constructors). Returns a cluster and 'dismantle'
--- or 'build', or nil and 'planning' (ask again next second) or 'done'
--- (nothing left).
+-- then its own segment, swept along the ring from where it stands. Then
+-- whichever is nearer: ring ghosts no other constructor works on (a
+-- breach, a segment whose constructor left) or a new segment planned for
+-- it (one per tick for all constructors). Only when no segment is left to
+-- plan does it help with the segments of others, nearest first. Returns a
+-- cluster and 'dismantle' or 'build', or nil and 'planning' (ask again
+-- next second) or 'done' (nothing left).
 function M.claim(record, radius, max)
   local taken = dismantle.claim(record, radius, max)
   if taken then return taken, 'dismantle' end
+  local entity = record.entity
+  local position = entity.position
   local own = record.segment
   if own then
-    local filter = {ring = own.ring, segment = own.index, near = own.near}
+    local ring = M.by_key(own.ring)
+    local filter = {ring = own.ring, segment = own.index, near = position,
+      score = ring and geometry.sweep_score(ring, position)}
     local cluster = ghosts.claim(record, radius, max, filter)
     if cluster then return cluster, 'build' end
     -- Nothing placed is left: the next batch of its segment goes up now.
-    local ring = M.by_key(own.ring)
     if ring and ring.placing and ring.placing[own.index] and M.place_pending(ring, own.index, M.PLACE_BATCH) > 0 then
       cluster = ghosts.claim(record, radius, max, filter)
       if cluster then return cluster, 'build' end
     end
   end
-  local cluster = ghosts.claim(record, radius, max, {ring = true})
+  local skip = taken_by_others(record)
+  local ring = M.current(M.force_state(record.force_index), entity.force, entity.surface)
+  if ring and ring.surface_index ~= record.surface_index then ring = nil end
+  local tick, s = game.tick, state.get()
+  local i = ring and M.next_segment(ring, position, tick)
+  local within = i and distance2(middle(ring, i), position) or math.huge
+  local filter = {ring = true, skip = skip, within = within}
+  local cluster = ghosts.claim(record, radius, max, filter)
   if cluster then return cluster, 'build' end
-  -- Planned ghosts still waiting to be placed come before a new segment.
-  for _, ring in pairs(M.force_state(record.force_index).slots) do
-    local i = ring.placing and ring.surface_index == record.surface_index and next(ring.placing)
-    if i and M.place_pending(ring, i, M.PLACE_BATCH) > 0 then
+  if place_nearest(record, skip, within) then
+    cluster = ghosts.claim(record, radius, max, filter)
+    if cluster then return cluster, 'build' end
+  end
+  if not i then
+    -- Nothing left to plan: help the others, nearest first.
+    cluster = ghosts.claim(record, radius, max, {ring = true})
+    if cluster then return cluster, 'build' end
+    if place_nearest(record, {}, math.huge) then
       cluster = ghosts.claim(record, radius, max, {ring = true})
       if cluster then return cluster, 'build' end
     end
+    if not ring then return nil, 'done' end
+    return nil, M.waiting(ring, tick) and 'planning' or 'done'
   end
-  local entity = record.entity
-  local ring = M.current(M.force_state(record.force_index), entity.force, entity.surface)
-  if not ring or ring.surface_index ~= record.surface_index then return nil, 'done' end
-  local tick, s = game.tick, state.get()
   if s.plan_tick == tick then return nil, 'planning' end
-  local i = M.next_segment(ring, entity.position, tick)
-  if not i then return nil, M.waiting(ring, tick) and 'planning' or 'done' end
   s.plan_tick = tick
-  local result = M.plan_segment(ring, i)
-  local seg = geometry.segment(ring, i)
-  record.segment = {ring = ring.key, index = i, near = geometry.to_position(ring, seg.side, (seg.lo + seg.hi) / 2, 0)}
+  local result = M.plan_segment(ring, i, position)
+  record.segment = {ring = ring.key, index = i}
   if result == 'placed' then
-    cluster = ghosts.claim(record, radius, max, {ring = ring.key, segment = i, near = record.segment.near})
+    cluster = ghosts.claim(record, radius, max, {ring = ring.key, segment = i, near = position,
+      score = geometry.sweep_score(ring, position)})
     if cluster then return cluster, 'build' end
   end
   return nil, 'planning'

@@ -11,7 +11,7 @@ mkdir -p "$DEST" "$ROOT/dist"
 # thumbnail.png is the mod portal's and in-game mod list's picture. Only
 # files git tracks are packaged, so local notes and untracked artwork never
 # reach the release: commit before building.
-git -C "$ROOT" ls-files -z -- info.json thumbnail.png data.lua settings.lua control.lua changelog.txt \
+git -C "$ROOT" ls-files -z -- info.json thumbnail.png data.lua data-final-fixes.lua settings.lua control.lua changelog.txt \
     README.md LICENSE prototypes scripts locale graphics |
   while IFS= read -r -d '' f; do
     mkdir -p "$DEST/$(dirname "$f")"

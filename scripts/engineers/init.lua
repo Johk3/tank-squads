@@ -161,6 +161,14 @@ function M.reconcile()
   for _, record in pairs(s.constructors) do
     if record.entity.valid then ghosts.scan(record.entity.surface) end
   end
+  -- Ring labels from older versions are drawn at an older size.
+  for force_index, fs in pairs(s.rings or {}) do
+    local force = game.forces[force_index]
+    for _, ring in pairs(fs.slots) do
+      local surface = game.surfaces[ring.surface_index]
+      if force and surface and ring.state ~= 'deleted' then rings.draw_labels(ring, force, surface) end
+    end
+  end
 end
 
 function M.set_min_team(value)

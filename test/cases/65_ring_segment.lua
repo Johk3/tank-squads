@@ -31,7 +31,7 @@ local ok, err = pcall(function()
   assert(ghost_at(1100.5, 930.5) and ghost_at(1100.5, 930.5).ghost_name == 'stone-wall', 'plain wall missing')
   assert(ghost_at(1100.5, 950.5), 'no ghost on the tree tile')
   local gates = s.count_entities_filtered{area = {{1098, 991}, {1103, 1009}}, ghost_name = 'gate'}
-  assert(gates == 48, gates .. ' gatehouse gates')
+  assert(gates == 16, gates .. ' gatehouse gates')
   assert(not ghost_at(1100.5, 960.5), 'a ghost stands on the assembler')
   assert(ghost_at(1109.5, 960.5), 'no bulge front beyond the assembler')
   for x = 1099, 1101 do assert(not ghost_at(x + 0.5, 1030.5), 'wall across the belt') end

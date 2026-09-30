@@ -40,8 +40,10 @@ end
 
 -- The accepted entry nearest the position. Chunks are visited nearest
 -- first; the search stops at the first chunk farther than the best entry.
--- `accept` may drop the entry it is given from its chunk.
-function M.nearest(chunks, position, accept)
+-- `accept` may drop the entry it is given from its chunk. An optional
+-- `score` of an entry's position replaces the squared distance; it must
+-- never be below it, or the search stops too early.
+function M.nearest(chunks, position, accept, score)
   local order = {}
   for key, chunk in pairs(chunks) do
     order[#order + 1] = {chunk = chunk, key = key, d = M.chunk_distance2(chunk.cx, chunk.cy, position)}
@@ -55,7 +57,7 @@ function M.nearest(chunks, position, accept)
     if best_d and o.d > best_d then break end
     for _, entry in pairs(o.chunk.entries) do
       if accept(entry) then
-        local d = distance2(entry.position, position)
+        local d = score and score(entry.position) or distance2(entry.position, position)
         if not best_d or d < best_d or (d == best_d and entry.id < best.id) then best, best_d = entry, d end
       end
     end
@@ -163,8 +165,10 @@ end
 -- about the seed, and a covered seed is not asked about again for RECHECK
 -- ticks. With a filter only ring ghosts are taken, robots or not:
 -- filter.ring == true any ring's, or filter.ring == key with
--- filter.segment one segment's. filter.near moves the search centre.
--- Returns the cluster, or nil.
+-- filter.segment one segment's. filter.near moves the search centre,
+-- filter.score ranks the seeds (see nearest), filter.skip[ring .. ':' ..
+-- segment] leaves those segments' ghosts out, and filter.within (squared
+-- tiles) is the farthest a seed may lie. Returns the cluster, or nil.
 function M.claim(record, radius, max, filter)
   local s = state.get()
   local bucket = M.bucket(record.surface_index, record.force_index)
@@ -179,6 +183,7 @@ function M.claim(record, radius, max, filter)
     if filter then
       if not tag then return false end
       if filter.ring ~= true and (tag.ring ~= filter.ring or tag.segment ~= filter.segment) then return false end
+      if filter.skip and filter.skip[tag.ring .. ':' .. tag.segment] then return false end
     elseif tag then
       return false
     end
@@ -192,8 +197,9 @@ function M.claim(record, radius, max, filter)
   end
   local position = filter and filter.near or entity.position
   for _ = 1, M.ATTEMPTS do
-    local seed = M.nearest(bucket.chunks, position, free)
+    local seed = M.nearest(bucket.chunks, position, free, filter and filter.score)
     if not seed then return nil end
+    if filter and filter.within and distance2(seed.position, position) > filter.within then return nil end
     if filter or #surface.find_logistic_networks_by_construction_area(seed.position, force) == 0 then
       local cluster = M.cluster(bucket.chunks, seed, radius, max, free)
       for _, entry in ipairs(cluster) do s.claims[entry.id] = record.id end

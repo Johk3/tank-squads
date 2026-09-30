@@ -23,6 +23,7 @@ local teams = require('scripts.engineers.teams')
 local task_force = require('scripts.engineers.task_force')
 local rings = require('scripts.engineers.rings.rings')
 local combat = require('scripts.combat')
+local vision = require('scripts.vision')
 
 local M = {}
 
@@ -38,6 +39,10 @@ M.PATH_FAILURES = 2
 M.MOVE_LIMIT = 60 * 60
 M.HOME_RADIUS = 8
 M.SAY_INTERVAL = 10 * 60
+-- Half the hull (0.9) and the most it drives in one sweep slice (0.6).
+M.CRUSH_REACH = 1.5
+M.CRUSH_STEP = 0.3
+local CRUSHED = {'tree', 'simple-entity'}
 
 local function min_team()
   local s = state.peek()
@@ -96,6 +101,7 @@ function M.register(entity)
   s.constructors[record.id] = record
   s.dirty = true
   ghosts.scan(entity.surface)
+  vision.track(entity)
   return record
 end
 
@@ -106,6 +112,7 @@ function M.unregister(unit_number)
   release(record)
   s.constructors[unit_number] = nil
   s.dirty = true
+  vision.forget(unit_number)
 end
 
 -- A finished constructor leaves the barracks door. Returns false when there
@@ -186,9 +193,11 @@ local function positions(cluster)
   return out
 end
 
+-- On a ring's band the constructor stands off the band, so the walls it
+-- builds never shut it in; elsewhere beside the cluster.
 local function walk_to_cluster(record)
   local entity = record.entity
-  local spot = M.spot(record.centre, entity.position, positions(record.cluster))
+  local spot = rings.stand(record, record.centre) or M.spot(record.centre, entity.position, positions(record.cluster))
   spot = entity.surface.find_non_colliding_position(names.constructor, spot, 8, 0.5) or spot
   set(record, 'moving')
   go(record, spot, 1)
@@ -361,12 +370,24 @@ function M.check(record, cfg)
   end
 end
 
+-- A constructor that cannot find a path while it stands on a ring's band
+-- is walled in there (older versions stood on the band). It is moved off
+-- the band, to the side of the ring it is on.
+function M.escape(record)
+  local entity = record.entity
+  local spot = rings.stand(record, entity.position)
+  if not spot then return false end
+  spot = entity.surface.find_non_colliding_position(names.constructor, spot, 8, 0.5)
+  return spot ~= nil and entity.teleport(spot)
+end
+
 function M.on_command_completed(unit_number, result)
   local s = state.peek()
   local record = s and s.constructors[unit_number]
   if not record then return false end
   if record.state ~= 'moving' or not record.entity.valid then return true end
   if result == defines.behavior_result.fail then
+    M.escape(record)
     record.fails = (record.fails or 0) + 1
     if record.fails >= M.PATH_FAILURES then
       ghosts.block(record.cluster, ghosts.BLOCK)
@@ -399,14 +420,37 @@ local function build_step(record, tick)
   end
 end
 
--- Cranes every slice; each constructor's check in its own slice (all when
--- phase is nil).
+-- Trees and rocks the hull reaches fall under its tracks. The hull does
+-- not collide with them (prototypes/constructor-hull.lua), so this only
+-- decides when they fall: at most CRUSH_STEP tiles before the hull
+-- touches them. A constructor that has not moved asks nothing.
+function M.crush(record)
+  local entity = record.entity
+  local p, last = entity.position, record.crushed_at
+  if last and math.abs(p.x - last.x) + math.abs(p.y - last.y) < M.CRUSH_STEP then return 0 end
+  record.crushed_at = {x = p.x, y = p.y}
+  local r = M.CRUSH_REACH
+  local n = 0
+  for _, e in pairs(entity.surface.find_entities_filtered{area = {{p.x - r, p.y - r}, {p.x + r, p.y + r}},
+      type = CRUSHED, force = 'neutral'}) do
+    if e.valid and (e.type == 'tree' or e.prototype.count_as_rock_for_filtered_deconstruction) then
+      e.die(entity.force, entity)
+      n = n + 1
+    end
+  end
+  return n
+end
+
+-- Cranes and moving hulls every slice; each constructor's check in its own
+-- slice (all when phase is nil).
 function M.tick(phase)
   local s = state.peek()
   if not s then return end
   local tick, cfg = game.tick, nil
   for id, record in pairs(s.constructors) do
-    if record.state == 'building' and record.entity.valid then build_step(record, tick) end
+    if record.entity.valid then
+      if record.state == 'building' then build_step(record, tick) else M.crush(record) end
+    end
     if phase == nil or id % divisions.PHASES == phase then
       cfg = cfg or config.escort()
       M.check(record, cfg)

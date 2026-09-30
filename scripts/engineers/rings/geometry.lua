@@ -176,6 +176,69 @@ function M.apron(ring, seg, where)
   return {x = h.x + depth * h.nx + 0.5, y = h.y + depth * h.ny + 0.5}
 end
 
+-- Where a constructor stands to build the band at a world position,
+-- 'inside' or 'outside' the ring: off the band on that side, so no wall it
+-- builds can shut it in. Plain wall and gatehouses: 5 rows inside the
+-- middle wall row or 6 outside (a circle one more), clear of the band by
+-- more than half a hull. Beside a circle's gatehouse, its apron. On a bulge's front,
+-- inside means the pocket the bulge wraps; beside its legs, the pocket or
+-- beyond the leg. On a square, inside stays clear of the corners.
+M.STAND_INSIDE, M.STAND_OUTSIDE = -5, 6
+function M.stand(ring, x, y, where)
+  local side, a, d = M.to_frame(ring, x, y)
+  local inside = where == 'inside'
+  local b = M.bulge_at(ring.bulges, side, a)
+  if b and b.kind == 'bulge' then
+    local depth = b.depth
+    if a >= b.a0 and a <= b.a1 then
+      if not inside then return M.to_position(ring, side, a, depth + M.STAND_OUTSIDE) end
+      return M.to_position(ring, side, math.max(b.a0 + 1, math.min(b.a1 - 1, a)), depth + M.STAND_INSIDE)
+    end
+    local left = a < b.a0
+    if inside then
+      local pocket = math.min(math.max(d, M.STAND_INSIDE), depth + M.STAND_INSIDE)
+      return M.to_position(ring, side, left and b.a0 + 1 or b.a1 - 1, pocket)
+    end
+    return M.to_position(ring, side, left and b.a0 - 6 or b.a1 + 6, math.max(d, M.STAND_OUTSIDE))
+  end
+  if ring.shape == 'circle' then
+    local seg = M.segment(ring, M.segment_of(ring, 0, a))
+    local C = M.TAU * ring.radius
+    if math.abs((a - seg.gate + C / 2) % C - C / 2) <= M.HOUSE_HALF + 4 then return M.apron(ring, seg, where) end
+    -- Circle tiles are rounded onto the band, so one row more.
+    return M.to_position(ring, 0, a, inside and M.STAND_INSIDE - 1 or M.STAND_OUTSIDE + 1)
+  end
+  if inside then
+    local limit = ring.radius - 6
+    return M.to_position(ring, side, math.max(-limit, math.min(limit, a)), M.STAND_INSIDE)
+  end
+  return M.to_position(ring, side, a, M.STAND_OUTSIDE)
+end
+
+-- A ranking of band positions for a constructor at `from` working along
+-- the ring: the squared distance plus SWEEP_WEIGHT times the squared
+-- distance along the ring. Rows across the band cost far less than tiles
+-- along it, so it finishes the whole cross-section where it stands before
+-- it moves on, and never ranks a position below its squared distance.
+M.SWEEP_WEIGHT = 15
+function M.sweep_score(ring, from)
+  local side0, a0 = M.to_frame(ring, from.x, from.y)
+  local C = M.TAU * ring.radius
+  return function(p)
+    local dx, dy = p.x - from.x, p.y - from.y
+    local side, a = M.to_frame(ring, p.x, p.y)
+    local da
+    if ring.shape == 'circle' then
+      da = (a - a0 + C / 2) % C - C / 2
+    elseif side == side0 then
+      da = a - a0
+    else
+      da = math.sqrt(dx * dx + dy * dy)
+    end
+    return dx * dx + dy * dy + M.SWEEP_WEIGHT * da * da
+  end
+end
+
 -- A number that grows clockwise round the ring: the segment index plus how
 -- far along the segment the position lies.
 function M.order(ring, x, y)

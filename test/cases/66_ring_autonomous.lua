@@ -22,7 +22,7 @@ local ok, err = pcall(function()
   assert(info, 'no ring was started')
   assert(info.built >= 1, 'no segment finished; ' .. built .. ' walls built, ' .. info.live .. ' ghosts left')
   local gates = s.count_entities_filtered{area = {{-902, 991}, {-898, 1009}}, name = 'gate'}
-  assert(gates == 48, gates .. ' gates built')
+  assert(gates == 16, gates .. ' gates built')
   local constructor = remote.call('tank-squads', 'engineers_constructor', c.unit_number)
   assert(constructor.state == 'seeking', 'state ' .. constructor.state)
 end)
