@@ -533,6 +533,33 @@ return function(ctx)
     assert(#direct == 1 and direct[1] == near, 'a near slot got waypoints')
   end)
 
+  test('surround: a large division places its screen without a distance scan per soldier', function()
+    local structures = compound_world()
+    spawner(structures, 0, 0)
+    -- Half siege, a quarter carriers, a quarter screen, spread round the nest.
+    local members = {}
+    for i = 1, 800 do
+      local turn = i * 2.399963 -- golden angle: an even spread with no two soldiers on one bearing
+      members[i] = tank(i % 2 == 0 and 'tank-squad-siege' or nil, 100 * math.cos(turn), 100 * math.sin(turn))
+    end
+    local holder = {}
+    local distance_squared, calls = geometry.distance_squared, 0
+    geometry.distance_squared = function(p, q) calls = calls + 1; return distance_squared(p, q) end
+    local ok, err = pcall(function()
+      assert(assault.start(holder, members, {x = 0, y = 0}, {'enemy'}, true), 'no assault')
+      local a = holder.assault
+      arrive(a, members)
+      assault.tick(a, members)
+      game.tick = game.tick + 1
+      assault.tick(a, members)
+      assert(a.phase ~= 'stage' and next(a.screen_slots), 'test setup: no screen line')
+      assert(count_role(a, members, 'screen') == 200, 'test setup: ' .. count_role(a, members, 'screen') .. ' screen carriers')
+    end)
+    geometry.distance_squared = distance_squared
+    assert(ok, err)
+    assert(calls <= 40 * 800, calls .. ' distances to stage and screen 800 soldiers')
+  end)
+
   test('manual order: an attack order onto a nest surrounds it instead of charging in', function()
     local structures = compound_world()
     nest(structures)

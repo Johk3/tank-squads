@@ -228,6 +228,77 @@ local function nearest_squared(points, position)
   return best
 end
 
+-- A grid over `points` that finds the nearest one without a scan over all
+-- of them. Cells start sized for one point each over the points' box and
+-- shrink while the points crowd into few cells, as staging slots on a circle
+-- do, down to a fifth of a tile.
+local function point_grid(points)
+  local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+  for _, p in ipairs(points) do
+    x0, y0, x1, y1 = math.min(x0, p.x), math.min(y0, p.y), math.max(x1, p.x), math.max(y1, p.y)
+  end
+  local size = math.max(0.2, math.sqrt((x1 - x0) * (y1 - y0) / #points), (x1 - x0) / #points, (y1 - y0) / #points)
+  while true do
+    local cells, used = {}, 0
+    for i, p in ipairs(points) do
+      local cx, cy = math.floor((p.x - x0) / size), math.floor((p.y - y0) / size)
+      local column = cells[cx] or {}
+      cells[cx] = column
+      if not column[cy] then column[cy], used = {}, used + 1 end
+      table.insert(column[cy], i)
+    end
+    if used * 2 >= #points or size <= 0.2 then
+      return {x0 = x0, y0 = y0, size = size, points = points, cells = cells,
+        cols = math.floor((x1 - x0) / size), rows = math.floor((y1 - y0) / size)}
+    end
+    -- Points along a line fill cells in proportion to 1 / size.
+    size = math.max(0.2, size * math.max(used / #points, 0.125))
+  end
+end
+
+local function scan(cells, x, y, points, position, taken, best, best_d)
+  local column = cells[x]
+  local cell = column and column[y]
+  if not cell then return best, best_d end
+  for _, i in ipairs(cell) do
+    if not (taken and taken[i]) then
+      local d = geometry.distance_squared(points[i], position)
+      if d < best_d or (d == best_d and i < best) then best, best_d = i, d end
+    end
+  end
+  return best, best_d
+end
+
+-- The index of the nearest point not in `taken`, the lowest index on a tie,
+-- and its squared distance: the same answer as a scan in index order. Walks
+-- square rings of cells outwards. A point in ring r + 1 or beyond is more
+-- than r cells away, so the walk stops one ring after that bound passes the
+-- best distance, which leaves room for rounding at cell edges.
+local function grid_nearest(grid, position, taken)
+  local size, points, cells, cols, rows = grid.size, grid.points, grid.cells, grid.cols, grid.rows
+  local cx, cy = math.floor((position.x - grid.x0) / size), math.floor((position.y - grid.y0) / size)
+  -- Rings before `first` lie wholly outside the grid, rings after `last` too.
+  local first = math.max(0, -cx, cx - cols, -cy, cy - rows)
+  local last = math.max(cx, cols - cx, cy, rows - cy)
+  local best, best_d = nil, math.huge
+  for r = first, last do
+    if r == 0 then
+      best, best_d = scan(cells, cx, cy, points, position, taken, best, best_d)
+    else
+      for x = math.max(cx - r, 0), math.min(cx + r, cols) do
+        best, best_d = scan(cells, x, cy - r, points, position, taken, best, best_d)
+        best, best_d = scan(cells, x, cy + r, points, position, taken, best, best_d)
+      end
+      for y = math.max(cy - r + 1, 0), math.min(cy + r - 1, rows) do
+        best, best_d = scan(cells, cx - r, y, points, position, taken, best, best_d)
+        best, best_d = scan(cells, cx + r, y, points, position, taken, best, best_d)
+      end
+    end
+    if best and r >= 1 and best_d <= ((r - 1) * size) ^ 2 then break end
+  end
+  return best, best_d
+end
+
 -- Promotes the carriers nearest the siege line until the screen is full.
 -- Never demotes while siege tanks remain, so the screen does not reshuffle
 -- when a carrier dies. Reads carrier positions only when a slot is empty. A
@@ -242,12 +313,18 @@ local function refill_screen(a, members, c)
     anchors[1] = a.siege_center or siege_centroid(a, members)
   end
   if not anchors[1] then return end
+  local grid = a.surround and point_grid(anchors)
   local carriers = {}
   for _, e in ipairs(members) do
     local unit = e.unit_number
     if a.roles[unit] == 'carrier' then
-      local p = a.surround and a.slots[unit] or e.position
-      carriers[#carriers + 1] = {id = unit, d = nearest_squared(anchors, p)}
+      local d
+      if grid then
+        d = select(2, grid_nearest(grid, a.slots[unit]))
+      else
+        d = nearest_squared(anchors, e.position)
+      end
+      carriers[#carriers + 1] = {id = unit, d = d}
     end
   end
   table.sort(carriers, function(p, q)
@@ -259,15 +336,19 @@ end
 
 -- Each screen carrier joins the siege tank with the fewest screen carriers,
 -- the nearest one on a tie, and the line forms in front of that tank.
+-- Counts stay within one of each other, so the tanks with the fewest are
+-- those not yet taken in the current round, and a round ends when every tank
+-- has one more.
 local function place_screen_around(a, units)
   local lines, groups = siege_lines(a), {}
   if #lines == 0 then return end
+  local points = {}
+  for i, line in ipairs(lines) do points[i] = line.point end
+  local grid, taken, left = point_grid(points), {}, #lines
   for _, unit in ipairs(units) do
-    local slot, best, best_n, best_d = a.slots[unit], nil, nil, nil
-    for i, line in ipairs(lines) do
-      local n, d = groups[i] and #groups[i] or 0, geometry.distance_squared(line.point, slot)
-      if not best or n < best_n or (n == best_n and d < best_d) then best, best_n, best_d = i, n, d end
-    end
+    if left == 0 then taken, left = {}, #lines end
+    local best = grid_nearest(grid, a.slots[unit], taken)
+    taken[best], left = true, left - 1
     groups[best] = groups[best] or {}
     table.insert(groups[best], unit)
   end
