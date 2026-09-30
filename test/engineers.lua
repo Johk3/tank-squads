@@ -914,6 +914,22 @@ return function(ctx)
     assert(flying[#flying].text[1] == 'tank-squads.constructor-too-strong')
   end)
 
+  test('engineers: a nest too strong blocks every ghost within its reach at once', function()
+    local E = ctx.engineers
+    local _, enemy = E.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local record = working()
+    local near, beside = add_ghost(50, 0), add_ghost(60, 20)
+    local far = add_ghost(100, 60)
+    E.enemy_unit(enemy, 70, 0, 'biter-spawner', 'unit-spawner', 350)
+    constructor.tick()
+    local blocked = storage.engineers.blocked
+    assert(blocked[near.unit_number] and blocked[beside.unit_number], 'a ghost by the nest stayed open')
+    assert(not blocked[far.unit_number], 'a ghost out of the nest reach was blocked')
+    constructor.tick()
+    assert(record.state == 'moving' and record.cluster[1].entity == far, 'the next seek did not go to the free ghost')
+  end)
+
   test('engineers: entry points tolerate a save without engineers', function()
     local E = ctx.engineers
     E.engine()

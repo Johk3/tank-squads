@@ -218,6 +218,39 @@ function M.block(cluster, ticks)
   end
 end
 
+-- Blocks every unclaimed ghost of the constructor's registry within
+-- `radius` of any of the positions, so a nest too strong to clear is
+-- judged once, not once per cluster around it.
+function M.block_near(record, positions, radius, ticks)
+  local bucket = M.bucket(record.surface_index, record.force_index)
+  if not (bucket and positions[1]) then return end
+  local s = state.get()
+  local until_tick, r2 = game.tick + ticks, radius * radius
+  local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+  for _, p in ipairs(positions) do
+    x0, y0, x1, y1 = math.min(x0, p.x), math.min(y0, p.y), math.max(x1, p.x), math.max(y1, p.y)
+  end
+  local cx0, cy0 = M.chunk_of({x = x0 - radius, y = y0 - radius})
+  local cx1, cy1 = M.chunk_of({x = x1 + radius, y = y1 + radius})
+  for cx = cx0, cx1 do
+    for cy = cy0, cy1 do
+      local chunk = bucket.chunks[M.key(cx, cy)]
+      if chunk then
+        for id, entry in pairs(chunk.entries) do
+          if not s.claims[id] then
+            for _, p in ipairs(positions) do
+              if distance2(entry.position, p) <= r2 then
+                s.blocked[id] = until_tick
+                break
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
 -- The crane built the ghost, or found it gone.
 function M.placed(record, entry)
   local bucket = M.bucket(record.surface_index, record.force_index)

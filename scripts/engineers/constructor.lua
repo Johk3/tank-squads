@@ -224,6 +224,12 @@ function M.seek(record)
     say(record, 'task-force')
   else
     ghosts.block(cluster, ghosts.BLOCK)
+    -- Every ghost this nest guards waits too; the next seek goes elsewhere.
+    local around = {}
+    for _, e in ipairs(structures) do
+      if e.valid then around[#around + 1] = e.position end
+    end
+    ghosts.block_near(record, around, M.NEST_RADIUS + M.CLUSTER_RADIUS, ghosts.BLOCK)
     record.cluster, record.centre = nil, nil
     set(record, 'seeking')
     say(record, 'too-strong')
