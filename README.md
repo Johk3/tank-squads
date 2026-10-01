@@ -96,7 +96,7 @@ Constructors can also build fortress rings round your base, ring after ring outw
 - A ring wall the enemy destroys is rebuilt. A ring wall or ghost you remove yourself stays open.
 - **Delete** a ring (click twice) and the constructors on auto take its walls down; robots may help. A deleted ring can be built again from the current settings.
 - **Garrison:** choose a ring for a division in the window. A quarter of the ring's garrison soldiers spread evenly round it, the rest gather where spawners, worms and biters within 200 tiles are thickest, 9 tiles inside the wall. When the enemy hits a wall, the nearest garrison soldiers rush to it, the division's shredders come, and everyone returns to their posts afterwards. Any new order takes a division out of the garrison.
-- Gates do not open for units by themselves, so the mod opens them: soldiers, shredders, constructors and the headquarters crossing a finished ring drive to a gatehouse, wait for it to open, and pass through. A charging shredder flies straight over the walls.
+- Gates do not open for units by themselves, so the mod opens them: soldiers, shredders, constructors and the headquarters crossing a finished ring drive to a gatehouse, wait for it to open, and pass through. A unit that cannot reach the nearest gatehouse tries the next one. A charging shredder flies straight over the walls.
 
 ### Mobile headquarters
 

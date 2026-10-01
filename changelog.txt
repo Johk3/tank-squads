@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.40.1
+Date: 2026-10-01
+  Bugfixes:
+    - Patrol soldiers holding a single point stay on it, instead of wandering off while the patrol counts them as in place.
+    - A patrol soldier whose path failed is sent to its post again after the division's posts are dealt again, instead of sitting idle for good.
+    - A unit that cannot reach a gatehouse tries the next nearest one, up to three, instead of driving at the closed wall.
+---------------------------------------------------------------------------------------------------
 Version: 0.40.0
 Date: 2026-10-01
   Changes:
