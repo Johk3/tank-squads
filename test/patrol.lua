@@ -263,6 +263,38 @@ return function(ctx)
     assert(sent == 2, 'the survivors did not move to their new points')
   end)
 
+  test('patrol posts: a soldier arriving at the point it holds is told to stop there', function()
+    defines.command.stop = defines.command.stop or 4
+    local members = {}
+    for i = 1, 3 do members[i] = soldier(nil, nil, 20 * i, 0) end
+    divisions.assign(1, 1, members)
+    route(1, {{x = 0, y = 0}, {x = 60, y = 0}})
+    patrol.start(1, 1)
+    local e = members[1]
+    e.position = e.command.destination
+    patrol.advance(e.unit_number, defines.behavior_result.success)
+    assert(e.command.type == defines.command.stop, 'no stop order: the engine lets an idle soldier wander')
+    assert(e.command.distraction == defines.distraction.by_enemy and not e.command.ticks_to_wait)
+  end)
+
+  test('patrol posts: a failed soldier is sent again after the posts are dealt again', function()
+    local members = {}
+    for i = 1, 3 do members[i] = soldier(nil, nil, 10 * i, 0) end
+    divisions.assign(1, 1, members)
+    local r = route(1, square)
+    patrol.start(1, 1)
+    local a = members[1]
+    patrol.advance(a.unit_number, defines.behavior_result.fail)
+    local sent = 0
+    a.commandable.set_command = function(c) sent = sent + 1; a.command = c end
+    r.dirty = true
+    patrol.tick()
+    game.tick = game.tick + patrol.RETRY_TICKS
+    patrol.tick()
+    assert(sent == 1, 'the failed soldier was left with no command (' .. sent .. ' sent)')
+    assert(a.command.destination == r.posts[a.unit_number].anchor, 'not sent to its post')
+  end)
+
   test('patrol posts: a one-waypoint route keeps everyone on the waypoint', function()
     local a, b, c = soldier(nil, nil, 5, 0), soldier(nil, nil, 9, 0), soldier(nil, nil, 1, 3)
     divisions.assign(1, 1, {a, b, c})

@@ -169,6 +169,8 @@ local function assign(player_index, n, r, all)
     for i = 1, count do
       local k, post = keyed[first + i], layout.posts[first + match[i]]
       local id, before = k.id, old[k.id]
+      local due = r.retry and r.retry[id]
+      if due then r.retry[id] = nil end
       posts[id] = post
       if (back and back[id]) or (running and not before) then
         -- A newcomer, or back from a depot: its last command may have
@@ -176,6 +178,11 @@ local function assign(player_index, n, r, all)
         take_up(k.entity, post)
       elseif busy(r, id) then
         post.i = nil
+      elseif due then
+        -- Its last path failed, so no command is left to complete: it asks
+        -- for a path to its new post when its back-off ends.
+        post.i, post.dir = 0, 1
+        r.retry[id] = due
       elseif not all and before and before.idle and #post.points == 1
         and geometry.distance_squared(post.points[1], before.points[1]) < 1 then
         -- Already holding this very point.
@@ -186,7 +193,6 @@ local function assign(player_index, n, r, all)
         -- Walking: the leg in progress completes first.
         post.i = nil
       end
-      if r.retry then r.retry[id] = nil end
     end
     first = first + count
   end
@@ -325,7 +331,13 @@ function M.advance(unit_number, result)
     return post.i
   end
   post.failures = nil
-  if step(post) then go(soldier, target(post)) else post.idle = true end
+  if step(post) then
+    go(soldier, target(post))
+  else
+    -- A unit with no command wanders off; a stop with no wait holds it.
+    post.idle = true
+    combat.set_command(soldier, {type = defines.command.stop, distraction = defines.distraction.by_enemy})
+  end
   return post.i
 end
 
