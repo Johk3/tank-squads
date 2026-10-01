@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.40.2
+Date: 2026-10-01
+  Optimizations:
+    - The download is less than half its former size, about 26 MB instead of 62 MB. Gun, launcher, crane, radar dish and shredder charge sprites, icons and division and rank badges are stored at the resolution they are drawn at; they look and sit as before.
+---------------------------------------------------------------------------------------------------
 Version: 0.40.1
 Date: 2026-10-01
   Bugfixes:
