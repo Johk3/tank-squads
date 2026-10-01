@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.41.0
+Date: 2026-10-01
+  Features:
+    - Constructors show on the map as their icon, at the same size at every zoom, so they are easy to find from the map view. Constructors in existing saves get the icon when the save loads.
+---------------------------------------------------------------------------------------------------
 Version: 0.40.2
 Date: 2026-10-01
   Optimizations:
