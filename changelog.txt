@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.39.0
+Date: 2026-10-01
+  Features:
+    - Constructors send soldiers standing on their wall ghosts out of the way, and soldiers on a ring's wall line off it to the constructor's side, so walls no longer wait on a tank or shut one in.
+    - A soldier walled in on a ring's wall line gets out when its next order fails: it is moved off the wall line, to the side of the ring it was on.
+---------------------------------------------------------------------------------------------------
 Version: 0.38.1
 Date: 2026-10-01
   Bugfixes:
