@@ -3,7 +3,7 @@
 -- whose order lies across a ring first drives to the apron of a gatehouse
 -- on its side; the gates open, it waits half a second, passes to the far
 -- apron, and its order goes out again, which crosses the next ring the
--- same way.
+-- same way. A charging shredder flies over walls, so it takes no gate.
 --
 -- storage.engineers.crossings[unit_number] = {entity, ring, gate, phase,
 --   command, via, from}. phase is 'approach', 'opening' or 'through'; via
@@ -105,6 +105,10 @@ function M.route(entity, command, via)
   local list = s and s.crossings
   local id = entity.unit_number
   local current = list and list[id]
+  if entity.name == names.shredder_charging then
+    if current then list[id] = nil end
+    return false
+  end
   local fs = s and s.rings and s.rings[entity.force_index]
   local target = fs and target_of(command)
   local ring, side

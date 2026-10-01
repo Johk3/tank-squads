@@ -991,6 +991,16 @@ return function(ctx)
     assert(unit.command.destination.x == 191.5, 'a direct command skipped the crossing')
   end)
 
+  test('rings: a charging shredder flies straight over a ring', function()
+    local combat = require('scripts.combat')
+    local unit, _, opened, s = crossing_world()
+    unit.name = 'tank-squad-shredder-charging'
+    local target = {valid = true, position = {x = 300, y = 0}}
+    combat.direct(unit, {type = defines.command.attack, target = target, distraction = defines.distraction.none})
+    assert(unit.command.type == defines.command.attack and unit.command.target == target, 'the charge went to a gate')
+    assert(#opened == 0 and not (s.crossings and s.crossings[unit.unit_number]), 'a gate was used')
+  end)
+
   local garrison = require('scripts.engineers.rings.garrison')
 
   test('garrison: a quarter go as pickets, the rest by weight', function()
