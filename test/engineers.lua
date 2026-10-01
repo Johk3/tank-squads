@@ -1307,6 +1307,8 @@ return function(ctx)
     local constructor = require('scripts.engineers.constructor')
     local record = working()
     record.entity.health = 100
+    -- No spot to teleport to, so the stall watch cannot end the trip.
+    record.entity.teleport = function() return false end
     constructor.tick()
     local started = game.tick
     record.entity.command = nil
@@ -1647,5 +1649,89 @@ return function(ctx)
     local p = unit.position
     assert(not geometry.in_band(ring, p.x, p.y) and geometry.side(ring, p.x, p.y) == where)
     assert(not make_way.escape(unit.unit_number, defines.behavior_result.fail), 'moved again off the band')
+  end)
+
+  local function parked_shredder(x, y, state)
+    local unit = soldier(nil, nil, x, y)
+    unit.name, unit.type = names.shredder, 'unit'
+    storage.shredders = storage.shredders or {units = {}}
+    storage.shredders.units[unit.unit_number] = {entity = unit, id = unit.unit_number, state = state or 'parked'}
+    return unit
+  end
+
+  test('engineers: a parked shredder on a ghost makes way, one about to strike does not', function()
+    ctx.engineers.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local record = working(0, 0)
+    add_ghost(10, 0)
+    add_ghost(11, 0)
+    constructor.tick()
+    local parked = parked_shredder(11.3, 0.2)
+    local igniting = parked_shredder(10.2, -0.2, 'igniting')
+    constructor.on_command_completed(record.id, defines.behavior_result.success)
+    assert(record.state == 'building')
+    assert(parked.command and parked.command.destination, 'the parked shredder stayed on the ghost')
+    assert(igniting.command == nil, 'a shredder about to strike was moved')
+  end)
+
+  test('engineers: a shredder walled in on a band escapes when its order fails', function()
+    local _, _, ring = ring_force(0, 0)
+    local geometry = require('scripts.engineers.rings.geometry')
+    local make_way = require('scripts.engineers.make_way')
+    local x
+    for tx = 190, 210 do
+      if geometry.in_band(ring, tx + 0.5, 0.5) and not geometry.in_band(ring, tx - 0.5, 0.5) then x = tx + 0.5; break end
+    end
+    local unit = parked_shredder(x + 7, 0.5, 'moving')
+    unit.teleport = function(p) unit.position = {x = p.x, y = p.y}; return true end
+    assert(make_way.escape(unit.unit_number, defines.behavior_result.fail), 'stayed walled in')
+    assert(not geometry.in_band(ring, unit.position.x, unit.position.y))
+  end)
+
+  test('engineers: a position on a band is moved off it, to its own side', function()
+    local _, _, ring = ring_force(0, 0)
+    local geometry = require('scripts.engineers.rings.geometry')
+    local make_way = require('scripts.engineers.make_way')
+    local x
+    for tx = 190, 210 do
+      if geometry.in_band(ring, tx + 0.5, 0.5) and not geometry.in_band(ring, tx - 0.5, 0.5) then x = tx + 0.5; break end
+    end
+    local on = {x = x + 1, y = 0.5}
+    local where = geometry.side(ring, on.x, on.y)
+    local p = make_way.off_band(1, 1, on)
+    assert(p and not geometry.in_band(ring, p.x, p.y) and geometry.side(ring, p.x, p.y) == where)
+    assert(make_way.off_band(1, 1, {x = 0, y = 0}) == nil, 'moved a position off every band')
+  end)
+
+  test('engineers: a stuck constructor shoves units away, then teleports to its goal', function()
+    ctx.engineers.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local record = working(0, 0)
+    local entity = record.entity
+    entity.teleport = function(p) entity.position = {x = p.x, y = p.y}; return true end
+    record.state, record.goal = 'moving', {x = 50, y = 0, radius = 1}
+    local blocker = parked_shredder(1.5, 0, 'moving')
+    local start = game.tick
+    assert(constructor.unstick(record, start) == nil)
+    assert(constructor.unstick(record, start + constructor.STALL_TICKS) == 'shoved')
+    local d = blocker.command and blocker.command.destination
+    assert(d and d.x > 1.5, 'the shredder was not shoved away from the hull')
+    assert(constructor.unstick(record, start + constructor.STALL_TICKS + 60) == nil, 'shoved twice')
+    assert(constructor.unstick(record, start + 2 * constructor.STALL_TICKS) == 'teleported')
+    assert(entity.position.x == 50 and entity.command.destination.x == 50, 'not teleported to its goal')
+    assert(constructor.unstick(record, start + 5 * constructor.STALL_TICKS) == nil, 'acted at its goal')
+    assert(record.goal == nil)
+  end)
+
+  test('engineers: a constructor that keeps moving is never unstuck', function()
+    ctx.engineers.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local record = working(0, 0)
+    local entity = record.entity
+    record.state, record.goal = 'moving', {x = 50, y = 0, radius = 1}
+    for i = 0, 6 do
+      entity.position = {x = i * 5, y = 0}
+      assert(constructor.unstick(record, game.tick + i * constructor.STALL_TICKS) == nil)
+    end
   end)
 end

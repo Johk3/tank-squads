@@ -901,6 +901,28 @@ return function(ctx)
     assert(record.entity.position.x == 9, 'parked unit not on the ground found')
   end)
 
+  test('shredders: posts and landings are kept off ring bands', function()
+    local _, _, surface = engine()
+    local keep_off = shredders.keep_off
+    local asked = {}
+    shredders.keep_off = function(_, _, position)
+      asked[#asked + 1] = position
+      return {x = position.x + 100, y = position.y}
+    end
+    local e, record = shredder(0, 0)
+    record.state = 'parked'
+    shredders.post({point = {x = 10, y = 0}, members = {record.id}})
+    local d = e.command and e.command.destination
+    local ok = d and d.x >= 100 and #asked == 1
+    local c = surface.create_entity{name = names.shredder_charging, position = {x = 0, y = 0},
+      force = ctx.players()[1].force}
+    local landing = shredders.register(c)
+    shredders.tick(1)
+    shredders.keep_off = keep_off
+    assert(ok, 'the post was not moved off the band')
+    assert(landing.entity.name == names.shredder and landing.entity.position.x == 100, 'landed on the band')
+  end)
+
   test('shredders: shredders of a merged force join the new force', function()
     building()
     engine()

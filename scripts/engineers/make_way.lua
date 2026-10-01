@@ -8,8 +8,12 @@
 -- A soldier whose order fails while it stands on a ring's band is walled
 -- in there. It is moved off the band, to the side of the ring it is on,
 -- as constructor.escape moves a constructor.
+--
+-- Parked shredders make way as soldiers do. A shredder about to strike
+-- (igniting) or charging is left alone.
 local names = require('scripts.names')
 local combat = require('scripts.combat')
+local shredders = require('scripts.shredders')
 local state = require('scripts.engineers.state')
 local rings = require('scripts.engineers.rings.rings')
 local geometry = require('scripts.engineers.rings.geometry')
@@ -28,6 +32,15 @@ M.AWAY = 4
 M.RADIUS = 1
 -- Ticks a soldier sent away is left alone while it drives off.
 M.PATIENCE = 3 * 60
+-- Tiles around a stuck constructor's hull searched by shove.
+M.SHOVE = 3
+
+-- A unit of the force that makes way: a soldier, or a shredder that is
+-- parked or driving to its post.
+local function movable(unit)
+  if names.soldier_set[unit.name] then return true end
+  return unit.name == names.shredder and shredders.ready(unit.unit_number)
+end
 
 -- The point `reach` tiles from centre in the direction of position. A
 -- soldier on the centre itself goes toward `from` (the constructor).
@@ -84,7 +97,7 @@ function M.clear(record)
   local crossings = s and s.crossings
   for _, unit in pairs(found) do
     local id = unit.unit_number
-    if names.soldier_set[unit.name] and not (sent and sent[id]) and not (crossings and crossings[id]) then
+    if movable(unit) and not (sent and sent[id]) and not (crossings and crossings[id]) then
       local destination = spot(record, unit.position)
       if destination then
         -- A short hop off the band to the near side: no gate on the way.
@@ -107,7 +120,9 @@ function M.escape(unit_number, result)
   local s = state.peek()
   if not (s and s.rings) then return false end
   local unit = game.get_entity_by_unit_number(unit_number)
-  if not (unit and unit.valid and names.soldier_set[unit.name]) then return false end
+  if not (unit and unit.valid and (names.soldier_set[unit.name] or unit.name == names.shredder)) then
+    return false
+  end
   local fs = rings.peek(unit.force_index)
   local p = unit.position
   local ring = fs and rings.find(fs, unit.surface_index, p)
@@ -115,6 +130,35 @@ function M.escape(unit_number, result)
   local target = geometry.stand(ring, p.x, p.y, (geometry.side(ring, p.x, p.y)))
   target = unit.surface.find_non_colliding_position(unit.name, target, 8, 0.5)
   return target ~= nil and unit.teleport(target)
+end
+
+-- A constructor that has not moved for a while: the force's units
+-- around its hull are sent straight away from it. Returns how many.
+function M.shove(entity)
+  local centre = entity.position
+  local s = state.peek()
+  local crossings = s and s.crossings
+  local n = 0
+  for _, unit in pairs(entity.surface.find_entities_filtered{position = centre, radius = M.SHOVE, type = 'unit',
+      force = entity.force}) do
+    if movable(unit) and not (crossings and crossings[unit.unit_number]) then
+      combat.set_command(unit, {type = defines.command.go_to_location,
+        destination = M.away(centre, unit.position, centre, M.SHOVE + M.AWAY),
+        radius = M.RADIUS, distraction = defines.distraction.by_enemy}, true)
+      n = n + 1
+    end
+  end
+  return n
+end
+
+-- A position on one of the force's ring bands moved off it, to the side of
+-- the ring the position is on; nil off every band. Shredders post and land
+-- through this (shredders.keep_off), so they never wait where walls go up.
+function M.off_band(force_index, surface_index, position)
+  local fs = rings.peek(force_index)
+  local ring = fs and rings.find(fs, surface_index, position)
+  if not ring then return nil end
+  return geometry.stand(ring, position.x, position.y, (geometry.side(ring, position.x, position.y)))
 end
 
 return M

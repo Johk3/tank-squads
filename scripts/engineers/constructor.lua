@@ -8,7 +8,7 @@
 --   cluster, centre, fails, retries, crane, release_tick, done_tick,
 --   released, paused_since, calm_since, task_force, task_force_result, home,
 --   autonomous, segment, dismantle, rings_version, nest, draft_tick, withdrawn,
---   sent_away (make_way.lua), marker}
+--   sent_away (make_way.lua), marker, goal, stall}
 -- state is 'waiting', 'seeking', 'moving', 'building', 'paused',
 -- 'task_force', 'healing' or 'idle'.
 -- An autonomous constructor builds rings (rings/rings.lua) instead of the
@@ -48,6 +48,11 @@ M.CRUSH_REACH = 1.5
 M.CRUSH_STEP = 0.3
 -- The map icon's size. At 2 it stands out among the force's buildings.
 M.MAP_SCALE = 2
+-- A constructor on its way that got no STALL_DISTANCE tiles from where it
+-- was STALL_TICKS ago shoves the units around it away; still stuck after
+-- twice that, it is teleported to where it was going. A hull walled in
+-- rocks back and forth in its pocket, so the distance is a few tiles.
+M.STALL_TICKS, M.STALL_DISTANCE = 10 * 60, 4
 local CRUSHED = {'tree', 'simple-entity'}
 
 local function min_team()
@@ -75,11 +80,15 @@ local function say(record, key)
 end
 
 local function go(record, destination, radius)
+  radius = radius or 1
+  record.goal = {x = destination.x, y = destination.y, radius = radius}
+  record.stall = nil
   combat.direct(record.entity, {type = defines.command.go_to_location, destination = destination,
-    radius = radius or 1, distraction = defines.distraction.none})
+    radius = radius, distraction = defines.distraction.none})
 end
 
 local function stop(record)
+  record.goal, record.stall = nil, nil
   record.entity.commandable.set_command{type = defines.command.stop, distraction = defines.distraction.none}
 end
 
@@ -319,12 +328,51 @@ function M.set_autonomous(unit_number, value)
   return value
 end
 
+-- Once per second while it drives somewhere: a hull that has not moved
+-- for STALL_TICKS shoves the units around it away (make_way.shove), one
+-- still stuck after twice that is teleported to its goal. Returns
+-- 'shoved', 'teleported' or nil.
+function M.unstick(record, tick)
+  local goal, entity = record.goal, record.entity
+  if not goal or record.state == 'building' then record.stall = nil; return nil end
+  local p = entity.position
+  local dx, dy = p.x - goal.x, p.y - goal.y
+  local near = goal.radius + 1
+  if dx * dx + dy * dy <= near * near then
+    record.goal, record.stall = nil, nil
+    return nil
+  end
+  local stall = record.stall
+  local moved = stall and math.abs(p.x - stall.x) + math.abs(p.y - stall.y) >= M.STALL_DISTANCE
+  if not stall or moved then
+    record.stall = {x = p.x, y = p.y, tick = tick}
+    return nil
+  end
+  local waited = tick - stall.tick
+  if waited >= 2 * M.STALL_TICKS then
+    local spot = entity.surface.find_non_colliding_position(names.constructor, {x = goal.x, y = goal.y}, 8, 0.5)
+    if not (spot and entity.teleport(spot)) then
+      record.stall = {x = p.x, y = p.y, tick = tick}
+      return nil
+    end
+    go(record, {x = goal.x, y = goal.y}, goal.radius)
+    return 'teleported'
+  end
+  if waited >= M.STALL_TICKS and not stall.shoved then
+    stall.shoved = true
+    make_way.shove(entity)
+    return 'shoved'
+  end
+  return nil
+end
+
 -- Once per second: health, a running task force, the escort, enemies, then
 -- work.
 function M.check(record, cfg)
   local entity = record.entity
   if not entity.valid then M.unregister(record.id); return end
   local tick = game.tick
+  M.unstick(record, tick)
   if record.state ~= 'healing' and entity.health < entity.max_health * cfg.retreat then
     local home = M.home(record, false)
     if home then
@@ -462,6 +510,7 @@ function M.on_command_completed(unit_number, result)
     end
     return true
   end
+  record.goal, record.stall = nil, nil
   set(record, 'building')
   M.start_cycle(record)
   return true

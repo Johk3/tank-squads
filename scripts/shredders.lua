@@ -119,11 +119,29 @@ local function clear_renders(record)
   end
 end
 
+-- Moves a post or a landing spot off the force's ring bands, or returns
+-- nil. Set by scripts/engineers (make_way.off_band), so a shredder never
+-- waits where walls go up.
+M.keep_off = nil
+
+local function off_band(entity, position)
+  local moved = M.keep_off and M.keep_off(entity.force_index, entity.surface_index, position)
+  return moved or position
+end
+
+-- Parked or driving to its post: free to be moved out of the way.
+function M.ready(unit_number)
+  local s = storage.shredders
+  local record = s and s.units[unit_number]
+  return record ~= nil and READY[record.state] == true
+end
+
 -- A shredder destroyed without an event keeps its record until the next
 -- split, so orders check the entity first.
 local function send(record, position)
   if not record.entity.valid then return end
   record.state = 'moving'
+  position = off_band(record.entity, position)
   combat.direct(record.entity, {type = defines.command.go_to_location, destination = position,
     radius = 2, distraction = defines.distraction.none})
 end
@@ -208,7 +226,7 @@ local function swap(record, name)
   local s = M.state()
   local position = old.position
   if name == M.PARKED then
-    position = old.surface.find_non_colliding_position(name, position, M.LANDING, 0.5)
+    position = old.surface.find_non_colliding_position(name, off_band(old, position), M.LANDING, 0.5)
     if not position then return nil end
   end
   local new = old.surface.create_entity{name = name, position = position, force = old.force}

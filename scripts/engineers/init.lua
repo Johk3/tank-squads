@@ -16,6 +16,7 @@ local patrol = require('scripts.patrol')
 local garrison = require('scripts.engineers.rings.garrison')
 local clearing = require('scripts.engineers.rings.clearing')
 local names = require('scripts.names')
+local shredders = require('scripts.shredders')
 
 local M = {}
 
@@ -33,6 +34,7 @@ M.selected = window.selected
 M.confirmed = window.confirmed
 M.refresh_windows = window.refresh_all
 combat.crossing = crossing.route
+shredders.keep_off = make_way.off_band
 patrol.garrison_layout = garrison.layout
 M.garrison_set = garrison.set
 M.garrison_active = garrison.active
