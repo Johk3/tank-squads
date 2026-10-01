@@ -33,6 +33,9 @@ local ok, result = pcall(function()
   local member = false
   for _, e in pairs(t.marching.members) do if e.unit_number == target then member = true end end
   assert(member, 'the target is not in the swarm')
+  --[[ Both groups are within SWARM_RADIUS of each other: the marching one
+  goes before the gathering one is checked on its own. ]]
+  for _, e in pairs(t.marching.members) do e.destroy() end
   assert(remote.call('tank-squads', 'shredders_swarm', t.surface.index, {x = 64, y = 4}, t.force) == nil,
     'a gathering group counted as a swarm (group state ' .. tostring(t.gathering.state) .. ')')
   return 'marching swarm seen, gathering group ignored'

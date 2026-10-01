@@ -256,7 +256,7 @@ return function(ctx)
     return calls
   end
 
-  test('shredders: a group parks 80 tiles behind its division toward home', function()
+  test('shredders: a group parks 60 tiles behind its division toward home', function()
     building()
     engine()
     division(1, 200)
@@ -264,8 +264,8 @@ return function(ctx)
     shredders.tick()
     local group = storage.shredders.groups['1:1']
     assert(group, 'no group for division 1')
-    -- Centre (200, 1.5), home (0, 0): 80 tiles toward home is about (120.0, 0.9).
-    assert(math.abs(group.point.x - 120) < 0.1 and math.abs(group.point.y - 0.9) < 0.1, 'backline not toward home')
+    -- Centre (200, 1.5), home (0, 0): 60 tiles toward home is about (140.0, 1.05).
+    assert(math.abs(group.point.x - 140) < 0.1 and math.abs(group.point.y - 1.05) < 0.1, 'backline not toward home')
     assert(record.group == '1:1' and e.command.type == defines.command.go_to_location, 'shredder not sent')
     assert(e.command.distraction == defines.distraction.none, 'shredder can be distracted on its way')
   end)
@@ -998,8 +998,8 @@ return function(ctx)
   end)
 
   -- A patrolling division of four at x = 200 with two parked shredders and
-  -- a swarm of `count` enemy units at x = 230, in a group in `state`.
-  local function patrol_swarm(count, state)
+  -- a swarm of `count` enemy units at x = 230 (or `x`), in a group in `state`.
+  local function patrol_swarm(count, state, x)
     building()
     local _, enemy = engine()
     defines.group_state = {gathering = 0, moving = 1, attacking_distraction = 2, attacking_target = 3,
@@ -1012,7 +1012,7 @@ return function(ctx)
     local group = {state = defines.group_state[state or 'moving']}
     local swarm = {}
     for i = 1, count do
-      local e = enemy_unit(enemy, 230 + (i % 5), i % 7, 15)
+      local e = enemy_unit(enemy, (x or 230) + (i % 5), i % 7, 15)
       e.commandable.parent_group = group
       swarm[i] = e
     end
@@ -1086,7 +1086,22 @@ return function(ctx)
     assert(charging_count() == 1, 'loose units hid the swarm')
   end)
 
-  test('shredders: a crowd of loose units is read only until they outnumber the swarm', function()
+  test('shredders: a swarm 70 tiles out draws a shredder', function()
+    patrol_swarm(shredders.SWARM_UNITS, nil, 270)
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(charging_count() == 1, 'a far swarm was not seen')
+  end)
+
+  test('shredders: a crowd of idle units read before a swarm does not hide it', function()
+    local _, swarm = patrol_swarm(shredders.SWARM_UNITS + 20)
+    for i = 1, 20 do swarm[i].commandable.parent_group = nil end
+    game.tick = game.tick + 60
+    shredders.tick()
+    assert(charging_count() == 1, 'idle units read first hid the swarm')
+  end)
+
+  test('shredders: a crowd of loose units is read only until no swarm can be left', function()
     local _, swarm = patrol_swarm(40)
     local reads = 0
     for _, e in ipairs(swarm) do
@@ -1098,7 +1113,8 @@ return function(ctx)
     game.tick = game.tick + 60
     shredders.tick(divisions.phase(1, 1))
     assert(charging_count() == 0)
-    assert(reads <= shredders.LOOSE * shredders.SWARM_SCANS, reads .. ' group reads for loose units')
+    local most = (40 - shredders.SWARM_UNITS + 1) * shredders.SWARM_SCANS
+    assert(reads <= most, reads .. ' group reads for loose units')
   end)
 
   test('shredders: every division but the engineer escort looks out for swarms', function()

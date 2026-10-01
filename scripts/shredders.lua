@@ -52,8 +52,8 @@ M.LANDING = 64
 -- within SWARM_RADIUS tiles of a soldier sends one shredder at them, at
 -- most once every SWARM_COOLDOWN ticks. Each slice looks around
 -- SWARM_SCANS soldiers in turn and reads at most SWARM_LIMIT units; it
--- stops at LOOSE units outside a marching group that outnumber those in one.
-M.SWARM_UNITS, M.SWARM_RADIUS, M.SWARM_COOLDOWN, M.SWARM_SCANS, M.SWARM_LIMIT, M.LOOSE = 15, 40, 5 * 60, 2, 45, 8
+-- stops once the units left to read can no longer make a swarm.
+M.SWARM_UNITS, M.SWARM_RADIUS, M.SWARM_COOLDOWN, M.SWARM_SCANS, M.SWARM_LIMIT = 15, 80, 5 * 60, 2, 90
 local TARGETS = {'unit', 'unit-spawner', 'turret'}
 local LOOK = appearance.shredder
 -- A division that sees at least NEST_DANGER spawners and worms within
@@ -62,7 +62,7 @@ local LOOK = appearance.shredder
 -- ticks, and a throw rests the group's nest lookout for NEST_COOLDOWN.
 M.NEST_LOOK, M.NEST_DANGER, M.THROW_CHANCE, M.NEST_REROLL, M.NEST_COOLDOWN = 40, 3, 0.5, 10 * 60, 60 * 60
 M.DANGER_UNITS, M.DANGER_RADIUS, M.NEST_RADIUS = 10, 40, 50
-M.SHADOW_SIZE, M.SHADOW_REACH, M.SHADOW_BACK, M.SHADOW_STRIKE, M.SHADOW_DRIFT = 3, 200, 80, 30, 20
+M.SHADOW_SIZE, M.SHADOW_REACH, M.SHADOW_BACK, M.SHADOW_STRIKE, M.SHADOW_DRIFT = 3, 200, 60, 30, 20
 M.CALM = 10 * 60
 local NESTS = {'unit-spawner', 'turret'}
 -- The map shows every shredder; a locked one draws a bright line to its
@@ -843,8 +843,8 @@ function M.swarm(surface, position, force, enemies)
   if #query.force == 0 or surface.count_entities_filtered(query) < M.SWARM_UNITS then return nil end
   query.limit = M.SWARM_LIMIT
   local found = surface.find_entities_filtered(query)
-  -- Loose units near their nests stop the reading early: a swarm is
-  -- mostly its group.
+  -- Idle units near their nests may come first, so they never stop the
+  -- reading on their own; it stops once no swarm can be left.
   local states, swarm, loose = marching(), {}, 0
   for _, e in ipairs(found) do
     local commandable = e.commandable
@@ -853,7 +853,7 @@ function M.swarm(surface, position, force, enemies)
       swarm[#swarm + 1] = e
     else
       loose = loose + 1
-      if (loose >= M.LOOSE and loose > #swarm) or #found - loose < M.SWARM_UNITS then return nil end
+      if #found - loose < M.SWARM_UNITS then return nil end
     end
   end
   if #swarm < M.SWARM_UNITS then return nil end
