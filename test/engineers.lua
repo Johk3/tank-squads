@@ -171,6 +171,21 @@ return function(ctx)
     assert(constructor.count(1) == 0)
   end)
 
+  test('engineers: a constructor shows on its force\'s map at a fixed screen size', function()
+    engine()
+    local constructor = require('scripts.engineers.constructor')
+    local e = constructor_entity(5, 5)
+    local record = constructor.register(e)
+    local marker = record.marker
+    assert(marker and marker.valid, 'no map marker')
+    local args = marker.args
+    assert(args.render_mode == 'chart' and args.target == e and args.scale_with_zoom, 'marker not on the map')
+    assert(args.forces[1] == e.force, 'marker not for the constructor\'s force')
+    assert(args.text == '[img=entity/' .. names.constructor .. ']' and args.use_rich_text)
+    require('scripts.engineers.init').reconcile()
+    assert(not marker.valid and record.marker.valid, 'reconcile kept the old marker')
+  end)
+
   test('engineers: a moving constructor crushes the trees and rocks under its hull', function()
     engine()
     local constructor = require('scripts.engineers.constructor')

@@ -8,7 +8,7 @@
 --   cluster, centre, fails, retries, crane, release_tick, done_tick,
 --   released, paused_since, calm_since, task_force, task_force_result, home,
 --   autonomous, segment, dismantle, rings_version, nest, draft_tick, withdrawn,
---   sent_away (make_way.lua)}
+--   sent_away (make_way.lua), marker}
 -- state is 'waiting', 'seeking', 'moving', 'building', 'paused',
 -- 'task_force', 'healing' or 'idle'.
 -- An autonomous constructor builds rings (rings/rings.lua) instead of the
@@ -46,6 +46,8 @@ M.SAY_INTERVAL = 10 * 60
 -- Half the hull (0.9) and the most it drives in one sweep slice (0.6).
 M.CRUSH_REACH = 1.5
 M.CRUSH_STEP = 0.3
+-- The map icon's size. At 2 it stands out among the force's buildings.
+M.MAP_SCALE = 2
 local CRUSHED = {'tree', 'simple-entity'}
 
 local function min_team()
@@ -95,6 +97,16 @@ function M.reset(record)
   set(record, 'seeking')
 end
 
+-- The constructor's icon on the map for its force, at a fixed screen size.
+-- The icon rides on the entity, so it goes with it.
+function M.mark(record)
+  local entity = record.entity
+  if record.marker and record.marker.valid then record.marker.destroy() end
+  record.marker = rendering.draw_text{text = '[img=entity/' .. names.constructor .. ']', use_rich_text = true,
+    color = {1, 1, 1}, target = entity, surface = entity.surface, forces = {entity.force}, render_mode = 'chart',
+    alignment = 'center', vertical_alignment = 'middle', scale = M.MAP_SCALE, scale_with_zoom = true}
+end
+
 function M.register(entity)
   if not (entity and entity.valid and entity.name == names.constructor) then return nil end
   local s = state.get()
@@ -104,6 +116,7 @@ function M.register(entity)
     surface_index = entity.surface_index, state = 'seeking', since = game.tick, said = {}}
   s.constructors[record.id] = record
   s.dirty = true
+  M.mark(record)
   ghosts.scan(entity.surface)
   vision.track(entity)
   return record

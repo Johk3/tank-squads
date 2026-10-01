@@ -169,6 +169,9 @@ function M.reconcile()
     if record.entity.valid and record.state ~= 'healing' and record.state ~= 'task_force' then
       constructor.reset(record)
     end
+    -- Constructors from older versions have no map icon, and a merged
+    -- force's icon shows only to the force that is gone.
+    if record.entity.valid then constructor.mark(record) end
   end
   s.ghosts, s.scanned, s.claims, s.dirty = {}, {}, {}, true
   for _, record in pairs(s.constructors) do
