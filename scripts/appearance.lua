@@ -1,44 +1,44 @@
 -- Shared by prototypes and runtime overlays; contains no runtime API access.
 local M = {
   chassis_scale = 0.45,
-  gun_scale = 0.09,
-  gun_pivot_pixels = 48,
+  gun_scale = 0.4994,
+  gun_pivot_pixels = 8.65,
   -- The electric link row is drawn at this scale and stretched along x.
   electric = {link_scale = 0.5},
   weapons = {
     ["tank-squad-siege"] = {
-      animation = "tank-squad-siege-gun", scale = 0.36,
-      pivot_pixels = 137, aim_timeout = 180, recoil_ticks = 24,
+      animation = "tank-squad-siege-gun", scale = 0.5005,
+      pivot_pixels = 98.5, aim_timeout = 180, recoil_ticks = 24,
     },
     ["tank-squad-flame"] = {
-      sprite = "tank-squad-flame-gun", scale = 0.095,
-      pivot_pixels = 155, aim_timeout = 60,
+      sprite = "tank-squad-flame-gun", scale = 0.5005,
+      pivot_pixels = 29.4, aim_timeout = 60,
     },
-    -- Painted variant guns: 627 px frames, rest, flash, casing, recovery.
+    -- Painted variant guns: four frames, rest, flash, casing, recovery.
     ["tank-squad-soldier-2"] = {
-      animation = "tank-squad-red-gun", scale = 0.20,
-      pivot_pixels = 87, aim_timeout = 60, recoil_ticks = 12,
+      animation = "tank-squad-red-gun", scale = 0.4996,
+      pivot_pixels = 34.8, aim_timeout = 60, recoil_ticks = 12,
     },
     ["tank-squad-soldier-3"] = {
-      animation = "tank-squad-green-gun", scale = 0.25,
-      pivot_pixels = 87, aim_timeout = 60, recoil_ticks = 12,
+      animation = "tank-squad-green-gun", scale = 0.4992,
+      pivot_pixels = 43.6, aim_timeout = 60, recoil_ticks = 12,
     },
     ["tank-squad-electric"] = {
-      animation = "tank-squad-electric-gun", scale = 0.20,
-      pivot_pixels = 87, aim_timeout = 90, recoil_ticks = 16,
+      animation = "tank-squad-electric-gun", scale = 0.4996,
+      pivot_pixels = 34.8, aim_timeout = 90, recoil_ticks = 16,
     },
     -- The launcher smokes for five seconds after a launch, at a quarter
     -- frame per tick. nuclear.lua starts it only when a rocket leaves.
     ["tank-squad-nuclear"] = {
-      animation = "tank-squad-nuclear-gun", scale = 0.17,
-      pivot_pixels = 102, aim_timeout = 360, recoil_ticks = 360,
+      animation = "tank-squad-nuclear-gun", scale = 0.5004,
+      pivot_pixels = 34.7, aim_timeout = 360, recoil_ticks = 360,
       animation_speed = 0.25, scripted_recoil = true,
     },
   },
   headquarters = {
     -- About 9 by 14 tiles, three times the length of a base-game tank.
-    chassis_scale = 1.7, dish_scale = 0.2,
-    -- The dish sprite's bearing sits about 373 source pixels below its
+    chassis_scale = 1.7, dish_scale = 0.4996,
+    -- The dish sprite's bearing sits about 149 source pixels below its
     -- centre. Centring the sprite 1.65 tiles behind the body's centre puts
     -- that bearing on the chassis' rear pedestal, about 4 tiles back.
     dish_offset = 1.65,
@@ -47,10 +47,10 @@ local M = {
   -- charging unit and turned toward the target; its scale matches its hull
   -- to the directional sheet. The offsets put the hull centre, not the
   -- frame centre, on the unit: the charge frames carry exhaust room below
-  -- the hull, and frames 3 and 4 sit 34 source pixels higher than 1 and 2.
+  -- the hull, and frames 3 and 4 sit 14 source pixels higher than 1 and 2.
   shredder = {
     chassis_scale = 0.45,
-    charge_scale = 0.206,
+    charge_scale = 0.5006,
     arm_offset = 0.203,
     boost_offset = 0.421,
     -- The reticle ring is about 210 px across: about 2.3 tiles here.
@@ -66,7 +66,7 @@ local M = {
   -- source pixels below the frame centre; scripts/engineers/crane.lua
   -- offsets the frame so that point stays on the hull. Calibrate both in
   -- the engine check.
-  constructor = {chassis_scale = 0.625, crane_scale = 0.2, crane_base = 162},
+  constructor = {chassis_scale = 0.625, crane_scale = 0.4996, crane_base = 64.9},
   tier_colors = {
     {r = 0.9, g = 0.8, b = 0.2, a = 1},
     {r = 0.85, g = 0.25, b = 0.2, a = 1},

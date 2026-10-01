@@ -32,7 +32,7 @@ end
 
 local function unit(name, speed, run_animation, attack)
   local u = copy(data.raw.unit['tank-squad-soldier-1'])
-  u.name, u.icon, u.icon_size = name, ICON, 1254
+  u.name, u.icon, u.icon_size = name, ICON, 128
   u.order = 'z-' .. name
   u.max_health, u.movement_speed = 600, speed
   u.distance_per_frame = 0.2
@@ -141,10 +141,10 @@ for i = 1, 128 do lock_sequence[i] = math.min(4, math.ceil(i / 3)) end
 
 data:extend{
   parked, charging, fuse, shard, burst, smoke,
-  {type = 'animation', name = 'tank-squad-shredder-arm', filename = CHARGE, width = 627, height = 627,
+  {type = 'animation', name = 'tank-squad-shredder-arm', filename = CHARGE, width = 258, height = 258,
     frame_count = 2, line_length = 2, frame_sequence = arm_sequence, scale = look.charge_scale},
-  {type = 'animation', name = 'tank-squad-shredder-boost', filename = CHARGE, width = 627, height = 627,
-    y = 627, frame_count = 2, line_length = 2, frame_sequence = boost_sequence, scale = look.charge_scale},
+  {type = 'animation', name = 'tank-squad-shredder-boost', filename = CHARGE, width = 258, height = 258,
+    y = 258, frame_count = 2, line_length = 2, frame_sequence = boost_sequence, scale = look.charge_scale},
   {type = 'animation', name = 'tank-squad-shredder-lock', filename = FX, width = 313, height = 313,
     frame_count = 4, line_length = 4, frame_sequence = lock_sequence, scale = look.lock_scale, draw_as_glow = true},
   {type = 'animation', name = 'tank-squad-shredder-breakup', filename = FX, width = 313, height = 313,
@@ -153,7 +153,7 @@ data:extend{
     filename = '__base__/sound/programmable-speaker/alarm-2.ogg', volume = 0.5},
   {type = 'sound', name = 'tank-squad-shredder-boost-sound',
     filename = '__base__/sound/fight/rocket-launcher.ogg', volume = 0.9},
-  {type = 'item', name = names.shredder_recruit, icon = ICON, icon_size = 1254, hidden = true,
+  {type = 'item', name = names.shredder_recruit, icon = ICON, icon_size = 128, hidden = true,
     hidden_in_factoriopedia = true, stack_size = 1, subgroup = 'creatures', order = 'z-tank-squad-recruit-shredder'},
   {type = 'recipe', name = names.shredder_recipe, category = 'tank-squad-training', enabled = false,
     energy_required = 20,

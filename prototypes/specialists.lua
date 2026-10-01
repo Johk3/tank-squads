@@ -102,11 +102,11 @@ for frame = 1, 128 do recoil[frame] = frame <= 6 and 2 or frame <= 12 and 3 or 1
 data:extend{
   siege, flame, shell, stream,
   {type = 'animation', name = 'tank-squad-siege-gun',
-    filename = '__tank-squads__/graphics/siege-gun.png', width = 627, height = 627,
+    filename = '__tank-squads__/graphics/siege-gun.png', width = 451, height = 451,
     frame_count = 4, line_length = 2, frame_sequence = recoil,
     scale = appearance.weapons['tank-squad-siege'].scale},
   {type = 'sprite', name = 'tank-squad-flame-gun',
-    filename = '__tank-squads__/graphics/flame-gun.png', width = 1254, height = 1254,
+    filename = '__tank-squads__/graphics/flame-gun.png', width = 238, height = 238,
     scale = appearance.weapons['tank-squad-flame'].scale},
 }
 
@@ -225,11 +225,11 @@ data:extend{
     filename = ELECTRIC_FX, width = 313, height = 313, y = 2 * 313, frame_count = 4, line_length = 4,
     animation_speed = 0.5, scale = appearance.electric.link_scale, draw_as_glow = true},
   {type = 'animation', name = 'tank-squad-electric-gun',
-    filename = '__tank-squads__/graphics/tank-variants/electric/attack.png', width = 627, height = 627,
+    filename = '__tank-squads__/graphics/tank-variants/electric/attack.png', width = 251, height = 251,
     frame_count = 4, line_length = 2, frame_sequence = appearance.gun_sequence{{2, 4}, {3, 4}, {4, 4}},
     scale = appearance.weapons['tank-squad-electric'].scale},
   {type = 'animation', name = 'tank-squad-nuclear-gun',
-    filename = '__tank-squads__/graphics/tank-variants/nuclear/attack.png', width = 627, height = 627,
+    filename = '__tank-squads__/graphics/tank-variants/nuclear/attack.png', width = 213, height = 213,
     frame_count = 4, line_length = 2, frame_sequence = nuclear_sequence,
     scale = appearance.weapons['tank-squad-nuclear'].scale},
   {type = 'sound', name = 'tank-squad-nuke-launch',

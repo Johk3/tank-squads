@@ -1,12 +1,12 @@
 local insignia = require("scripts.insignia")
 local ranks = require("scripts.ranks")
 
--- Drawn far smaller than 512 px in the world and GUI, so mipmaps keep the
+-- Drawn far smaller than 256 px in the world and GUI, so mipmaps keep the
 -- shrunken badges from shimmering.
 local FLAGS = {"mipmap", "linear-minification", "linear-magnification", "linear-mip-level", "no-crop"}
 
 local function sprite(name, filename)
-  return {type = "sprite", name = name, filename = filename, size = 512, scale = 1, flags = FLAGS}
+  return {type = "sprite", name = name, filename = filename, size = 256, scale = 2, flags = FLAGS}
 end
 
 local sprites = {}

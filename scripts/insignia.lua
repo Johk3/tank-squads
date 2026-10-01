@@ -2,7 +2,7 @@
 -- none. Shared by prototypes and runtime; contains no runtime API access.
 local M = {}
 
--- Every insignia and rank image is 512 px square, drawn at scale 1: 16 tiles.
+-- Every insignia and rank image is 256 px square, drawn at scale 2: 16 tiles.
 M.SPRITE_TILES = 16
 
 -- Each slot's ring colour is its shield's accent. Slot 4 is a deep green so

@@ -19,7 +19,7 @@ local function hull()
 end
 
 local unit = copy(data.raw.unit['tank-squad-soldier-1'])
-unit.name, unit.icon, unit.icon_size = names.constructor, ICON, 1254
+unit.name, unit.icon, unit.icon_size = names.constructor, ICON, 128
 unit.order = 'z-' .. names.constructor
 unit.max_health, unit.movement_speed = 800, 0.10
 unit.distance_per_frame = 0.2
@@ -38,9 +38,9 @@ unit.resistances = nil
 data:extend{
   unit,
   -- Hold, extend, release, retract: one cycle per second.
-  {type = 'animation', name = names.constructor_crane, filename = ARM, width = 627, height = 627,
+  {type = 'animation', name = names.constructor_crane, filename = ARM, width = 251, height = 251,
     frame_count = 4, line_length = 2, scale = look.crane_scale},
-  {type = 'item', name = names.constructor_recruit, icon = ICON, icon_size = 1254, hidden = true,
+  {type = 'item', name = names.constructor_recruit, icon = ICON, icon_size = 128, hidden = true,
     hidden_in_factoriopedia = true, stack_size = 1, subgroup = 'creatures', order = 'z-tank-squad-recruit-constructor'},
   {type = 'recipe', name = names.constructor_recipe, category = 'tank-squad-training', enabled = false,
     energy_required = 30,

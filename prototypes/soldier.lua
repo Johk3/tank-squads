@@ -19,7 +19,7 @@ local function soldier(suffix, hp, damage, art)
     type = "unit",
     name = "tank-squad-soldier-" .. suffix,
     icon = art.icon,
-    icon_size = 1254,
+    icon_size = 128,
     flags = {"placeable-player", "placeable-off-grid", "not-repairable", "get-by-unit-number"},
     max_health = hp,
     healing_per_tick = 0,
@@ -85,7 +85,7 @@ data:extend{
   {
     type = "sprite", name = "tank-squad-chaingun",
     filename = "__tank-squads__/graphics/chaingun-turret.png",
-    width = 1254, height = 1254, scale = appearance.gun_scale,
+    width = 226, height = 226, scale = appearance.gun_scale,
   },
   {
     type = "projectile", name = "tank-squad-tracer",
@@ -102,14 +102,14 @@ data:extend{
   {
     type = "animation", name = "tank-squad-red-gun",
     filename = "__tank-squads__/graphics/tank-variants/red/attack.png",
-    width = 627, height = 627, frame_count = 4, line_length = 2,
+    width = 251, height = 251, frame_count = 4, line_length = 2,
     frame_sequence = appearance.gun_sequence{{2, 3}, {3, 3}, {4, 3}},
     scale = appearance.weapons["tank-squad-soldier-2"].scale,
   },
   {
     type = "animation", name = "tank-squad-green-gun",
     filename = "__tank-squads__/graphics/tank-variants/green/attack.png",
-    width = 627, height = 627, frame_count = 4, line_length = 2,
+    width = 314, height = 314, frame_count = 4, line_length = 2,
     frame_sequence = appearance.gun_sequence{{2, 3}, {3, 3}, {4, 3}},
     scale = appearance.weapons["tank-squad-soldier-3"].scale,
   },

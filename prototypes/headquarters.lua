@@ -27,7 +27,7 @@ end
 local unit = {
   type = 'unit',
   name = 'tank-squad-headquarters',
-  icon = ICON, icon_size = 1254,
+  icon = ICON, icon_size = 256,
   flags = {'placeable-player', 'placeable-off-grid', 'not-repairable', 'get-by-unit-number'},
   max_health = 400,
   healing_per_tick = 0,
@@ -78,7 +78,7 @@ local function hidden(entity)
   -- The visible unit is the only damage target.
   entity.max_health = 1
   entity.create_ghost_on_death = false
-  entity.icon, entity.icons, entity.icon_size = ICON, nil, 1254
+  entity.icon, entity.icons, entity.icon_size = ICON, nil, 256
   return entity
 end
 
@@ -144,9 +144,9 @@ local recruit = 'tank-squad-recruit-headquarters'
 data:extend{
   unit, roboport, solar, accumulator, pole,
   {type = 'sprite', name = 'tank-squad-hq-radar-dish',
-    filename = '__tank-squads__/graphics/headquarters-radar.png', width = 1254, height = 1254,
+    filename = '__tank-squads__/graphics/headquarters-radar.png', width = 502, height = 502,
     scale = hq.dish_scale},
-  {type = 'item', name = recruit, icon = ICON, icon_size = 1254,
+  {type = 'item', name = recruit, icon = ICON, icon_size = 256,
     hidden = true, hidden_in_factoriopedia = true, stack_size = 1,
     subgroup = 'creatures', order = 'z-tank-squad-recruit-headquarters'},
   {type = 'recipe', name = 'tank-squad-train-headquarters', category = 'tank-squad-training',
@@ -163,7 +163,7 @@ data:extend{
     results = {{type = 'item', name = recruit, amount = 1}},
     allow_productivity = false, allow_decomposition = false},
   {type = 'technology', name = 'tank-squad-headquarters',
-    icon = ICON, icon_size = 1254,
+    icon = ICON, icon_size = 256,
     effects = {{type = 'unlock-recipe', recipe = 'tank-squad-train-headquarters'}},
     prerequisites = {'tank-squad-unlock', 'logistic-robotics', 'construction-robotics',
       'electric-energy-accumulators', 'solar-energy', 'utility-science-pack', 'production-science-pack'},

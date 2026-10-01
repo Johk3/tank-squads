@@ -22,7 +22,7 @@ local entity = {
   type = "assembling-machine",
   name = "tank-squad-barracks",
   icon = "__tank-squads__/graphics/barracks-icon.png",
-  icon_size = 1254,
+  icon_size = 128,
   flags = {"placeable-player", "player-creation"},
   minable = {mining_time = 0.5, result = "tank-squad-barracks"},
   max_health = 600,

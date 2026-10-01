@@ -40,7 +40,7 @@ for tier = 1, 3 do
     type = "item",
     name = recruit,
     icon = RECRUIT_ICONS[tier],
-    icon_size = 1254,
+    icon_size = 128,
     -- The recruit exists only to carry a finished craft from the engine to
     -- scripts/barracks.lua, which converts it into a soldier entity. It is
     -- never craftable by hand and never shown to the player.
@@ -76,7 +76,7 @@ for _, spec in ipairs({
   local recruit = 'tank-squad-recruit-' .. spec.kind
   data:extend{
     {type = 'item', name = recruit, icon = '__tank-squads__/graphics/' .. spec.kind .. '-icon.png',
-      icon_size = 1254, hidden = true, hidden_in_factoriopedia = true, stack_size = 1,
+      icon_size = 128, hidden = true, hidden_in_factoriopedia = true, stack_size = 1,
       subgroup = 'creatures', order = 'z-tank-squad-recruit-' .. spec.kind},
     {type = 'recipe', name = 'tank-squad-train-' .. spec.kind, category = 'tank-squad-training',
       enabled = false, energy_required = spec.time,

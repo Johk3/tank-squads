@@ -9,6 +9,26 @@ ROOT = Path(__file__).resolve().parent.parent
 # Text and provenance chunks carry editor metadata the mod never needs.
 METADATA = {b"caBX", b"tEXt", b"iTXt", b"zTXt", b"eXIf"}
 
+# Sprites drawn far below their painted size are stored at about two pixels
+# per screen pixel at zoom 1, the base game's high-resolution density.
+# Four-frame sheets (two by two): frame size in pixels, and the largest
+# transparent share of a frame.
+FRAMES = {
+    "graphics/siege-gun.png": (451, 0.9),
+    "graphics/construction-arm.png": (251, 0.9),
+    "graphics/tank-variants/shredder/charge.png": (258, 0.99),
+    "graphics/tank-variants/red/attack.png": (251, 0.99),
+    "graphics/tank-variants/green/attack.png": (314, 0.99),
+    "graphics/tank-variants/electric/attack.png": (251, 0.99),
+    "graphics/tank-variants/nuclear/attack.png": (213, 0.99),
+}
+# Single-frame sprites: side in pixels.
+SINGLES = {
+    "graphics/chaingun-turret.png": 226,
+    "graphics/flame-gun.png": 238,
+    "graphics/headquarters-radar.png": 502,
+}
+
 
 def png_rows(path):
     content = path.read_bytes()
@@ -91,30 +111,19 @@ def main():
                 x, y = (cell % 4) * 313, (cell // 4) * 313
                 clear_pixels = sum(row[x:x + 313].count(0) for row in alpha[y:y + 313])
                 assert 313 * 313 * 0.1 < clear_pixels < 313 * 313 * 0.9, f"Invalid chassis direction {cell}"
-        elif path.name in {"siege-gun.png", "construction-arm.png"}:
-            assert (width, height) == (1254, 1254), "Recoil atlas differs from prototype"
-            for cell in range(4):
-                x, y = (cell % 2) * 627, (cell // 2) * 627
-                count = sum(row[x:x + 627].count(0) for row in alpha[y:y + 627])
-                assert 627 * 627 * 0.1 < count < 627 * 627 * 0.9, f"Invalid recoil frame {cell}"
         elif path.parent.parent.name == "tank-variants" and path.name == "chassis.png":
             assert (width, height) == (1254, 1254), "Variant hull size differs from prototype"
             for cell in range(16):
                 x, y = (cell % 4) * 313, (cell // 4) * 313
                 clear_pixels = sum(row[x:x + 313].count(0) for row in alpha[y:y + 313])
                 assert 313 * 313 * 0.1 < clear_pixels < 313 * 313 * 0.9, f"Invalid variant hull direction {cell} in {relative}"
-        elif path.parent.parent.name == "tank-variants" and path.name == "charge.png":
-            assert (width, height) == (1254, 1254), "Charge sheet size differs from prototype"
+        elif relative in FRAMES:
+            frame, most_clear = FRAMES[relative]
+            assert (width, height) == (2 * frame, 2 * frame), f"Frame sheet size differs from prototype in {relative}"
             for cell in range(4):
-                x, y = (cell % 2) * 627, (cell // 2) * 627
-                count = sum(row[x:x + 627].count(0) for row in alpha[y:y + 627])
-                assert 627 * 627 * 0.1 < count < 627 * 627 * 0.99, f"Invalid charge frame {cell} in {relative}"
-        elif path.parent.parent.name == "tank-variants" and path.name == "attack.png":
-            assert (width, height) == (1254, 1254), "Variant gun sheet size differs from prototype"
-            for cell in range(4):
-                x, y = (cell % 2) * 627, (cell // 2) * 627
-                count = sum(row[x:x + 627].count(0) for row in alpha[y:y + 627])
-                assert 627 * 627 * 0.1 < count < 627 * 627 * 0.99, f"Invalid gun frame {cell} in {relative}"
+                x, y = (cell % 2) * frame, (cell // 2) * frame
+                count = sum(row[x:x + frame].count(0) for row in alpha[y:y + frame])
+                assert frame * frame * 0.1 < count < frame * frame * most_clear, f"Invalid frame {cell} in {relative}"
         elif path.parent.parent.name == "tank-variants" and path.name == "effects.png":
             assert (width, height) == (1254, 1254), "Effect sheet size differs from prototype"
             for cell in range(16):
@@ -124,9 +133,14 @@ def main():
         elif path.name == "thumbnail.png":
             assert (width, height) == (144, 144), "Thumbnail is not 144x144"
         elif path.parent.name in {"insignias", "veteran-status"}:
-            assert (width, height) == (512, 512), "Badge size differs from prototypes/insignias.lua"
+            assert (width, height) == (256, 256), "Badge size differs from prototypes/insignias.lua"
+        elif relative in SINGLES:
+            assert (width, height) == (SINGLES[relative],) * 2, f"Sprite size differs from prototype in {relative}"
+        elif relative == "graphics/headquarters-icon.png":
+            # Also the technology icon, which the tech tree shows at 256 px.
+            assert (width, height) == (256, 256), "Icon size differs from prototype"
         else:
-            assert (width, height) == (1254, 1254), "Icon size differs from prototype"
+            assert (width, height) == (128, 128), "Icon size differs from prototype"
         print(f"PASS {relative}: {width}x{height}, {clear} transparent pixels")
 
 
