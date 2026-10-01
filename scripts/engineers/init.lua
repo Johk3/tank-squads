@@ -177,6 +177,7 @@ function M.reconcile()
   -- Ring labels from older versions are drawn at an older size, and a ring
   -- being torn down lost its labels when it was deleted. Gates of older
   -- versions stand crosswise to the wall line, in one row instead of three.
+  -- Rings built before crossings have no gatehouses recorded.
   for force_index, fs in pairs(s.rings or {}) do
     local force = game.forces[force_index]
     for _, ring in pairs(fs.slots) do
@@ -185,6 +186,7 @@ function M.reconcile()
         rings.draw_labels(ring, force, surface)
         rings.turn_gates(ring)
         rings.widen_gates(ring)
+        crossing.record_built(ring)
       else
         rings.clear_labels(ring)
       end

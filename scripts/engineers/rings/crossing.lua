@@ -35,6 +35,15 @@ function M.record(ring, i)
     outside = geometry.apron(ring, seg, 'outside')}
 end
 
+-- Every built segment's gatehouse, found again. Rings built before
+-- gatehouses were recorded have none, so every crossing would go to the
+-- few segments rebuilt since, however far away.
+function M.record_built(ring)
+  for i, seg in ipairs(ring.segments) do
+    if seg.state == 'built' then M.record(ring, i) end
+  end
+end
+
 -- A breach anywhere in the segment: its gatehouse is not used until the
 -- segment is built again.
 function M.breached(ring, i)

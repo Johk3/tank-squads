@@ -984,6 +984,21 @@ return function(ctx)
     assert(not house.complete)
   end)
 
+  test('rings: a ring built before gatehouses were recorded gets them on update', function()
+    local rings, _, surface, force = ring_world()
+    local crossing = require('scripts.engineers.rings.crossing')
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    for y = -8, 7 do
+      local g = ctx.soldier(nil, nil, 200.5, y + 0.5)
+      g.name, g.type = 'gate', 'gate'
+    end
+    ring.segments[2].state = 'built'
+    crossing.record_built(ring)
+    local house = ring.gatehouses[2]
+    assert(house and house.complete and #house.gates == 16, 'gatehouse not recorded')
+    assert(not ring.gatehouses[1], 'a segment not built got a gatehouse')
+  end)
+
   test('rings: shredders and constructors ask for crossings too', function()
     local combat = require('scripts.combat')
     local unit = crossing_world()
