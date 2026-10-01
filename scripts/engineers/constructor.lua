@@ -7,7 +7,8 @@
 -- record = {entity, id, force_index, surface_index, state, since, said,
 --   cluster, centre, fails, retries, crane, release_tick, done_tick,
 --   released, paused_since, calm_since, task_force, task_force_result, home,
---   autonomous, segment, dismantle, rings_version, nest, draft_tick, withdrawn}
+--   autonomous, segment, dismantle, rings_version, nest, draft_tick, withdrawn,
+--   sent_away (make_way.lua)}
 -- state is 'waiting', 'seeking', 'moving', 'building', 'paused',
 -- 'task_force', 'healing' or 'idle'.
 -- An autonomous constructor builds rings (rings/rings.lua) instead of the
@@ -20,6 +21,7 @@ local assault = require('scripts.assault')
 local state = require('scripts.engineers.state')
 local ghosts = require('scripts.engineers.ghosts')
 local crane = require('scripts.engineers.crane')
+local make_way = require('scripts.engineers.make_way')
 local teams = require('scripts.engineers.teams')
 local task_force = require('scripts.engineers.task_force')
 local rings = require('scripts.engineers.rings.rings')
@@ -448,8 +450,15 @@ function M.on_command_completed(unit_number, result)
     return true
   end
   set(record, 'building')
-  crane.start(record)
+  M.start_cycle(record)
   return true
+end
+
+-- A crane cycle starts; soldiers in the way are sent off the cluster
+-- first. Taking walls down needs no room.
+function M.start_cycle(record)
+  crane.start(record)
+  if not record.dismantle then make_way.clear(record) end
 end
 
 local function build_step(record, tick)
@@ -461,7 +470,7 @@ local function build_step(record, tick)
   crane.stop(record)
   if record.cluster and #record.cluster > 0 then
     -- Ghosts under a unit get another cycle.
-    crane.start(record)
+    M.start_cycle(record)
   else
     record.cluster = nil
     set(record, 'seeking')

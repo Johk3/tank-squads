@@ -11,6 +11,7 @@ local window = require('scripts.engineers.window')
 local rings = require('scripts.engineers.rings.rings')
 local combat = require('scripts.combat')
 local crossing = require('scripts.engineers.rings.crossing')
+local make_way = require('scripts.engineers.make_way')
 local patrol = require('scripts.patrol')
 local garrison = require('scripts.engineers.rings.garrison')
 local clearing = require('scripts.engineers.rings.clearing')
@@ -41,7 +42,13 @@ M.on_wall_damaged = garrison.on_wall_damaged
 function M.on_garrison_change(fn)
   garrison.on_change = fn
 end
-M.on_crossing_completed = crossing.on_command_completed
+-- First on every finished unit order. A soldier walled in on a ring's band
+-- whose order failed is moved off the band; its order's owner still hears
+-- of the failure. A unit crossing a ring hears back at each gatehouse step.
+function M.on_crossing_completed(unit_number, result)
+  make_way.escape(unit_number, result)
+  return crossing.on_command_completed(unit_number, result)
+end
 
 -- Once per second. Without the engineers state this is one table check.
 function M.has_rings(force_index)

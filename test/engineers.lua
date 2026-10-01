@@ -1560,4 +1560,77 @@ return function(ctx)
     assert(#storage.engineers.teams[record.id].members == 0, 'a draftee stayed after leaving')
     assert(not loans.drafted(a.unit_number) and not loans.drafted(b.unit_number))
   end)
+  test('engineers: make_way sends a soldier straight out from the cluster', function()
+    local make_way = require('scripts.engineers.make_way')
+    local p = make_way.away({x = 10, y = 0}, {x = 12, y = 0}, {x = 0, y = 0}, 6)
+    assert(p.x == 16 and p.y == 0)
+    p = make_way.away({x = 10, y = 0}, {x = 10, y = 0}, {x = 0, y = 0}, 6)
+    assert(p.x == 4 and p.y == 0, 'a soldier on the centre did not go toward the constructor')
+  end)
+
+  test('engineers: a soldier on a ghost is sent off it when a crane cycle starts', function()
+    local E = ctx.engineers
+    local _, enemy = E.engine()
+    local constructor = require('scripts.engineers.constructor')
+    local make_way = require('scripts.engineers.make_way')
+    local record = working(0, 0)
+    local a, b = add_ghost(10, 0), add_ghost(11, 0)
+    constructor.tick()
+    assert(record.state == 'moving' and #record.cluster == 2)
+    local on, beside = soldier(nil, nil, 11.3, 0.2), soldier(nil, nil, 10.5, 3)
+    on.type, beside.type = 'unit', 'unit'
+    local biter = E.enemy_unit(enemy, 10, 0)
+    constructor.on_command_completed(record.id, defines.behavior_result.success)
+    assert(record.state == 'building')
+    local d = on.command and on.command.destination
+    assert(d, 'the soldier on the ghost stayed')
+    local dx, dy = d.x - 10.5, d.y
+    assert(math.abs(math.sqrt(dx * dx + dy * dy) - (0.5 + make_way.AWAY)) < 1e-9 and d.x > 11 and d.y > 0,
+      'sent to ' .. d.x .. ', ' .. d.y)
+    assert(beside.command == nil, 'a soldier beside the cluster was moved')
+    assert(biter.command == nil, 'an enemy was ordered')
+    on.command = nil
+    assert(make_way.clear(record) == 0 and on.command == nil, 'sent again while it drives off')
+    game.tick = game.tick + make_way.PATIENCE
+    assert(make_way.clear(record) == 1, 'a soldier that stayed was not sent again')
+    assert(a.valid and b.valid)
+  end)
+
+  test('engineers: soldiers on a ring band go off it, to the constructor side', function()
+    local record, _, ring = ring_force(190, 0.5)
+    local geometry = require('scripts.engineers.rings.geometry')
+    local make_way = require('scripts.engineers.make_way')
+    local x
+    for tx = 190, 210 do
+      if geometry.in_band(ring, tx + 0.5, 0.5) and not geometry.in_band(ring, tx - 0.5, 0.5) then x = tx + 0.5; break end
+    end
+    assert(x, 'no band east of the centre')
+    record.cluster = {{id = 1, position = {x = x + 3, y = 0.5}}}
+    record.centre = {x = x + 3, y = 0.5}
+    local unit = soldier(nil, nil, x + 1, 2.5)
+    unit.type = 'unit'
+    assert(make_way.clear(record) == 1)
+    local d = unit.command.destination
+    assert(not geometry.in_band(ring, d.x, d.y), 'sent to a spot on the band')
+    assert(geometry.side(ring, d.x, d.y) == 'inside', 'sent to the far side of the ring')
+  end)
+
+  test('engineers: a soldier walled in on a band escapes when its order fails', function()
+    local _, _, ring = ring_force(0, 0)
+    local geometry = require('scripts.engineers.rings.geometry')
+    local make_way = require('scripts.engineers.make_way')
+    local x
+    for tx = 190, 210 do
+      if geometry.in_band(ring, tx + 0.5, 0.5) and not geometry.in_band(ring, tx - 0.5, 0.5) then x = tx + 0.5; break end
+    end
+    local unit = soldier(nil, nil, x + 7, 0.5)
+    unit.type = 'unit'
+    unit.teleport = function(p) unit.position = {x = p.x, y = p.y}; return true end
+    local where = geometry.side(ring, unit.position.x, unit.position.y)
+    assert(not make_way.escape(unit.unit_number, defines.behavior_result.success), 'moved on success')
+    assert(make_way.escape(unit.unit_number, defines.behavior_result.fail), 'stayed walled in')
+    local p = unit.position
+    assert(not geometry.in_band(ring, p.x, p.y) and geometry.side(ring, p.x, p.y) == where)
+    assert(not make_way.escape(unit.unit_number, defines.behavior_result.fail), 'moved again off the band')
+  end)
 end
