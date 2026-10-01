@@ -6,8 +6,9 @@
 -- same way. A charging shredder flies over walls, so it takes no gate.
 --
 -- storage.engineers.crossings[unit_number] = {entity, ring, gate, phase,
---   command, via, from}. phase is 'approach', 'opening' or 'through'; via
--- 'combat' (the order came through combat.set_command) or 'direct'.
+--   command, via, from, failed}. phase is 'approach', 'opening' or
+-- 'through'; via 'combat' (the order came through combat.set_command) or
+-- 'direct'; failed the gatehouses whose apron it found no path to.
 local names = require('scripts.names')
 local combat = require('scripts.combat')
 local state = require('scripts.engineers.state')
@@ -20,6 +21,8 @@ local M = {}
 M.OPEN_TICKS = 15 * 60
 M.WAIT_TICKS = 30
 M.APRON_RADIUS = 3
+-- Gatehouses a unit tries in turn when it finds no path to an apron.
+M.TRIES = 3
 
 -- A built segment's gatehouse: its gates, found once, and its aprons.
 function M.record(ring, i)
@@ -86,12 +89,13 @@ local function distance(a, b)
   return math.sqrt(dx * dx + dy * dy)
 end
 
--- The complete gatehouse with the shortest way through it.
-function M.choose(ring, side, from, to)
+-- The complete gatehouse with the shortest way through it, leaving out
+-- the indices in `skip`.
+function M.choose(ring, side, from, to, skip)
   local far = side == 'inside' and 'outside' or 'inside'
   local best, best_i, best_d
   for i, house in pairs(ring.gatehouses) do
-    if house.complete then
+    if house.complete and not (skip and skip[i]) then
       local d = distance(from, house[side]) + distance(house[far], to)
       if not best_d or d < best_d then best, best_i, best_d = house, i, d end
     end
@@ -173,6 +177,21 @@ function M.on_command_completed(unit_number, result)
   end
   local ring = rings.by_key(entry.ring)
   local house = ring and ring.gatehouses[entry.gate]
+  -- No path to this apron: the next nearest gatehouse may have one.
+  if result == defines.behavior_result.fail and house and entry.phase == 'approach' then
+    entry.failed = entry.failed or {}
+    entry.failed[entry.gate] = true
+    local tried = 0
+    for _ in pairs(entry.failed) do tried = tried + 1 end
+    local target = tried < M.TRIES and target_of(entry.command)
+    local other, index
+    if target then other, index = M.choose(ring, entry.from, entity.position, target, entry.failed) end
+    if other then
+      entry.gate = index
+      go(entity, other[entry.from], entry.command)
+      return true
+    end
+  end
   if result == defines.behavior_result.fail or not house then
     s.crossings[unit_number] = nil
     resume(entry, false)

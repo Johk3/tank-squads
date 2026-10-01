@@ -954,6 +954,22 @@ return function(ctx)
     assert(unit.command.destination.x == 300 and not s.crossings[unit.unit_number])
   end)
 
+  test('rings: a failed approach tries the next gatehouse before giving up', function()
+    local combat = require('scripts.combat')
+    local crossing = require('scripts.engineers.rings.crossing')
+    local unit, ring, _, s = crossing_world()
+    ring.gatehouses[3] = {gates = {{valid = true, request_to_open = function() end}}, complete = true,
+      inside = {x = 160, y = 110}, outside = {x = 175, y = 120}}
+    combat.set_command(unit, go(300, 0))
+    assert(unit.command.destination.x == 191.5, 'not sent to the nearest gatehouse first')
+    crossing.on_command_completed(unit.unit_number, defines.behavior_result.fail)
+    assert(unit.command.destination.x == 160 and s.crossings[unit.unit_number].gate == 3,
+      'the other gatehouse was not tried')
+    crossing.on_command_completed(unit.unit_number, defines.behavior_result.fail)
+    assert(unit.command.destination.x == 300 and not s.crossings[unit.unit_number],
+      'a failed gatehouse was tried again')
+  end)
+
   test('rings: a new order while passing through keeps the crossing going', function()
     local combat = require('scripts.combat')
     local crossing = require('scripts.engineers.rings.crossing')
