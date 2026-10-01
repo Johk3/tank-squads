@@ -627,6 +627,15 @@ function M.join(a, soldier)
   return true
 end
 
+-- A soldier rebuilt as another unit keeps its staging slot and joins again
+-- under the new unit number.
+function M.replace(a, old_id, soldier)
+  a.slots[soldier.unit_number] = a.slots[old_id]
+  a.roles[old_id], a.screen[old_id], a.orders[old_id], a.targets[old_id] = nil, nil, nil, nil
+  a.failed[old_id], a.stagers[old_id], a.slots[old_id], a.screen_slots[old_id] = nil, nil, nil, nil
+  return M.join(a, soldier)
+end
+
 -- A finished fire or attack order is re-issued on the next sweep. Arrivals
 -- at a slot or screen point are not, or every holding soldier would be
 -- re-ordered every second. A failed path marks the soldier until the next

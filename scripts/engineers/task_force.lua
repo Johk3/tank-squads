@@ -357,6 +357,24 @@ function M.drive(tf)
   end
 end
 
+-- A lent soldier rebuilt on promotion keeps its loan and its place under
+-- the new unit number, and goes on fighting. Returns true when it was lent
+-- to a running task force.
+function M.replace(old_id, entity)
+  local loan = loans.finish(old_id)
+  local s = state.peek()
+  local tf = loan and s and s.task_forces[loan.task_force]
+  if not tf then return false end
+  local new_id = entity.unit_number
+  loans.lend(new_id, loan)
+  for i, id in ipairs(tf.members) do
+    if id == old_id then tf.members[i] = new_id end
+  end
+  if tf.targets then tf.targets[old_id] = nil end
+  if tf.assault then assault.replace(tf.assault, old_id, entity) else attack(tf, {entity}) end
+  return true
+end
+
 function M.tick(phase)
   local s = state.peek()
   if not (s and next(s.task_forces)) then return end

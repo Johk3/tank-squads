@@ -866,6 +866,33 @@ return function(ctx)
     assert(loans.on_loan(idle[2].unit_number) and storage.engineers.task_forces[tf.id], 'the healthy ones left too')
   end)
 
+  test('engineers: a lent soldier rebuilt on promotion stays in its task force', function()
+    local _, _, _, spawner, record = nest_setup()
+    local loans = require('scripts.engineers.loans')
+    local task_force = require('scripts.engineers.task_force')
+    local transition = require('scripts.transition')
+    local idle = idle_division(1, 8)
+    local tf = task_force.request(record, {spawner})
+    local old = idle[2]
+    local old_id = old.unit_number
+    assert(loans.on_loan(old_id) and tf.assault)
+    old.destroy = function() old.valid = false end
+    local new = assert(transition.swap(old, 'tank-squad-electric'))
+    local new_id = new.unit_number
+    assert(not loans.on_loan(old_id) and loans.on_loan(new_id), 'the loan did not follow the rebuild')
+    assert(loans.get(new_id).task_force == tf.id and loans.get(new_id).n == 1, 'the loan lost its lender')
+    local listed = false
+    for _, id in ipairs(tf.members) do
+      assert(id ~= old_id, 'the old unit number is still a member')
+      if id == new_id then listed = true end
+    end
+    assert(listed, 'the new tank is not a member')
+    assert(tf.assault.roles[new_id] and not tf.assault.roles[old_id], 'assault roles not renamed')
+    assert(new.command, 'the new tank has no order')
+    task_force.drive(tf)
+    assert(loans.on_loan(new_id) and storage.engineers.task_forces[tf.id], 'the task force let go of the new tank')
+  end)
+
   test('engineers: a patrol lender deals its posts when soldiers leave and return', function()
     local _, _, surface, spawner, record = nest_setup()
     local divisions = require('scripts.divisions')

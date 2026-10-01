@@ -13,6 +13,7 @@ local reinforcements = require("scripts.reinforcements")
 local unit_names = require("scripts.unit_names")
 local combat = require("scripts.combat")
 local cover = require("scripts.cover")
+local engineers = require("scripts.engineers.init")
 
 local M = {}
 
@@ -72,11 +73,13 @@ function M.swap(old, kind)
   commands.forget(old_id)
   cover.forget(old_id)
   weapons.register(new)
+  -- A soldier lent to a nest task force stays in that fight.
+  local lent = engineers.replace_soldier(old_id, new)
   if division then
     reinforcements.replace(division, old_id, new_id)
     divisions.add_member(player_index, n, new_id, new)
-    reinforcements.assign_job(division, new)
-  elseif combat.resumable(command) then
+    if not lent then reinforcements.assign_job(division, new) end
+  elseif not lent and combat.resumable(command) then
     combat.set_command(new, command)
   end
   old.destroy{raise_destroy = true}

@@ -107,6 +107,9 @@ function M.forget_soldier(entity)
   crossing.forget(entity.unit_number)
 end
 
+-- A soldier rebuilt on promotion keeps its loan. True when it was lent.
+M.replace_soldier = task_force.replace
+
 function M.on_command_completed(unit_number, result)
   if constructor.on_command_completed(unit_number, result) then return true end
   if task_force.on_command_completed(unit_number, result) then return true end
