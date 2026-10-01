@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.38.1
+Date: 2026-10-01
+  Bugfixes:
+    - A charging shredder flies straight over ring walls instead of driving to a gatehouse, waiting for its gates and holding them open.
+    - A soldier lent to a nest task force stays in the fight when a promotion rebuilds it as an electric or nuclear tank, instead of going back to its division's job.
+---------------------------------------------------------------------------------------------------
 Version: 0.38.0
 Date: 2026-09-30
   Features:
