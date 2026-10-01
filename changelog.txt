@@ -1,4 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.40.0
+Date: 2026-10-01
+  Changes:
+    - Shredders park 60 tiles behind their division, and follow a player in danger 60 tiles behind, instead of 80.
+    - A division sees a swarm of 15 or more attacking enemies within 80 tiles instead of 40, so its shredder goes out earlier. Idle enemies near nests no longer hide a swarm marching past them.
+  Bugfixes:
+    - Soldiers crossing a ring built before ring crossings existed use the nearest gatehouse, instead of driving to one of the few segments rebuilt since, often on the far side of the ring. On update every built segment's gatehouse is found again.
+---------------------------------------------------------------------------------------------------
 Version: 0.39.0
 Date: 2026-10-01
   Features:
