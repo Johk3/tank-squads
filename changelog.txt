@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.41.3
+Date: 2026-10-02
+  Bugfixes:
+    - Fixed offshore pumps turning into "Water well pumps" that could not be placed on water. Rail supports and rail ramps could not stand on water either. Constructors now drive through these three instead of around them.
+---------------------------------------------------------------------------------------------------
 Version: 0.41.2
 Date: 2026-10-02
   Bugfixes:
