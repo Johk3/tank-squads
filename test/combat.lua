@@ -41,6 +41,20 @@ return function(ctx)
     combat.on_shot{effect_id = 'tank-squad-shot', source_entity = a, target_entity = b, tick = 60}
     assert(searches == 1, 'scanned while already fighting a unit')
   end)
+  ctx.test('a fight never resumes an order to a disbanded unit group', function()
+    local a, b = prepare()
+    defines.command.group = 6
+    -- The group disbanded once the soldier left it; set_command rejects it.
+    local group = {valid = false}
+    a.commandable.command = {type = defines.command.group, group = group}
+    assert(combat.engage(a, b))
+    assert(a.command.commands[2].type == defines.command.stop, 'resumed the disbanded group')
+    group.valid = true
+    storage.combat = nil
+    a.commandable.command = {type = defines.command.compound, commands = {{type = defines.command.group, group = group}}}
+    assert(combat.engage(a, b))
+    assert(a.command.commands[2] == a.commandable.command, 'dropped a live group order')
+  end)
   ctx.test('repeated damage during a live defense does not read commands back', function()
     local a, b = prepare()
     a.commandable.command = {type = defines.command.go_to_location, destination = {x = 40, y = 0}}

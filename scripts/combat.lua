@@ -79,10 +79,12 @@ function M.direct(entity, command)
 end
 
 -- An attack whose target died reads back without `target`; set_command
--- rejects it, so such a command cannot be resumed.
+-- rejects it, so such a command cannot be resumed. Neither can an order to
+-- join a unit group that disbanded once the soldier left it.
 local function resumable(command)
   if not command then return false end
   if command.type == defines.command.attack then return command.target ~= nil and command.target.valid end
+  if command.type == defines.command.group then return command.group ~= nil and command.group.valid end
   if command.type == defines.command.compound then
     for _, sub in pairs(command.commands) do if not resumable(sub) then return false end end
   end
