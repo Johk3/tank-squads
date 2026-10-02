@@ -12,7 +12,7 @@ Requires Factorio 2.0.56 or newer. No other mods needed.
 - **Shredders.** Unmanned rammers that need no orders. They split between your divisions and wait far behind them. When a division is losing, its shredders charge the strongest enemies at 60 tiles a second and burst into shrapnel that only hurts enemies. They also follow players who walk into danger.
 - **Mobile headquarters.** A huge, slow, unarmed command vehicle. It heals nearby soldiers, and wherever it parks it sets up camp with a far-reaching roboport and solar decks that power a nearby grid. It keeps the map live around itself like any tank.
 - **Barracks.** A 3x3 military bunker that trains soldiers like an assembler trains items. It needs no power, heals nearby soldiers, and plays a door animation when a new tank rolls out.
-- **RTS controls.** Drag-select with the command tool, alt-drag to move or attack, and use **Ctrl + 1–9** / **Alt + 1–9** to assign and recall up to nine divisions. **Ctrl + Shift + 1–9** adds the selection to a division without touching its other soldiers.
+- **RTS controls.** Drag-select with the command tool, Shift-drag (the game's alternate selection) to move or attack, and use **Ctrl + 1–9** / **Alt + 1–9** to assign and recall up to nine divisions. **Ctrl + Shift + 1–9** adds the selection to a division without touching its other soldiers.
 - **Patrol routes.** Draw a waypoint loop for a division. Each tank takes its own stretch of the route, and a large division also fills the inside on inner rings, so the whole area stays covered. When one tank comes under attack, the nearest tanks within 128 tiles come to help, more of them for a bigger attack, while the rest hold their posts. The helpers then return to their posts.
 - **Scout mode.** A division splits into up to four teams that each explore their own direction. Flame tanks lead, carriers follow and siege tanks cover them from 30 tiles back. Teams keep pushing outward until water or cliffs stop them.
 - **Escorts.** Assign a division to any player on your team, as a **defensive** ring around them or an **offensive** roaming band that clears everything it finds.
@@ -139,12 +139,12 @@ Veterans, Elites and Legends are protected by their division:
 | Action | How |
 |---|---|
 | Select soldiers | Drag with the command tool |
-| Move | Alt-drag over empty ground |
-| Attack an area | Alt-drag over enemies |
+| Move | Shift-drag over empty ground (alternate selection; Shift by default) |
+| Attack an area | Shift-drag over enemies |
 | Assign selection to a division | Ctrl + 1–9 |
 | Add selection to a division | Ctrl + Shift + 1–9. The division keeps its members, their orders and its job |
 | Select a division | Alt + 1–9, or click its row in the division window. Drag the window by its title bar; its buttons fold it away or switch to short rows |
-| Patrol | Toggle patrol mode on the shortcut bar, then alt-drag to place waypoints |
+| Patrol | Toggle patrol mode on the shortcut bar, then Shift-drag to place waypoints |
 | Scout | Select a division and toggle scout mode on the shortcut bar |
 | Escort | Select a numbered division, press the escort shortcut, then pick a player and a formation |
 | Reinforce | Open a barracks and use the **Automatic reinforcements** panel |
