@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.41.2
+Date: 2026-10-02
+  Bugfixes:
+    - Fixed a crash when a soldier stopped to shoot and then went back to an order to join a unit group that no longer existed. Such a soldier now waits for its next order instead.
+  Locale:
+    - The command tool, patrol mode and README name Shift-drag, the game's alternate selection, as the way to move, attack and place waypoints, instead of "alt-drag".
+---------------------------------------------------------------------------------------------------
 Version: 0.41.1
 Date: 2026-10-02
   Bugfixes:
