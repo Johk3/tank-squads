@@ -22,9 +22,13 @@ local function crushed(prototype)
   return prototype.type == 'tree' or rock(prototype) or prototype.type == 'unit'
 end
 
--- What the constructor collided with before: the default unit mask.
+-- What the constructor collided with before, through the player layer of the
+-- default unit mask. Every holder of that layer already collides with every
+-- other holder, so the new layer adds no collision. Entities that block units
+-- only through is_object (offshore pump, rail support, rail ramp) do not get
+-- it: they stand on water, and water has the player layer.
 local function blocks(mask)
-  return mask.layers.player or mask.layers.is_object
+  return mask.layers.player
 end
 
 for type in pairs(defaults) do
