@@ -1,4 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.41.1
+Date: 2026-10-02
+  Bugfixes:
+    - Patrolling soldiers and shredders no longer drive across the map to a far gatehouse and back. A ring still going up for the first time is crossed through its gaps; only a finished ring is crossed through its gatehouses. A unit that cannot reach the nearest gatehouse tries another only when it is not far out of the way. Units already on such a trip take their orders up again when the save loads.
+    - A shredder that finds no way to its post is moved there, instead of stopping where it was, which could block a gatehouse.
+    - Shredders make way for constructors as soldiers do: parked shredders, and shredders on the way to their post, leave the walls a constructor is about to build. Shredder posts are kept off ring walls.
+    - A constructor stuck on its way pushes the units around it aside; still stuck after 20 seconds, it is moved to where it was going.
+---------------------------------------------------------------------------------------------------
 Version: 0.41.0
 Date: 2026-10-01
   Features:
