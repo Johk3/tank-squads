@@ -142,13 +142,14 @@ local function send(record, position)
   if not record.entity.valid then return end
   record.state = 'moving'
   position = off_band(record.entity, position)
+  record.goal = position
   combat.direct(record.entity, {type = defines.command.go_to_location, destination = position,
     radius = 2, distraction = defines.distraction.none})
 end
 
 local function park(record)
   if not record.entity.valid then return end
-  record.state = 'parked'
+  record.state, record.goal = 'parked', nil
   record.entity.commandable.set_command{type = defines.command.stop, distraction = defines.distraction.none}
 end
 
@@ -248,8 +249,9 @@ local function swap(record, name)
 end
 
 -- record = {entity, id, force_index, surface_index, state, group, shadow, home_position, homeward,
---   target, target_position, lock_id, renders}. state is 'parked',
--- 'moving', 'igniting', 'charging', 'stranded' or 'spent'.
+--   target, target_position, lock_id, renders, goal}. state is 'parked',
+-- 'moving', 'igniting', 'charging', 'stranded' or 'spent'; goal is where a
+-- moving shredder drives.
 function M.register(entity)
   if not (entity and entity.valid and names.shredder_set[entity.name]) then return nil end
   local s = M.state()
@@ -757,7 +759,15 @@ function M.on_command_completed(unit_number, result)
   local s = storage.shredders
   local record = s and s.units[unit_number]
   if not record then return false end
-  if record.state == 'moving' then park(record)
+  if record.state == 'moving' then
+    -- No way to its post, say a gate shut on it: parked where it stands it
+    -- could block a gatehouse until its division moves.
+    local goal, entity = record.goal, record.entity
+    if result == defines.behavior_result.fail and goal and entity.valid then
+      local spot = entity.surface.find_non_colliding_position(entity.name, goal, 8, 0.5)
+      if spot then entity.teleport(spot) end
+    end
+    park(record)
   elseif record.state == 'igniting' then M.launch(record)
   elseif record.state == 'charging' then
     -- A failed attack on a living target means no path to it.

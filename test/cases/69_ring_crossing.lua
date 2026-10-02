@@ -22,6 +22,7 @@ if not storage.case69 then
   assert(remote.call('tank-squads', 'engineers_ring_plan', 'player', 1, 1) == 'placed')
   for _, g in pairs(s.find_entities_filtered{area = area, type = 'entity-ghost'}) do g.revive() end
   for _ = 1, 40 do remote.call('tank-squads', 'engineers_ring_tick') end
+  assert(remote.call('tank-squads', 'engineers_ring_close', 'player', 1))
   local soldier = s.create_entity{name = 'tank-squad-soldier-1', position = {3080.5, 0.5}, force = force}
   storage.case69 = {soldier = soldier, tick = game.tick}
   remote.call('tank-squads', 'engineers_go', soldier.unit_number, 3125.5, 0.5)

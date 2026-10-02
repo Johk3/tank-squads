@@ -182,7 +182,8 @@ function M.reconcile()
   -- Ring labels from older versions are drawn at an older size, and a ring
   -- being torn down lost its labels when it was deleted. Gates of older
   -- versions stand crosswise to the wall line, in one row instead of three.
-  -- Rings built before crossings have no gatehouses recorded.
+  -- Rings built before crossings have no gatehouses recorded. Rings
+  -- closed before `closed` was kept are known by their announcement.
   for force_index, fs in pairs(s.rings or {}) do
     local force = game.forces[force_index]
     for _, ring in pairs(fs.slots) do
@@ -192,11 +193,14 @@ function M.reconcile()
         rings.turn_gates(ring)
         rings.widen_gates(ring)
         crossing.record_built(ring)
+        if ring.state == 'built' or ring.announced then ring.closed = true end
       else
         rings.clear_labels(ring)
       end
     end
   end
+  -- Older versions sent units round rings still going up.
+  crossing.release_open()
 end
 
 function M.set_min_team(value)
@@ -252,6 +256,15 @@ function M.ring_info(force_index, n)
   for _ in pairs(ring.crossings) do crossings = crossings + 1 end
   return {state = ring.state, radius = ring.radius, count = ring.count, built = built, live = live,
     released = released, bulges = #ring.bulges, crossings = crossings}
+end
+
+-- Engine tests: a ring with a few segments built counts as closed, so
+-- units cross it through its gatehouses.
+function M.ring_close(force_index, n)
+  local fs = rings.peek(force_index)
+  local ring = fs and fs.slots[n]
+  if ring then ring.closed = true end
+  return ring ~= nil
 end
 
 function M.ring_delete(force_index, n) return rings.delete(force_index, n) end

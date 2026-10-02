@@ -765,6 +765,18 @@ return function(ctx)
     assert(s.ring_ghosts[id].segment == 2)
   end)
 
+  test('rings: the last segment built closes the ring, a breach keeps it closed', function()
+    local rings, _, surface, force = ring_world()
+    local ring = rings.start(rings.force_state(1), force, 1, surface)
+    for i = 2, #ring.segments do ring.segments[i].state = 'built' end
+    assert(not ring.closed)
+    rings.segment_built(ring, 1)
+    assert(ring.state == 'built' and ring.closed, 'not closed by its last segment')
+    rings.on_wall_died{force = {index = 2, name = 'enemy'}, surface_index = 1, position = {x = 200.5, y = 50.5},
+      prototype = {name = 'stone-wall'}}
+    assert(ring.state == 'building' and ring.closed, 'a breach opened the ring for crossings')
+  end)
+
   test('rings: a ghost the force left for a dead wall is tagged, not doubled', function()
     local rings, s, surface, force, ring = breach_world()
     local left = surface.create_entity{name = 'entity-ghost', inner_name = 'gate', position = {x = 200.5, y = 0.5}}
@@ -936,6 +948,30 @@ return function(ctx)
     assert(unit.command.destination.x == 300)
   end)
 
+  test('rings: a ring never closed yet is no barrier: the order goes out unchanged', function()
+    local combat = require('scripts.combat')
+    local crossing = require('scripts.engineers.rings.crossing')
+    local unit, ring, _, s = crossing_world()
+    ring.state = 'building'
+    combat.set_command(unit, go(300, 0))
+    assert(unit.command.destination.x == 300, 'a ring with gaps sent the unit to a gatehouse')
+    assert(not (s.crossings and s.crossings[unit.unit_number]))
+    ring.closed = true
+    combat.set_command(unit, go(300, 0))
+    assert(unit.command.destination.x == 191.5, 'a breached ring that was closed once was not crossed')
+    crossing.forget(unit.unit_number)
+  end)
+
+  test('rings: an update gives units crossing a ring never closed their orders back', function()
+    local combat = require('scripts.combat')
+    local crossing = require('scripts.engineers.rings.crossing')
+    local unit, ring, _, s = crossing_world()
+    combat.set_command(unit, go(300, 0))
+    ring.state = 'building'
+    crossing.release_open()
+    assert(unit.command.destination.x == 300 and not s.crossings[unit.unit_number], 'still sent to the gatehouse')
+  end)
+
   test('rings: an order to the wall itself or on the same side needs no crossing', function()
     local combat = require('scripts.combat')
     local unit = crossing_world()
@@ -968,6 +1004,30 @@ return function(ctx)
     crossing.on_command_completed(unit.unit_number, defines.behavior_result.fail)
     assert(unit.command.destination.x == 300 and not s.crossings[unit.unit_number],
       'a failed gatehouse was tried again')
+  end)
+
+  test('rings: a failed approach never fails over to a gatehouse far out of the way', function()
+    local combat = require('scripts.combat')
+    local crossing = require('scripts.engineers.rings.crossing')
+    local unit, ring, _, s = crossing_world()
+    ring.gatehouses[3] = {gates = {{valid = true, request_to_open = function() end}}, complete = true,
+      inside = {x = -191.5, y = 0.5}, outside = {x = -210.5, y = 0.5}}
+    combat.set_command(unit, go(300, 0))
+    unit.position = {x = 170, y = 0}
+    crossing.on_command_completed(unit.unit_number, defines.behavior_result.fail)
+    assert(unit.command.destination.x == 300 and not s.crossings[unit.unit_number],
+      'sent across the ring to a far gatehouse')
+  end)
+
+  test('rings: a failed approach close to the apron opens the gates', function()
+    local combat = require('scripts.combat')
+    local crossing = require('scripts.engineers.rings.crossing')
+    local unit, _, opened, s = crossing_world()
+    combat.set_command(unit, go(300, 0))
+    unit.position = {x = 186, y = 3}
+    crossing.on_command_completed(unit.unit_number, defines.behavior_result.fail)
+    assert(#opened == 1 and s.crossings[unit.unit_number].phase == 'opening', 'a unit at the apron gave up')
+    crossing.forget(unit.unit_number)
   end)
 
   test('rings: a new order while passing through keeps the crossing going', function()

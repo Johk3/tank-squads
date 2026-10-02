@@ -23,6 +23,12 @@ M.WAIT_TICKS = 30
 M.APRON_RADIUS = 3
 -- Gatehouses a unit tries in turn when it finds no path to an apron.
 M.TRIES = 3
+-- Another gatehouse is tried only when its way is at most DETOUR times the
+-- failed one's: a unit is never sent across the ring and back.
+M.DETOUR = 2
+-- A unit this close to the apron when its approach fails is there: a crowd
+-- at the gatehouse reports failure to the last few units.
+M.NEAR = 8
 
 -- A built segment's gatehouse: its gates, found once, and its aprons.
 function M.record(ring, i)
@@ -64,14 +70,20 @@ local function target_of(command)
   return nil
 end
 
--- The first ring on the way with a gatehouse: the innermost the unit
+-- A ring is a barrier once it has been closed. While it goes up for the
+-- first time its gaps are open, and the pathfinder takes them; a breach
+-- later leaves at most a hole a unit may not fit through.
+local function closed(ring)
+  return ring.state == 'built' or (ring.state == 'building' and ring.closed == true)
+end
+
+-- The first closed ring on the way with a gatehouse: the innermost the unit
 -- leaves when it starts inside, the outermost it enters when it starts
 -- outside. A destination on a ring's band is on the unit's side.
 function M.crossed(fs, surface_index, from, to)
   local best, best_side
   for _, ring in pairs(fs.slots) do
-    if ring.surface_index == surface_index and (ring.state == 'building' or ring.state == 'built')
-        and next(ring.gatehouses) then
+    if ring.surface_index == surface_index and closed(ring) and next(ring.gatehouses) then
       local a = geometry.side(ring, from.x, from.y)
       local b, on_band = geometry.side(ring, to.x, to.y)
       if not on_band and a ~= b then
@@ -89,18 +101,22 @@ local function distance(a, b)
   return math.sqrt(dx * dx + dy * dy)
 end
 
--- The complete gatehouse with the shortest way through it, leaving out
--- the indices in `skip`.
-function M.choose(ring, side, from, to, skip)
+local function way(house, side, from, to)
   local far = side == 'inside' and 'outside' or 'inside'
+  return distance(from, house[side]) + distance(house[far], to)
+end
+
+-- The complete gatehouse with the shortest way through it, leaving out
+-- the indices in `skip`, and its way.
+function M.choose(ring, side, from, to, skip)
   local best, best_i, best_d
   for i, house in pairs(ring.gatehouses) do
     if house.complete and not (skip and skip[i]) then
-      local d = distance(from, house[side]) + distance(house[far], to)
+      local d = way(house, side, from, to)
       if not best_d or d < best_d then best, best_i, best_d = house, i, d end
     end
   end
-  return best, best_i
+  return best, best_i, best_d
 end
 
 local function go(entity, point, command)
@@ -177,16 +193,21 @@ function M.on_command_completed(unit_number, result)
   end
   local ring = rings.by_key(entry.ring)
   local house = ring and ring.gatehouses[entry.gate]
-  -- No path to this apron: the next nearest gatehouse may have one.
+  if result == defines.behavior_result.fail and house and entry.phase == 'approach'
+      and distance(entity.position, house[entry.from]) <= M.NEAR then
+    result = defines.behavior_result.success
+  end
+  -- No path to this apron: the next nearest gatehouse may have one, unless
+  -- it is far out of the way.
   if result == defines.behavior_result.fail and house and entry.phase == 'approach' then
     entry.failed = entry.failed or {}
     entry.failed[entry.gate] = true
     local tried = 0
     for _ in pairs(entry.failed) do tried = tried + 1 end
     local target = tried < M.TRIES and target_of(entry.command)
-    local other, index
-    if target then other, index = M.choose(ring, entry.from, entity.position, target, entry.failed) end
-    if other then
+    local other, index, d
+    if target then other, index, d = M.choose(ring, entry.from, entity.position, target, entry.failed) end
+    if other and d <= M.DETOUR * way(house, entry.from, entity.position, target) then
       entry.gate = index
       go(entity, other[entry.from], entry.command)
       return true
@@ -211,6 +232,23 @@ function M.on_command_completed(unit_number, result)
     resume(entry, true)
   end
   return true
+end
+
+-- After an update: units on their way through a ring that is no barrier
+-- (never closed, or gone) take their orders up again.
+function M.release_open()
+  local s = state.peek()
+  if not (s and s.crossings) then return end
+  local open = {}
+  for id, entry in pairs(s.crossings) do
+    local ring = rings.by_key(entry.ring)
+    if not (ring and closed(ring)) then open[#open + 1] = id end
+  end
+  for _, id in ipairs(open) do
+    local entry = s.crossings[id]
+    s.crossings[id] = nil
+    if entry.entity.valid then resume(entry, true) end
+  end
 end
 
 function M.forget(unit_number)

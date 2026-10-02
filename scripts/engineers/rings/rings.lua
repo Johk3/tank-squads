@@ -9,8 +9,10 @@
 --   clearing (clearing.lua)}
 -- ring = {key, n, force_index, surface_index, centre, radius, shape, state,
 --   count, segments[i], bulges, crossings[key], released[tile key], labels,
---   gatehouses[i], announced, audit, teardown, purge_tick, garrison,
+--   gatehouses[i], announced, closed, audit, teardown, purge_tick, garrison,
 --   placing[i] = true for segments with tiles still to place}
+-- closed is true once every segment was built; from then on units cross
+-- the ring through its gatehouses (crossing.lua).
 -- ring.state is 'building', 'built', 'tearing_down' or 'deleted'.
 -- segment = {state, live, ghosts[unit_number] = {entity, position}, due,
 --   pending = {tiles, next}: planned tiles not placed yet}
@@ -462,7 +464,7 @@ function M.segment_built(ring, i)
     if seg.state ~= 'built' then return end
   end
   if ring.state ~= 'building' then return end
-  ring.state = 'built'
+  ring.state, ring.closed = 'built', true
   if not ring.announced then
     ring.announced = true
     local force = game.forces[ring.force_index]

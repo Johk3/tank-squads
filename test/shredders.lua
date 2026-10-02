@@ -291,6 +291,19 @@ return function(ctx)
     assert(calls.n == 1 and record.state == 'moving', 'no order after the division moved')
   end)
 
+  test('shredders: a shredder that finds no way to its post is teleported there and parks', function()
+    building()
+    engine()
+    division(1, 200)
+    local e, record = shredder(0, 0)
+    e.teleport = function(p) e.position = {x = p.x, y = p.y}; return true end
+    shredders.tick()
+    local goal = e.command.destination
+    shredders.on_command_completed(e.unit_number, defines.behavior_result.fail)
+    assert(e.position.x == goal.x and e.position.y == goal.y, 'left where its order failed')
+    assert(record.state == 'parked' and e.command.type == defines.command.stop, 'shredder did not park')
+  end)
+
   test('shredders: shredders split evenly between divisions', function()
     building()
     engine()
