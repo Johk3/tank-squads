@@ -136,7 +136,7 @@ def main():
             assert (width, height) == (256, 256), "Badge size differs from prototypes/insignias.lua"
         elif relative in SINGLES:
             assert (width, height) == (SINGLES[relative],) * 2, f"Sprite size differs from prototype in {relative}"
-        elif relative == "graphics/headquarters-icon.png":
+        elif relative in {"graphics/headquarters-icon.png", "graphics/command-icons/tank-squads.png"}:
             # Also the technology icon, which the tech tree shows at 256 px.
             assert (width, height) == (256, 256), "Icon size differs from prototype"
         else:

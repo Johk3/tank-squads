@@ -143,7 +143,7 @@ local function refresh_constructors(player, body)
     list.add{type = 'checkbox', name = 'auto_' .. r.id, state = r.autonomous == true,
       caption = {'tank-squads.engineers-auto'}, tooltip = {'tank-squads.engineers-auto-help'},
       tags = {tank_squads_auto = r.id}}
-    list.add{type = 'sprite-button', name = 'map_' .. r.id, style = 'frame_action_button', sprite = 'item/radar',
+    list.add{type = 'sprite-button', name = 'map_' .. r.id, style = 'frame_action_button', sprite = 'tank-squad-map-locator',
       tooltip = {'tank-squads.engineers-map'}, tags = {tank_squads_constructor = r.id}}
   end
 end
@@ -194,7 +194,7 @@ local function refresh_rings(player, body, fs, settings)
     fixed(list.add{type = 'label', name = 'open_' .. n,
       caption = open > 0 and {'tank-squads.engineers-ring-crossings', open} or '',
       tooltip = open > 0 and {'tank-squads.engineers-ring-crossings-help'} or nil})
-    list.add{type = 'sprite-button', name = 'ring_map_' .. n, style = 'frame_action_button', sprite = 'item/radar',
+    list.add{type = 'sprite-button', name = 'ring_map_' .. n, style = 'frame_action_button', sprite = 'tank-squad-map-locator',
       tooltip = {'tank-squads.engineers-ring-map'}, enabled = ring ~= nil and ring.state ~= 'deleted',
       tags = {tank_squads_ring_map = n}}
     if ring and ring.state == 'deleted' then

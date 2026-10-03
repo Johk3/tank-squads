@@ -2,7 +2,7 @@ data:extend{
   {
     type = "technology",
     name = "tank-squad-unlock",
-    icon = "__base__/graphics/technology/military.png",
+    icon = "__tank-squads__/graphics/command-icons/tank-squads.png",
     icon_size = 256,
     effects = {
       {type = "unlock-recipe", recipe = "tank-squad-barracks"},
