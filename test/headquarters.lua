@@ -57,6 +57,10 @@ return function(ctx)
     hq.position = {x = 0, y = 0}
     hq.commandable.command = {type = defines.command.go_to_location, destination = {x = 100, y = 0}}
     local tree, rock, cliff = obstacle('tree', 8, 2), obstacle('simple-entity', 3, -3), obstacle('cliff', 10, 0)
+    rock.prototype = {count_as_rock_for_filtered_deconstruction = true}
+    -- A neutral simple entity that is no rock, such as a ruin.
+    local ruin = obstacle('simple-entity', 5, 1)
+    ruin.prototype = {count_as_rock_for_filtered_deconstruction = false}
     local behind = obstacle('tree', -12, 0)
     local far = obstacle('tree', 40, 0)
     local wall = obstacle('stone-wall', 6, 0, game.players[1].force)
@@ -65,6 +69,7 @@ return function(ctx)
     assert(cliff.destroyed_with and cliff.destroyed_with.do_cliff_correction, 'cliff removed without correction')
     assert(behind.valid and far.valid, 'cleared outside the path')
     assert(wall.valid, 'a player building was destroyed')
+    assert(ruin.valid, 'a simple entity that is no rock was destroyed')
   end)
 
   ctx.test('headquarters: a parked headquarters leaves the trees alone', function()

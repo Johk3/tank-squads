@@ -116,6 +116,13 @@ function M.forget_soldier(entity)
   crossing.forget(entity.unit_number)
 end
 
+-- A soldier another mod removed: no loss, so no task force calls for help.
+function M.drop_soldier(unit_number)
+  loans.finish(unit_number)
+  teams.forget(unit_number)
+  crossing.forget(unit_number)
+end
+
 -- A soldier rebuilt on promotion keeps its loan. True when it was lent.
 M.replace_soldier = task_force.replace
 
@@ -159,6 +166,13 @@ function M.on_forces_merged(event)
   M.reconcile()
 end
 
+-- A surface was deleted: its rings and ghosts go. Its units went with it
+-- and leave on their next sweep.
+function M.on_surface_deleted(surface_index)
+  rings.drop_surface(surface_index)
+  ghosts.drop_surface(surface_index)
+end
+
 -- After an upgrade or a force merge: every constructor lets go of its
 -- claims and every visited surface is read again.
 function M.reconcile()
@@ -167,6 +181,16 @@ function M.reconcile()
   end
   local s = state.peek()
   if not s then return end
+  -- Surfaces deleted while an older version ran.
+  local gone = {}
+  for _, fs in pairs(s.rings or {}) do
+    local picked = fs.settings.surface_index
+    if picked and not game.surfaces[picked] then gone[picked] = true end
+    for _, ring in pairs(fs.slots) do
+      if ring.state ~= 'deleted' and not game.surfaces[ring.surface_index] then gone[ring.surface_index] = true end
+    end
+  end
+  for surface_index in pairs(gone) do M.on_surface_deleted(surface_index) end
   for _, record in pairs(s.constructors) do
     if record.entity.valid and record.state ~= 'healing' and record.state ~= 'task_force' then
       constructor.reset(record)

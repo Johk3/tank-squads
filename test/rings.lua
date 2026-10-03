@@ -1312,6 +1312,67 @@ return function(ctx)
     assert(not wall_filtered())
   end)
 
+  -- An order takes the last garrison division away without telling the
+  -- garrison; a deal drops it from the list before the sweep sees it go.
+  test('garrison: walls leave the damage handler when a deal drops the last garrison', function()
+    local ring, division = garrison_world()
+    dofile('control.lua')
+    local function wall_filtered()
+      for _, f in ipairs(ctx.filters().on_entity_damaged) do
+        if f.filter == 'type' and f.type == 'wall' then return true end
+      end
+      return false
+    end
+    division(1, 2, 150, -150)
+    garrison.set(1, 1, 1)
+    assert(wall_filtered())
+    local record = require('scripts.divisions').record(1, 1)
+    record.patrol, record.mode = nil, 'idle'
+    garrison.deal(ring, garrison.state(ring))
+    garrison.tick()
+    assert(not garrison.active() and not wall_filtered(), 'walls stayed in after the last garrison left')
+  end)
+
+  -- A ring on a surface that is deleted, with ghosts still to place, a
+  -- garrison and the force's ring centre on it.
+  local function doomed_ring()
+    local ring, division, rings = garrison_world()
+    local s = require('scripts.engineers.state').get()
+    local fs = rings.force_state(1)
+    rings.set_centre(game.forces[1], game.surfaces[1], {x = 0, y = 0})
+    division(1, 2, 150, -150)
+    garrison.set(1, 1, 1)
+    local ghost = game.surfaces[1].create_entity{inner_name = 'stone-wall', position = {x = 200, y = 0}}
+    rings.tag(ring, 1, ghost)
+    ring.segments[1].state = 'placed'
+    ring.segments[2].state = 'placed'
+    ring.segments[2].pending = {tiles = {{x = 201, y = 3, a = 3, name = 'stone-wall', dir = 'north'}}, next = 1}
+    ring.placing = {[2] = true}
+    ring.audit = nil
+    game.surfaces[1] = nil
+    return ring, rings, s, fs, ghost
+  end
+
+  test('rings: a deleted surface lets its rings go and the sweep runs on', function()
+    local ring, rings, s, fs, ghost = doomed_ring()
+    require('scripts.engineers.init').on_surface_deleted(1)
+    assert(ring.state == 'deleted', 'the ring stayed ' .. ring.state)
+    assert(not (s.ring_ghosts and s.ring_ghosts[ghost.unit_number]), 'a ring ghost kept its tag')
+    assert(fs.settings.surface_index == nil and fs.settings.centre == nil, 'the centre stayed on the deleted surface')
+    assert(s.scanned[1] == nil and s.ghosts['1:1'] == nil, 'the ghost registry kept the deleted surface')
+    assert(not garrison.active(), 'the garrison still holds the ring')
+    rings.tick()
+    garrison.tick()
+    require('scripts.engineers.rings.clearing').tick()
+  end)
+
+  test('rings: an upgrade lets go of rings whose surface is gone', function()
+    local ring, rings = doomed_ring()
+    require('scripts.engineers.init').reconcile()
+    assert(ring.state == 'deleted', 'the ring stayed ' .. ring.state)
+    rings.tick()
+  end)
+
   local function open_window()
     local engineers = require('scripts.engineers.init')
     ctx.players()[1].surface_index = 1

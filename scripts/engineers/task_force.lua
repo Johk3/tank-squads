@@ -280,7 +280,8 @@ local function recall_changed(tf)
   end
 end
 
--- The members still lent to this task force, alive.
+-- The members still lent to this task force, alive. A member gone without
+-- an event ends its loan here.
 local function members_of(tf)
   local out, kept = {}, {}
   for _, id in ipairs(tf.members) do
@@ -289,6 +290,8 @@ local function members_of(tf)
     if e and e.valid then
       out[#out + 1] = e
       kept[#kept + 1] = id
+    elseif loan and loan.task_force == tf.id then
+      loans.finish(id)
     end
   end
   tf.members = kept

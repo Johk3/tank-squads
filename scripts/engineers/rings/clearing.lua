@@ -144,6 +144,15 @@ function M.claim(record, busy)
   return best
 end
 
+-- A surface was deleted: the nests found on it go.
+function M.drop_surface(fs, surface_index)
+  local c = fs.clearing
+  if not c then return end
+  for id, nest in pairs(c.nests) do
+    if nest.surface_index == surface_index then c.nests[id] = nil end
+  end
+end
+
 -- The nest is gone.
 function M.drop(force_index, id)
   local nests = nests_of(force_index)

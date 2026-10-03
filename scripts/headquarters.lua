@@ -218,7 +218,8 @@ local function couple(record)
   end
 end
 
--- Only neutral obstacles, never a building. One command read and one area
+-- Only neutral trees, rocks and cliffs, never a building. Other neutral
+-- simple entities, such as ruins, stay. One command read and one area
 -- search per sweep while the headquarters has somewhere to go; none while
 -- it stands still.
 function M.clear_path(record, position)
@@ -239,7 +240,7 @@ function M.clear_path(record, position)
     type = OBSTACLES, force = 'neutral'}) do
     if e.type == 'cliff' then
       e.destroy{do_cliff_correction = true, raise_destroy = true}
-    else
+    elseif e.type == 'tree' or e.prototype.count_as_rock_for_filtered_deconstruction then
       e.destroy{raise_destroy = true}
     end
   end

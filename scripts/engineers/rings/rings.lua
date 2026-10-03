@@ -171,6 +171,8 @@ function M.start(fs, force, n, surface)
   local surface_index = settings.surface_index or surface.index
   local ring_surface = game.surfaces[surface_index]
   local centre = settings.centre
+  -- A centre picked on a surface since deleted no longer counts.
+  if not ring_surface then surface_index, ring_surface, centre = surface.index, surface, nil end
   if not centre then
     local p = force.get_spawn_position(ring_surface)
     centre = {x = math.floor(p.x), y = math.floor(p.y)}
@@ -754,25 +756,35 @@ function M.again(force_index, n)
   return true
 end
 
+-- Untags the ring's ghosts and drops its walls to take down, labels,
+-- crossing tags and garrison. Its walls and ghosts stay as ordinary
+-- entities.
+local function let_go(s, ring)
+  for _, seg in ipairs(ring.segments) do
+    for id in pairs(seg.ghosts) do
+      if s.ring_ghosts then s.ring_ghosts[id] = nil end
+    end
+  end
+  dismantle.clear(ring.key)
+  M.clear_labels(ring)
+  M.clear_crossings(ring)
+  if M.on_teardown then M.on_teardown(ring) end
+end
+
+local function clear_mark(fs)
+  if fs.mark and fs.mark.valid then fs.mark.destroy() end
+  if fs.mark_circle and fs.mark_circle.valid then fs.mark_circle.destroy() end
+  fs.mark, fs.mark_circle = nil, nil
+end
+
 -- A force merged into another lets its rings go. Its walls and ghosts,
 -- now the other force's, stay as ordinary entities; its garrisons stop.
 function M.release_force(force_index)
   local fs = M.peek(force_index)
   if not fs then return end
   local s = state.get()
-  for _, ring in pairs(fs.slots) do
-    for _, seg in ipairs(ring.segments) do
-      for id in pairs(seg.ghosts) do
-        if s.ring_ghosts then s.ring_ghosts[id] = nil end
-      end
-    end
-    dismantle.clear(ring.key)
-    M.clear_labels(ring)
-    M.clear_crossings(ring)
-    if M.on_teardown then M.on_teardown(ring) end
-  end
-  if fs.mark and fs.mark.valid then fs.mark.destroy() end
-  if fs.mark_circle and fs.mark_circle.valid then fs.mark_circle.destroy() end
+  for _, ring in pairs(fs.slots) do let_go(s, ring) end
+  clear_mark(fs)
   s.rings[force_index] = nil
 end
 
@@ -784,6 +796,29 @@ function M.finish_teardown(ring)
   local force = game.forces[ring.force_index]
   if force then force.print({'tank-squads.ring-removed', ring.n}) end
   M.bump(M.peek(ring.force_index))
+end
+
+-- A surface was deleted: every ring on it is deleted, as after a tear-down,
+-- and a ring centre picked there is forgotten, so new rings go round the
+-- spawn of the surface their constructor stands on.
+function M.drop_surface(surface_index)
+  local s = state.peek()
+  if not (s and s.rings) then return end
+  for _, fs in pairs(s.rings) do
+    if fs.settings.surface_index == surface_index then
+      clear_mark(fs)
+      fs.settings.surface_index, fs.settings.centre = nil, nil
+      M.bump(fs)
+    end
+    clearing.drop_surface(fs, surface_index)
+    for _, ring in pairs(fs.slots) do
+      if ring.surface_index == surface_index and ring.state ~= 'deleted' then
+        let_go(s, ring)
+        ring.placing, ring.audit = nil, nil
+        M.finish_teardown(ring)
+      end
+    end
+  end
 end
 
 -- One segment per call: its walls and gates are marked for deconstruction

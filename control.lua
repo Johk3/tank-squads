@@ -125,19 +125,37 @@ end
 local garrison_filters = {}
 for _, filter in ipairs(damaged_filters) do garrison_filters[#garrison_filters + 1] = filter end
 for _, filter in ipairs(wall_filters) do garrison_filters[#garrison_filters + 1] = filter end
+-- The filters registered now, so a repeated call with the same answer
+-- registers nothing.
+local registered_garrisoned
 local function register_damaged(garrisoned)
+  if garrisoned == registered_garrisoned then return end
+  registered_garrisoned = garrisoned
   script.on_event(defines.events.on_entity_damaged, on_damaged, garrisoned and garrison_filters or damaged_filters)
 end
 register_damaged(false)
 engineers.on_garrison_change(function() register_damaged(engineers.garrison_active()) end)
 -- A save with a garrison registers the wall filters again when loaded.
 script.on_load(function() register_damaged(engineers.garrison_active()) end)
+-- A unit another mod removed leaves every job table, as on a death, in the
+-- same order (see on_entity_died). It is no loss, so no shredder strikes.
+-- A promotion's swap (scripts/transition.lua) cleaned up already; running
+-- this again for the old unit finds nothing left.
+local function forget_unit(unit_number)
+  divisions.forget(unit_number)
+  patrol.forget(unit_number)
+  commands.forget(unit_number)
+  cover.forget(unit_number)
+end
 script.on_event(defines.events.script_raised_destroy, function(event)
   local entity = event.entity
   if entity and entity.valid and names.soldier_set[entity.name] then
+    engineers.drop_soldier(entity.unit_number)
     weapons.unregister(entity.unit_number)
+    forget_unit(entity.unit_number)
   elseif entity and entity.valid and entity.name == names.headquarters then
     headquarters.unregister(entity.unit_number)
+    forget_unit(entity.unit_number)
   elseif entity and entity.valid and names.shredder_set[entity.name] then
     shredders.unregister(entity.unit_number)
   elseif entity and entity.valid and entity.name == names.constructor then
@@ -172,6 +190,9 @@ local function clear_player(event)
 end
 script.on_event(defines.events.on_player_removed, clear_player)
 script.on_event(defines.events.on_player_changed_force, clear_player)
+script.on_event(defines.events.on_surface_deleted, function(event)
+  engineers.on_surface_deleted(event.surface_index)
+end)
 script.on_event(defines.events.on_forces_merged, function(event)
   shredders.on_forces_merged(event)
   engineers.on_forces_merged(event)

@@ -286,27 +286,26 @@ end
 
 -- Each sweep slice (all when phase is nil): garrisoned rings read one
 -- more sector when due. Once per second a ring that lost a division deals
--- its posts again.
+-- its posts again, and the damage filter is checked: a deal or an alarm
+-- may have dropped the last division from its list unseen.
 function M.tick(phase)
   local s = storage.engineers
   if not (s and s.rings) then return end
-  local tick = game.tick
+  local tick, second = game.tick, phase == nil or phase == 0
   for _, fs in pairs(s.rings) do
     for _, ring in pairs(fs.slots) do
       local g = ring.garrison
       if g and next(g.divisions) then
-        if phase == nil or phase == 0 then
+        if second then
           local before = 0
           for _ in pairs(g.divisions) do before = before + 1 end
-          if #holding(ring, g) < before then
-            M.mark_all(ring, g)
-            if M.on_change then M.on_change() end
-          end
+          if #holding(ring, g) < before then M.mark_all(ring, g) end
         end
         if tick >= g.due then M.weigh(ring, g, tick) end
       end
     end
   end
+  if second and M.on_change then M.on_change() end
 end
 
 -- Sends the nearest free garrison soldiers of the ring to the wall. They

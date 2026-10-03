@@ -881,6 +881,33 @@ return function(ctx)
     assert(loans.on_loan(idle[2].unit_number) and storage.engineers.task_forces[tf.id], 'the healthy ones left too')
   end)
 
+  test('engineers: a lent soldier gone without an event ends its loan', function()
+    local _, _, _, spawner, record = nest_setup()
+    local loans = require('scripts.engineers.loans')
+    local task_force = require('scripts.engineers.task_force')
+    local idle = idle_division(1, 8)
+    local tf = task_force.request(record, {spawner})
+    assert(tf and loans.on_loan(idle[3].unit_number))
+    idle[3].valid = false
+    task_force.drive(tf)
+    assert(not loans.on_loan(idle[3].unit_number), 'the loan of a vanished soldier was kept')
+  end)
+
+  test('engineers: a soldier destroyed by script ends its loan and leaves its division', function()
+    local _, _, _, spawner, record = nest_setup()
+    local loans = require('scripts.engineers.loans')
+    local task_force = require('scripts.engineers.task_force')
+    local divisions = require('scripts.divisions')
+    dofile('control.lua')
+    local idle = idle_division(1, 8)
+    local tf = task_force.request(record, {spawner})
+    local gone = idle[3]
+    assert(tf and loans.on_loan(gone.unit_number))
+    ctx.handlers()[defines.events.script_raised_destroy]{entity = gone}
+    assert(not loans.on_loan(gone.unit_number), 'the loan outlived the soldier')
+    assert(divisions.owner(gone.unit_number) == nil, 'the division still owns the soldier')
+  end)
+
   test('engineers: a lent soldier rebuilt on promotion stays in its task force', function()
     local _, _, _, spawner, record = nest_setup()
     local loans = require('scripts.engineers.loans')

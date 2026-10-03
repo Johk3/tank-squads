@@ -379,6 +379,27 @@ function M.block_near(record, positions, radius, ticks)
   end
 end
 
+-- A surface was deleted: its ghosts leave the registry with their claims
+-- and blocks, and a surface given the same index later is read afresh.
+function M.drop_surface(surface_index)
+  local s = state.peek()
+  if not s then return end
+  s.scanned[surface_index] = nil
+  local gone = {}
+  for key, bucket in pairs(s.ghosts) do
+    if tonumber(string.match(key, '^(%d+):')) == surface_index then
+      gone[#gone + 1] = key
+      for _, chunk in pairs(bucket.chunks) do
+        for id in pairs(chunk.entries) do
+          s.claims[id], s.blocked[id] = nil, nil
+          if s.strikes then s.strikes[id] = nil end
+        end
+      end
+    end
+  end
+  for _, key in ipairs(gone) do s.ghosts[key] = nil end
+end
+
 -- The crane built the ghost, or found it gone.
 function M.placed(record, entry)
   local bucket = M.bucket(record.surface_index, record.force_index)
