@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.42.0
+Date: 2026-10-03
+  Features:
+    - Tank Squads has its own icons for the command tool, the ring centre tool, the patrol, scout and escort shortcuts, the rally flag, the technology and the map buttons of the engineers window, instead of base game icons.
+  Bugfixes:
+    - Fixed a crash when a surface that held a ring was deleted. Its rings are removed, and a ring centre picked there is forgotten. Saves where such a surface is already gone are repaired when they load.
+    - A driving headquarters clears only trees, rocks and cliffs in its way. Ruins and other neutral objects are left standing.
+    - Wall hits stop reaching the mod's script once the last garrison has left its ring, which saves time during attacks on walls.
+    - Soldiers and headquarters removed by another mod leave their division, patrol, cover and engineer jobs at once, and soldiers lent to a task force end their loan.
+---------------------------------------------------------------------------------------------------
 Version: 0.41.4
 Date: 2026-10-03
   Bugfixes:
