@@ -8,15 +8,18 @@ TMP_OUT="$OUT.tmp"
 STAGE="$(mktemp -d)"
 DEST="$STAGE/tank-squads_$VERSION"
 mkdir -p "$DEST" "$ROOT/dist"
-# thumbnail.png is the mod portal's and in-game mod list's picture. Only
-# files git tracks are packaged, so local notes and untracked artwork never
-# reach the release: commit before building.
-git -C "$ROOT" ls-files -z -- info.json thumbnail.png data.lua data-final-fixes.lua settings.lua control.lua changelog.txt \
-    README.md LICENSE prototypes scripts locale graphics |
-  while IFS= read -r -d '' f; do
-    mkdir -p "$DEST/$(dirname "$f")"
-    cp "$ROOT/$f" "$DEST/$f"
-  done
+# thumbnail.png is the mod portal's and in-game mod list's picture. The
+# package holds the files as committed at HEAD, so local notes, untracked
+# artwork and uncommitted edits never reach the release: commit before
+# building. Copying edited files from the working tree once shipped
+# prototypes that named icons the package did not contain.
+PACKAGED=(info.json thumbnail.png data.lua data-final-fixes.lua settings.lua control.lua changelog.txt
+  README.md LICENSE prototypes scripts locale graphics)
+if [ -n "$(git -C "$ROOT" status --porcelain -- "${PACKAGED[@]}")" ]; then
+  echo "warning: uncommitted changes are left out of the package:" >&2
+  git -C "$ROOT" status --short -- "${PACKAGED[@]}" >&2
+fi
+git -C "$ROOT" archive --format=tar HEAD -- "${PACKAGED[@]}" | tar -x -C "$DEST"
 
 # This host has no `zip` binary, so build the archive with python3's zipfile
 # module (already used by this script's own self-check below and by
@@ -51,6 +54,13 @@ assert 'tank-squads_$VERSION/thumbnail.png' in z.namelist(), 'thumbnail.png miss
 notes = [n for n in z.namelist() if (n.endswith('.md') and n != 'tank-squads_$VERSION/README.md')
          or '/docs/' in n]
 assert not notes, f'local notes in the package: {notes}'
+# Factorio refuses to load a mod whose prototypes name a missing file.
+import re
+prefix = 'tank-squads_$VERSION/'
+missing = sorted({path for n in z.namelist() if n.endswith('.lua')
+                  for path in re.findall(r'__tank-squads__/([^\"\']+\.(?:png|ogg|wav))', z.read(n).decode())
+                  if prefix + path not in z.namelist()})
+assert not missing, f'files referenced but not packaged: {missing}'
 print('package ok')
 "
 
