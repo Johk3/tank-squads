@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.41.4
+Date: 2026-10-03
+  Bugfixes:
+    - Fixed the mod failing to load with "File tank-squads/graphics/command-icons/map.png not found". The 0.41.3 package named icons it did not contain.
+---------------------------------------------------------------------------------------------------
 Version: 0.41.3
 Date: 2026-10-02
   Bugfixes:
